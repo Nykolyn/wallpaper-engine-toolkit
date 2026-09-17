@@ -1,0 +1,15 @@
+# The working tree here is mixed — some files were written with CRLF and some
+# with LF. Normalising on the way into the repository keeps a diff about what
+# changed rather than about how a file was saved.
+* text=auto eol=lf
+
+# Windows batch files are read by cmd.exe, which wants CRLF.
+*.cmd text eol=crlf
+*.bat text eol=crlf
+
+# Binary, so git never tries to translate anything inside them.
+*.ico binary
+*.png binary
+*.jpg binary
+*.gif binary
+*.sqlite binary

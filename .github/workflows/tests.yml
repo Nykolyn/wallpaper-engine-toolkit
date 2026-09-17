@@ -1,0 +1,48 @@
+name: tests
+
+# Every change reaches main through a pull request, so this is what decides
+# whether one is mergeable. It runs on Windows because the app is Windows:
+# DPAPI, the registry, Task Scheduler and schtasks are all real here.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  tests:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Install dependencies
+        run: python -m pip install --upgrade pip && pip install -r requirements.txt
+
+      - name: Check every module imports
+        run: python run_app.py --selfcheck
+
+      - name: Run the test suite
+        # There is no test framework: each file is a script that exits non-zero
+        # if any of its own checks failed. Qt needs a platform plugin even for
+        # widgets that are never shown.
+        env:
+          QT_QPA_PLATFORM: offscreen
+        shell: pwsh
+        run: |
+          $failed = @()
+          Get-ChildItem tests\test_*.py | ForEach-Object {
+              Write-Host "=== $($_.Name) ==="
+              python $_.FullName
+              if ($LASTEXITCODE -ne 0) { $failed += $_.Name }
+          }
+          if ($failed.Count -gt 0) {
+              Write-Host "::error::failing: $($failed -join ', ')"
+              exit 1
+          }
+          Write-Host "all test files passed"

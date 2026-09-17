@@ -1,0 +1,33 @@
+# ---- Local data, never published -------------------------------------------
+# The suite writes everything it learns next to the executable (or into the
+# project root in a dev run): the DPAPI-protected secrets file, the Steam
+# response cache, downloaded thumbnails, the playlist tracker's history. None
+# of it is source, all of it is personal, and some of it is large.
+/data/
+
+# The Rotator keeps its own config and history beside its engine, which puts
+# real folder paths from this machine inside the source tree.
+/app/engines/data/
+
+# ---- Build output ----------------------------------------------------------
+/build/
+/dist/
+*.manifest
+
+# ---- Python ----------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# ---- Editors and OS --------------------------------------------------------
+.vscode/
+.idea/
+*.swp
+Thumbs.db
+desktop.ini
