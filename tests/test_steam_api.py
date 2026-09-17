@@ -316,11 +316,17 @@ cache.close()
 
 # ---- Throttling ------------------------------------------------------------
 
+# Four waits at 0.05 s is three gaps, so the ideal total is exactly 0.150 s —
+# and asserting ">= 0.150" against a target of 0.150 is a knife edge. Windows
+# sleeps to a coarse timer and can come back a fraction early, which fails a
+# run that throttled perfectly well. The claim worth making is that the
+# requests were spaced at all: unthrottled, four of them take about nothing.
 throttle = sa._Throttle(0.05)
 start = time.monotonic()
 for _ in range(4):
     throttle.wait()
-check("requests to one host are spaced apart", time.monotonic() - start >= 0.15)
+spent = time.monotonic() - start
+check("requests to one host are spaced apart", spent >= 0.12)
 
 throttle = sa._Throttle(0.0)
 throttle.penalise(0.2)
