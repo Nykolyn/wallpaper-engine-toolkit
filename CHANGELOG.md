@@ -40,3 +40,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   shared between them, so wallpapers built before and after are
   indistinguishable. Settings move from the `autocreator` section of
   `data/suite.json` to `creator` on first start.
+
+### Added
+
+- **Tags for built wallpapers.** The Creator writes Wallpaper Engine's genre
+  tags into each `project.json`, set for a whole batch and overridable per clip.
+  A card follows the batch until it is given tags of its own, and "deliberately
+  untagged" is a state distinct from "not decided". The dialog offers the 25
+  tags Wallpaper Engine uses and takes free text for anything else.
+
+### Fixed
+
+- **No genre is hard-coded any more.** Every wallpaper this tool built came out
+  tagged `Girls`, a literal inherited from the tool the engine grew out of. It
+  was right for one library and wrong for every other. Nothing is tagged now
+  unless you ask for it.
