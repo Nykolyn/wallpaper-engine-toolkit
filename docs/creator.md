@@ -67,9 +67,46 @@ is left untouched in the source folder — **a failure never consumes the input.
 ffmpeg is taken from `PATH` if present, otherwise from the bundled
 `imageio-ffmpeg` package, so there is nothing to install.
 
+## Tags
+
+Wallpaper Engine writes genre tags into each `project.json` and shows them in
+its own browser. This tab lets you set them at two levels.
+
+**For the whole batch** — the `Tags` button next to the video mode. Whatever is
+chosen there goes into every project built in that run, and is remembered
+between sessions.
+
+**For one clip** — the `tags:` button on its card. A card normally *follows* the
+batch and says so, updating live if the batch changes. Once you give a clip its
+own tags it keeps them, and the dialog grows a checkbox to hand it back to the
+batch.
+
+Those two states are deliberately different:
+
+| The card says | Meaning |
+|---|---|
+| `tags: Anime, Game` while the batch is `Anime, Game` | following the batch — change the batch and this changes with it |
+| `tags: Nature` | this clip's own, whatever the batch says |
+| `tags: none` | this clip was deliberately left untagged, and stays untagged even if the batch is given tags |
+
+The dialog offers the 25 tags Wallpaper Engine itself uses, and a free-text
+field for anything else — `project.json` accepts any string, so the list is an
+offer rather than a rule.
+
+Nothing is tagged by default. An earlier version of this tool wrote a fixed
+genre into every wallpaper it built, which was right for the one library it was
+written in and wrong everywhere else.
+
+> Where the list came from: 21 distinct tags were counted across 1 529 real
+> `project.json` files in a workshop library, and 23 of the 25 appear verbatim
+> in Wallpaper Engine's own UI bundle. `Sci-Fi` and `Television` are in real
+> projects but not in the bundle's strings, so the list is the union of both.
+
 ## Settings it keeps
 
-Source, target and mode live in `data/suite.json` under `creator`.
+Source, target, mode and the batch tags live in `data/suite.json` under
+`creator`. A clip's own tags belong to the scan, not to the settings — rescanning
+starts everything following the batch again.
 
 ## Watch out for
 
@@ -81,9 +118,9 @@ Source, target and mode live in `data/suite.json` under `creator`.
 - A clip whose first six seconds are unrepresentative gets an unrepresentative
   preview. Replace `preview.gif` in that project folder by hand; nothing else
   about the project depends on how it was made.
-- Every generated `project.json` carries a fixed `tags` entry and a fixed scheme
-  colour, inherited from the tool this engine grew out of. Wallpaper Engine
-  ignores both for a local project; edit the file if you care.
+- The scheme colour in `project.json` is still a fixed value inherited from
+  the tool this engine grew out of. Wallpaper Engine ignores it for a local
+  project; edit the file if you care.
 
 ## A note on history
 

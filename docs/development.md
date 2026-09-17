@@ -68,6 +68,7 @@ for %f in (tests\test_*.py) do .venv\Scripts\python.exe %f
 
 | File | Covers |
 |---|---|
+| `test_creator.py` | project.json, and which tags win between a batch and one clip |
 | `test_tracker.py` | anchoring a cycle, rebuilding history, merging two writers |
 | `test_wallpaper_timer.py` | the PLPV0005 parser, the countdown, pause rules |
 | `test_rotator_cleanup.py` | the reserve check and what it offers to delete |

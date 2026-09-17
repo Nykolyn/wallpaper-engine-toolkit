@@ -62,8 +62,49 @@ def generate_suffix():
             f"{random.randint(0, 999999):06d}{_suffix_counter}")
 
 
-def build_project_json(basename, filename, preview_name):
-    """The project.json Wallpaper Engine expects for a video wallpaper."""
+# Wallpaper Engine's genre tags.
+#
+# Measured rather than recalled. 21 distinct values appear across 1 529
+# project.json files in a real workshop library, and 23 of the 25 below are
+# present verbatim in Wallpaper Engine's own UI bundle. The two that are not —
+# "Sci-Fi" and "Television" — were found in real projects instead, so this list
+# is the union of both sources.
+#
+# It is an offer, not a rule: project.json takes any string, so a UI can show
+# these and still let anything be typed.
+WE_TAGS = (
+    "Abstract", "Animal", "Anime", "Cartoon", "CGI", "Cyberpunk", "Fantasy",
+    "Game", "Girls", "Guys", "Landscape", "Medieval", "Memes", "MMD", "Music",
+    "Nature", "Pixel art", "Relaxing", "Retro", "Sci-Fi", "Sports",
+    "Technology", "Television", "Unspecified", "Vehicle",
+)
+
+
+def clean_tags(tags):
+    """Whatever was handed in, as a list of distinct non-empty strings, in order.
+
+    The order is kept because it is the order somebody chose, and duplicates go
+    because Wallpaper Engine shows a repeated tag twice.
+    """
+    out = []
+    for tag in tags or ():
+        # str() is not applied blindly: str(None) is "None", which would put the
+        # word None in a wallpaper's tags.
+        if not isinstance(tag, str):
+            continue
+        text = tag.strip()
+        if text and text not in out:
+            out.append(text)
+    return out
+
+
+def build_project_json(basename, filename, preview_name, tags=None):
+    """The project.json Wallpaper Engine expects for a video wallpaper.
+
+    ``tags`` is whatever the caller chose; nothing is invented when it is empty.
+    An earlier version of this function hard-coded a single genre, which was
+    right for the one library it was written in and wrong for every other.
+    """
     return {
         "file": basename,
         "general": {
@@ -79,7 +120,7 @@ def build_project_json(basename, filename, preview_name):
         "preview": preview_name,
         "snapshotformat": -1,
         "snapshotoverlay": "",
-        "tags": ["Girls"],
+        "tags": clean_tags(tags),
         "title": filename,
         "type": "video",
         "version": 0,
@@ -203,6 +244,10 @@ class VideoItem:
         self.basename = os.path.basename(self.video_path)          # clip.mp4
         self.filename = os.path.splitext(self.basename)[0]         # clip
         self.size = self._safe_size(self.video_path)
+        # None means "whatever the batch is tagged with"; a list — even an empty
+        # one — means this clip was decided about on its own. The difference
+        # matters: clearing a clip's tags has to survive the batch changing.
+        self.tags = None
 
     @staticmethod
     def _safe_size(path):
@@ -261,12 +306,13 @@ class BuildEngine:
 
     # ----- thread control -----------------------------------------------------
 
-    def start(self, items, target_dir, move=True):
+    def start(self, items, target_dir, move=True, tags=None):
         if self.is_running():
             return False
         self._cancel.clear()
         self._thread = threading.Thread(
-            target=self._run, args=(items, target_dir, move), daemon=True
+            target=self._run, args=(items, target_dir, move, clean_tags(tags)),
+            daemon=True,
         )
         self._thread.start()
         return True
@@ -279,7 +325,7 @@ class BuildEngine:
 
     # ----- main logic ---------------------------------------------------------
 
-    def _run(self, items, target_dir, move):
+    def _run(self, items, target_dir, move, tags):
         report = []
         total = len(items)
         self._progress(0, total)
@@ -296,6 +342,9 @@ class BuildEngine:
             f"{'move' if move else 'copy'}. Preview: {GIF_SIZE}×{GIF_SIZE} (1:1) "
             f"@ {GIF_FPS}fps, {GIF_DURATION:g}s from {GIF_SKIP:g}s."
         )
+        self._log(f"[TAGS]  {', '.join(tags) if tags else 'none'}"
+                  + (" (clips with their own tags override this)"
+                     if any(getattr(i, "tags", None) is not None for i in items) else ""))
 
         try:
             os.makedirs(target_dir, exist_ok=True)
@@ -309,7 +358,7 @@ class BuildEngine:
             if self._cancel.is_set():
                 self._log("[CANCEL] Operation cancelled by user.")
                 break
-            entry = self._process_item(it, target_dir, move, ffmpeg)
+            entry = self._process_item(it, target_dir, move, ffmpeg, tags)
             report.append(entry)
             self._item_done(it.basename, entry["status"])
             done += 1
@@ -318,7 +367,7 @@ class BuildEngine:
         self._print_summary(report)
         self._finished(report)
 
-    def _process_item(self, item, target_dir, move, ffmpeg):
+    def _process_item(self, item, target_dir, move, ffmpeg, tags=()):
         entry = {"name": item.basename, "status": "failed", "folder": None,
                  "preview": None}
         folder = None
@@ -364,7 +413,11 @@ class BuildEngine:
                 shutil.copy2(item.video_path, dst_video)
 
             # --- project.json ---
-            data = build_project_json(item.basename, item.filename, preview_name)
+            # A clip that was decided about on its own keeps its own answer,
+            # including an empty one.
+            own = getattr(item, "tags", None)
+            data = build_project_json(item.basename, item.filename, preview_name,
+                                      tags if own is None else own)
             with open(os.path.join(folder, "project.json"), "w", encoding="utf-8") as f:
                 json.dump(data, f, ensure_ascii=False, indent="\t")
 

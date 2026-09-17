@@ -42,6 +42,7 @@ app/engines/data/
 | Source | [Creator](creator.md) | empty — pick it |
 | Target | [Creator](creator.md) | `myprojects`, detected |
 | Mode | [Creator](creator.md) | `Move` |
+| Tags | [Creator](creator.md) | none — nothing is tagged unless you say so |
 | Source (reserve) | [Rotator](rotator.md) | empty — pick it |
 | Destination | [Rotator](rotator.md) | `myprojects`, detected |
 | Duplicates | [Rotator](rotator.md) | empty — pick it |
