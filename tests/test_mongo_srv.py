@@ -30,9 +30,14 @@ def check(label: str, condition: bool) -> None:
     print(("PASS " if condition else "FAIL ") + label)
 
 
-SEEDS = [("a.x.mongodb.net", 27017), ("b.x.mongodb.net", 27017)]
+# example.net is reserved for documentation (RFC 2606). A fabricated Atlas
+# host with a password on it is indistinguishable from a real one to a
+# secret scanner, and a repository full of false alarms is a repository
+# whose alarms stop being read. Nothing here depends on the domain: the
+# module never mentions mongodb.net.
+SEEDS = [("a.cluster.example.net", 27017), ("b.cluster.example.net", 27017)]
 TXT = {"authsource": "admin", "replicaset": "shard-0"}
-URI = "mongodb+srv://bob:p%40ss%2F@x.mongodb.net/wallpapers"
+URI = "mongodb+srv://bob:p%40ss%2F@cluster.example.net/wallpapers"
 
 
 # ---- Telling the two kinds of connection string apart -----------------------
@@ -50,18 +55,18 @@ creds, host, database, query = ms.split_uri(URI + "?retryWrites=true")
 check("the credentials are kept exactly as written, never re-encoded",
       creds == "bob:p%40ss%2F")
 check("the host, database and options are separated",
-      (host, database, query) == ("x.mongodb.net", "wallpapers", "retryWrites=true"))
+      (host, database, query) == ("cluster.example.net", "wallpapers", "retryWrites=true"))
 check("a string with no credentials is fine",
-      ms.split_uri("mongodb+srv://x.mongodb.net/")[0] == "")
+      ms.split_uri("mongodb+srv://cluster.example.net/")[0] == "")
 check("and one with no database or options",
-      ms.split_uri("mongodb+srv://x.mongodb.net")[1:] == ("x.mongodb.net", "", ""))
+      ms.split_uri("mongodb+srv://cluster.example.net")[1:] == ("cluster.example.net", "", ""))
 
 
 # ---- Rewriting it -----------------------------------------------------------
 
 out = ms.expand(URI, seeds=SEEDS, txt=TXT)
 check("the seed list becomes the host part",
-      out.startswith("mongodb://bob:p%40ss%2F@a.x.mongodb.net:27017,b.x.mongodb.net:27017/"))
+      out.startswith("mongodb://bob:p%40ss%2F@a.cluster.example.net:27017,b.cluster.example.net:27017/"))
 check("the database survives", "/wallpapers?" in out)
 check("TXT options are carried over",
       "authsource=admin" in out and "replicaset=shard-0" in out)
@@ -80,14 +85,14 @@ check("and TLS is not forced on over an explicit choice",
 check("nor when it was spelled the old way",
       "tls=true" not in ms.expand(URI + "?ssl=false", seeds=SEEDS, txt=TXT))
 
-out = ms.expand("mongodb+srv://x.mongodb.net/", seeds=SEEDS, txt={})
+out = ms.expand("mongodb+srv://cluster.example.net/", seeds=SEEDS, txt={})
 check("no credentials means no stray @ in the result", "@" not in out)
 
 
 # ---- Refusing what cannot be right -----------------------------------------
 
 for bad, why in (("mongodb+srv://x.net/", "a host with too few labels"),
-                 ("mongodb+srv://x.mongodb.net:27017/", "a host carrying a port")):
+                 ("mongodb+srv://cluster.example.net:27017/", "a host carrying a port")):
     try:
         ms.expand(bad, seeds=SEEDS, txt=TXT)
         refused = False
@@ -101,21 +106,21 @@ real_query = ms._query
 try:
     ms._query = lambda name, kind: [("evil.example.com", 27017, 0, 0)]
     try:
-        ms.resolve_srv("x.mongodb.net")
+        ms.resolve_srv("cluster.example.net")
         refused = False
     except ms.SrvError:
         refused = True
     check("a seed outside the parent domain is refused", refused)
 
-    ms._query = lambda name, kind: [("b.x.mongodb.net.", 27017, 10, 0),
-                                    ("a.x.mongodb.net.", 27017, 1, 0)]
-    seeds = ms.resolve_srv("x.mongodb.net")
+    ms._query = lambda name, kind: [("b.cluster.example.net.", 27017, 10, 0),
+                                    ("a.cluster.example.net.", 27017, 1, 0)]
+    seeds = ms.resolve_srv("cluster.example.net")
     check("the trailing dot is trimmed and priority decides the order",
-          seeds == [("a.x.mongodb.net", 27017), ("b.x.mongodb.net", 27017)])
+          seeds == [("a.cluster.example.net", 27017), ("b.cluster.example.net", 27017)])
 
     ms._query = lambda name, kind: []
     try:
-        ms.resolve_srv("x.mongodb.net")
+        ms.resolve_srv("cluster.example.net")
         complained = False
     except ms.SrvError:
         complained = True
