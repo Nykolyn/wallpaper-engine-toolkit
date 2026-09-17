@@ -11,7 +11,7 @@ a whole installation is one folder you can copy or delete.
 
 ```
 data/
-├── suite.json              Copier, Creator, Auto Creator, Review, Tracker settings
+├── suite.json              Copier, Creator, Review and Tracker settings
 ├── secrets.json            Steam API key + database URI, DPAPI-encrypted
 ├── tracker.json            the live cycle per monitor, plus 40 finished ones
 ├── wallpaper_timer.json    the countdown, saved every 15 seconds
@@ -40,11 +40,8 @@ app/engines/data/
 |---|---|---|
 | Destination | [Copier](copier.md) | Wallpaper Engine's `myprojects`, detected |
 | Source | [Creator](creator.md) | empty — pick it |
-| Previews | [Creator](creator.md) | empty — pick it |
 | Target | [Creator](creator.md) | `myprojects`, detected |
 | Mode | [Creator](creator.md) | `Move` |
-| Source | [Auto Creator](auto-creator.md) | empty — pick it |
-| Target | [Auto Creator](auto-creator.md) | `myprojects`, detected |
 | Source (reserve) | [Rotator](rotator.md) | empty — pick it |
 | Destination | [Rotator](rotator.md) | `myprojects`, detected |
 | Duplicates | [Rotator](rotator.md) | empty — pick it |

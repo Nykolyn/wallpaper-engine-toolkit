@@ -46,7 +46,7 @@ Wallpaper Engine (app `431960`), and from there the layout is fixed:
 | Setting | Filled in from |
 |---|---|
 | Copier destination | `…/steamapps/common/wallpaper_engine/projects/myprojects` |
-| Creator / Auto Creator target | the same folder |
+| Creator target | the same folder |
 | Rotator destination | the same folder |
 | Workshop content (Review) | `…/steamapps/workshop/content/431960` |
 | Wallpaper Engine `config.json` (Tracker) | `…/steamapps/common/wallpaper_engine/config.json` |
@@ -66,7 +66,7 @@ Most tabs work immediately. Two do not:
 
 | Tab | Needs | Where |
 |---|---|---|
-| Auto Creator | ffmpeg — taken from `PATH`, otherwise the bundled `imageio-ffmpeg` | automatic |
+| Creator | ffmpeg — taken from `PATH`, otherwise the bundled `imageio-ffmpeg` | automatic |
 | Review | a **Steam Web API key** | the tab's own credentials dialog |
 | Review | a **MongoDB connection string** for the authors database | the same dialog |
 
@@ -97,5 +97,5 @@ the shape of dependency a packaged build drops silently.
 ## Next
 
 - Cycling a large library: [Rotator](rotator.md), then [Tracker](tracker.md).
-- Building wallpapers from clips: [Auto Creator](auto-creator.md).
+- Building wallpapers from clips: [Creator](creator.md).
 - Weekly triage of new wallpapers: [Review](review.md).

@@ -5,13 +5,12 @@ outgrown Wallpaper Engine: tens of thousands of wallpapers, a reserve that has
 to be cycled through `myprojects`, clips waiting to become wallpapers, and a
 weekly pile of new items whose authors are the part actually worth tracking.
 
-Six tools in one window, sharing one dark theme and one set of habits.
+Five tools in one window, sharing one dark theme and one set of habits.
 
 | Tab | What it does |
 |---|---|
 | **[Copier](docs/copier.md)** | Duplicates wallpaper folders N times each — the weighting Wallpaper Engine's playlists do not have. |
-| **[Creator](docs/creator.md)** | Turns video clips plus your own previews into Wallpaper Engine projects, in bulk. |
-| **[Auto Creator](docs/auto-creator.md)** | Turns video clips into projects with **no preview needed** — it renders one from the video. |
+| **[Creator](docs/creator.md)** | Turns video clips into Wallpaper Engine projects, rendering each preview from the video itself. |
 | **[Rotator](docs/rotator.md)** | Moves folders between a reserve and `myprojects`, with duplicate handling, protected folders and a dead-folder check. |
 | **[Tracker](docs/tracker.md)** | Reports how far Wallpaper Engine has got through the active playlist — `112/208` — so the next rotation is due when it reaches the end. |
 | **[Review](docs/review.md)** | Groups the week's new wallpapers by author, says what each has published since you last looked, and opens a gallery to subscribe from. |

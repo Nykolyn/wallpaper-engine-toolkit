@@ -28,3 +28,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Engine within them.
 - Documentation covering every tab and how the pieces fit together, under
   [`docs/`](docs/).
+
+### Removed
+
+- **The preview-matching Creator.** There were two creator tabs: one that
+  required a preview image per clip and skipped the clips without, and one that
+  rendered the preview from the video. The second was doing all the work, so the
+  first is gone and the second has taken the name **Creator**.
+
+  Output is unchanged — folder naming and the `project.json` shape were already
+  shared between them, so wallpapers built before and after are
+  indistinguishable. Settings move from the `autocreator` section of
+  `data/suite.json` to `creator` on first start.

@@ -117,15 +117,19 @@ state. See [the reserve check](rotator.md#the-reserve-check).
 
 ## The Creator skipped clips
 
-A clip is skipped when no preview matched it. Matching is by **filename stem**:
-`sunset.mp4` takes `sunset.jpg`, and `sunset final.mp4` matches nothing.
+A clip is skipped only when its preview could not be produced at all — neither
+the GIF nor the still fallback. Its half-built folder is removed and the video
+is left where it was, so nothing is lost; the log says which clip and why.
 
-Use [Auto Creator](auto-creator.md) if you do not want to supply previews.
+The usual cause is a file that is not really a video, or one ffmpeg cannot
+decode. Check that ffmpeg is found at all — the tab reports which one it is
+using.
 
-## Auto Creator's previews are black
+## The Creator's previews are black
 
 The clip fades in from black for longer than the one second the render skips.
-Rebuild those few through [Creator](creator.md) with a preview of your own.
+Replace `preview.gif` in that project folder by hand; nothing else about the
+project depends on how the preview was made.
 
 ## Folder fields are empty on a new machine
 
