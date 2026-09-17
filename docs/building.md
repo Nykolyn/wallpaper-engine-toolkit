@@ -88,5 +88,5 @@ shows, and `--add-data` so `QIcon` can paint the title bar at runtime.
 
 `WallpaperEngineToolkit.spec` is checked in. It collects submodules for `app`,
 `pymongo`, `bson` and `dns`, and collects `imageio_ffmpeg` whole — that last one
-carries a binary, which is what [Auto Creator](auto-creator.md) falls back to
+carries a binary, which is what the [Creator](creator.md) falls back to
 when there is no ffmpeg on `PATH`.

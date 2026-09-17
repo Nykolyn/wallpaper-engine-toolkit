@@ -1,6 +1,6 @@
 # Wallpaper Engine Toolkit — documentation
 
-Six tools in one window, each solving a different part of the same problem:
+Five tools in one window, each solving a different part of the same problem:
 keeping a large Wallpaper Engine library moving without doing it by hand.
 
 Start with [Getting started](getting-started.md) if this is a fresh install.
@@ -10,8 +10,7 @@ Start with [Getting started](getting-started.md) if this is a fresh install.
 | Page | What the tab is for | Reach for it when |
 |---|---|---|
 | [Copier](copier.md) | Duplicates existing wallpaper folders N times each. | A playlist needs a wallpaper weighted more heavily, or you want copies to edit independently. |
-| [Creator](creator.md) | Turns video clips **plus previews you already have** into Wallpaper Engine projects. | You render your own previews and want control over each one. |
-| [Auto Creator](auto-creator.md) | Turns video clips into projects with **no preview needed** — it renders one from the video. | You have a folder of clips and want them usable as wallpapers now. |
+| [Creator](creator.md) | Turns video clips into Wallpaper Engine projects, **no preview needed** — it renders one from the video. | You have a folder of clips and want them usable as wallpapers now. |
 | [Rotator](rotator.md) | Moves folders between a reserve and `myprojects`, with duplicate and history handling. | Your library is far larger than one playlist, and you cycle through it. |
 | [Tracker](tracker.md) | Reports how far Wallpaper Engine has got through the active playlist. | You want to know when the playlist is finished, so the next rotation is due. |
 | [Review](review.md) | Groups the week's new wallpapers by author, and says what each has published since you last looked. | You triage new wallpapers weekly and care who made them. |

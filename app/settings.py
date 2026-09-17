@@ -29,17 +29,15 @@ _MYPROJECTS = steam_paths.as_text(steam_paths.myprojects_dir())
 DEFAULT_COPIER_DEST = _MYPROJECTS
 DEFAULT_COPIER_COUNT = 3
 
-# Creator (was DEFAULT_SOURCE / DEFAULT_TARGET / DEFAULT_PREVIEWS in
-# wallpapers_creator/ui.py)
+# Creator (builds projects from videos alone, generating the preview)
 DEFAULT_CREATOR_SOURCE = ""
 DEFAULT_CREATOR_TARGET = _MYPROJECTS
-DEFAULT_CREATOR_PREVIEWS = ""
 DEFAULT_CREATOR_MODE = "Move"
 
-# Auto Creator (builds projects from videos alone, generating the preview)
-DEFAULT_AUTO_SOURCE = ""
-DEFAULT_AUTO_TARGET = _MYPROJECTS
-DEFAULT_AUTO_MODE = "Move"
+# The Creator tab was once two tabs, and the surviving one stored its settings
+# under "autocreator". Nothing else remembers that, so the rename is done here,
+# once, on the way in.
+_RENAMED_SECTIONS = {"autocreator": "creator"}
 
 
 def app_data_dir() -> Path:
@@ -65,9 +63,24 @@ class Settings:
     @classmethod
     def load(cls) -> "Settings":
         try:
-            return cls(json.loads(SETTINGS_PATH.read_text(encoding="utf-8")))
+            data = json.loads(SETTINGS_PATH.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             return cls({})
+        return cls(cls._rename_sections(data))
+
+    @staticmethod
+    def _rename_sections(data: dict) -> dict:
+        """Carry a renamed tab's settings over to its new section name.
+
+        The old name is dropped only once its values are somewhere else, and a
+        section that already exists under the new name wins — it is the one the
+        app has been writing to.
+        """
+        for old_name, new_name in _RENAMED_SECTIONS.items():
+            stale = data.pop(old_name, None)
+            if isinstance(stale, dict) and stale and not data.get(new_name):
+                data[new_name] = stale
+        return data
 
     def save(self) -> None:
         try:

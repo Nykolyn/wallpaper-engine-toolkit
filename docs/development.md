@@ -24,8 +24,7 @@ app/
 ├── engines/
 │   ├── steam_paths.py    where Steam, its libraries and Wallpaper Engine are
 │   ├── copier.py         verbatim  wallpaper_copier/copier.py
-│   ├── creator.py        verbatim  wallpapers_creator/core.py
-│   ├── autocreator.py    ffmpeg preview.gif + reused folder/json logic
+│   ├── creator.py        projects from videos: ffmpeg preview.gif + project.json
 │   ├── tracker.py        playlist progress
 │   ├── wallpaper_timer.py  the countdown, and the PLPV0005 parser
 │   ├── we_memory.py      reading wallpaper64.exe's timer, read-only
@@ -41,7 +40,7 @@ app/
 │       ├── core.py       + the [protected] rule
 │       └── worker.py     verbatim
 └── ui/
-    ├── copier_tab.py, creator_tab.py, auto_creator_tab.py
+    ├── copier_tab.py, creator_tab.py
     ├── rotator_tab.py, cleanup_dialog.py
     ├── tracker_tab.py
     ├── review_tab.py, gallery.py, credentials.py

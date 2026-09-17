@@ -1,118 +1,69 @@
-"""
-core.py — Логика создания проектов Wallpaper Engine из видеофайлов.
+"""creator.py — Build Wallpaper Engine projects from videos alone.
 
-Содержит:
-  * ClipItem      — одно видео + найденный к нему превью (gif/png/jpg)
-  * find_preview  — поиск превью по имени (повторяет логику shell-скрипта)
-  * scan_source   — сканирование папки-источника, валидация
-  * BuildEngine   — фоновый движок сборки проектов (отдельный поток)
+A Wallpaper Engine video wallpaper is a folder holding three things: the video,
+a preview image, and a project.json describing them. This builds them in bulk,
+and *generates* the preview straight from the video with ffmpeg — so a folder of
+clips needs nothing else to become a folder of working wallpapers.
 
-Что делает движок для каждого валидного клипа:
-  1. Создаёт папку  target/<имя>-<случайный_суффикс>
-  2. Перемещает (или копирует) видео внутрь
-  3. Копирует превью как preview.<ext>
-  4. Пишет project.json в формате Wallpaper Engine
-Клипы без найденного превью ПРОПУСКАЮТСЯ.
+For every video in the source folder it:
+  1. Creates  target/<name>-<random_suffix>
+  2. Renders  preview.gif  from the video (square 1:1, 5 s, skipping the first second)
+  3. Moves (or copies) the video inside
+  4. Writes   project.json  in Wallpaper Engine format
+
+An earlier version of this engine required a matching preview file to already
+exist for every clip, and skipped the ones without. That turned out to be the
+whole of the work — nobody has forty previews lying around — so the requirement
+is gone and the rendering below replaced it. The folder naming and the
+project.json shape are carried over from it unchanged, so wallpapers built by
+either version are indistinguishable.
+
+ffmpeg is located on PATH, or falls back to the binary bundled with the
+imageio-ffmpeg package. If the GIF cannot be produced the engine falls back to
+a single still frame (preview.jpg); if even that fails the item is skipped and
+its video is left untouched in the source folder.
 """
 
 import json
 import os
-import random
+import re
 import shutil
+import subprocess
+import sys
+import random
 import threading
 import time
 
-# Расширения превью в порядке приоритета (как в исходном скрипте — сначала gif).
-PREVIEW_EXTS = (".gif", ".png", ".jpg", ".jpeg")
+# Folder naming + project.json come from the Creator engine unchanged.
 
-# Счётчик для гарантии уникальности суффикса в пределах одной секунды.
-_uuid_counter = 0
+# Video extensions Wallpaper Engine can use.
 
+# ---- Naming a project, and describing it -----------------------------------
+#
+# Both of these came from the earlier preview-matching engine and are kept
+# exactly as they were, so a project built now is byte-identical in shape to
+# one built then.
 
-def preview_base_name(filename):
-    """
-    Повторяет preview_base_name из shell-скрипта.
-
-    Если имя заканчивается на '-<цифры>' (например 'freya-12'), отрезает суффикс
-    и возвращает базовое имя ('freya'). Иначе возвращает имя без изменений.
-    """
-    if "-" not in filename:
-        return filename
-    head, _, suffix = filename.rpartition("-")
-    if suffix and suffix.isdigit():
-        return head
-    return filename
-
-
-def find_preview(previews_dir, filename):
-    """
-    Ищет файл превью для данного имени видео.
-
-    Порядок поиска: точное имя, затем базовое имя (без числового суффикса);
-    для каждого — расширения из PREVIEW_EXTS.
-    Возвращает полный путь к найденному файлу или None.
-    """
-    candidates = [filename]
-    base = preview_base_name(filename)
-    if base != filename:
-        candidates.append(base)
-
-    for name in candidates:
-        for ext in PREVIEW_EXTS:
-            path = os.path.join(previews_dir, name + ext)
-            if os.path.isfile(path):
-                return path
-    return None
+# Keeps two suffixes made in the same second from colliding.
+_suffix_counter = 0
 
 
 def generate_suffix():
+    """A folder suffix: epoch, pid, six random digits, and a counter.
+
+    Wallpaper Engine's own editor suffixes project folders the same way, and two
+    clips of the same name have to land in two folders. The counter is the part
+    that is not in the original recipe: epoch plus pid plus randint collides
+    often enough to matter when forty projects are built in one second.
     """
-    Случайный суффикс для имени папки (как в скрипте: epoch + pid + rand6).
-    Добавлен счётчик, чтобы суффиксы не совпадали в пределах одной секунды.
-    """
-    global _uuid_counter
-    _uuid_counter += 1
-    return f"{int(time.time())}{os.getpid()}{random.randint(0, 999999):06d}{_uuid_counter}"
-
-
-class ClipItem:
-    """Одно видео из папки-источника и привязанное к нему превью."""
-
-    def __init__(self, video_path, previews_dir):
-        self.video_path = os.path.normpath(video_path)
-        self.basename = os.path.basename(self.video_path)        # freya.mp4
-        self.filename = os.path.splitext(self.basename)[0]        # freya
-        self.preview_path = find_preview(previews_dir, self.filename)
-
-    @property
-    def valid(self):
-        """Клип готов к сборке, если превью найдено."""
-        return self.preview_path is not None
-
-    @property
-    def preview_ext(self):
-        if self.preview_path:
-            return os.path.splitext(self.preview_path)[1].lower()
-        return None
-
-
-def scan_source(source_dir, previews_dir):
-    """
-    Сканирует папку-источник и возвращает список ClipItem (отсортирован по имени).
-    """
-    items = []
-    if not os.path.isdir(source_dir):
-        return items
-    for entry in sorted(os.listdir(source_dir)):
-        if entry.lower().endswith(".mp4"):
-            full = os.path.join(source_dir, entry)
-            if os.path.isfile(full):
-                items.append(ClipItem(full, previews_dir))
-    return items
+    global _suffix_counter
+    _suffix_counter += 1
+    return (f"{int(time.time())}{os.getpid()}"
+            f"{random.randint(0, 999999):06d}{_suffix_counter}")
 
 
 def build_project_json(basename, filename, preview_name):
-    """Формирует словарь project.json в формате Wallpaper Engine."""
+    """The project.json Wallpaper Engine expects for a video wallpaper."""
     return {
         "file": basename,
         "general": {
@@ -135,15 +86,168 @@ def build_project_json(basename, filename, preview_name):
     }
 
 
+VIDEO_EXTS = (".mp4", ".webm", ".mkv", ".mov", ".avi", ".m4v")
+
+# --- Preview GIF settings -------------------------------------------------
+GIF_SIZE = 480        # px; previews are square (1:1)
+GIF_FPS = 15
+GIF_DURATION = 5.0    # seconds of video captured
+GIF_SKIP = 1.0        # seconds skipped at the start (avoids fade-ins/black frames)
+
+
+def _scale_filter(size=GIF_SIZE):
+    """ffmpeg filter producing a square (1:1) frame.
+
+    A centre square of the smaller dimension is cropped first, then scaled to
+    size x size — so nothing is stretched and no black bars are added. The
+    commas inside min() must stay escaped or ffmpeg reads them as filter
+    separators.
+    """
+    return (r"crop=min(iw\,ih):min(iw\,ih)," f"scale={size}:{size}:flags=lanczos")
+
+# Hide the console window ffmpeg would otherwise flash in a windowed build.
+_NO_WINDOW = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
+
+
+def find_ffmpeg():
+    """Return a path to an ffmpeg executable, or None if none is available."""
+    exe = shutil.which("ffmpeg")
+    if exe:
+        return exe
+    try:
+        import imageio_ffmpeg
+        return imageio_ffmpeg.get_ffmpeg_exe()
+    except Exception:  # noqa: BLE001 — package missing or binary not downloaded
+        return None
+
+
+def _run(args):
+    """Run ffmpeg quietly; return the CompletedProcess."""
+    return subprocess.run(
+        args, capture_output=True, text=True, errors="replace",
+        creationflags=_NO_WINDOW,
+    )
+
+
+def probe_duration(ffmpeg, video_path):
+    """Video length in seconds, parsed from ffmpeg's banner. None if unknown."""
+    proc = _run([ffmpeg, "-i", video_path])
+    m = re.search(r"Duration: (\d+):(\d+):(\d+\.?\d*)", proc.stderr or "")
+    if not m:
+        return None
+    h, mn, s = m.groups()
+    return int(h) * 3600 + int(mn) * 60 + float(s)
+
+
+def _segment(duration):
+    """Pick (start, length) for the preview given the clip's duration."""
+    if duration is None:
+        return GIF_SKIP, GIF_DURATION
+    if duration <= GIF_SKIP + 1.0:
+        # Too short to skip anything — take it from the top.
+        return 0.0, max(min(GIF_DURATION, duration), 0.5)
+    return GIF_SKIP, max(min(GIF_DURATION, duration - GIF_SKIP), 0.5)
+
+
+def make_gif(ffmpeg, video_path, out_path, duration=None,
+             size=GIF_SIZE, fps=GIF_FPS):
+    """Render a square (1:1) animated GIF preview. Returns True on success.
+
+    Two-pass palettegen/paletteuse — a single pass produces badly banded GIFs.
+    """
+    start, length = _segment(duration)
+    vf = f"fps={fps}," + _scale_filter(size)
+    palette = out_path + ".palette.png"
+
+    try:
+        r1 = _run([
+            ffmpeg, "-y", "-ss", str(start), "-t", str(length), "-i", video_path,
+            "-vf", vf + ",palettegen=stats_mode=diff", palette,
+        ])
+        if r1.returncode != 0 or not os.path.isfile(palette):
+            return False
+
+        r2 = _run([
+            ffmpeg, "-y", "-ss", str(start), "-t", str(length), "-i", video_path,
+            "-i", palette,
+            "-lavfi", vf + "[x];[x][1:v]paletteuse=dither=bayer:bayer_scale=5"
+                           ":diff_mode=rectangle",
+            "-loop", "0", out_path,
+        ])
+        ok = r2.returncode == 0 and os.path.isfile(out_path) \
+            and os.path.getsize(out_path) > 0
+        return ok
+    finally:
+        try:
+            os.remove(palette)
+        except OSError:
+            pass
+
+
+def make_still(ffmpeg, video_path, out_path, duration=None, size=GIF_SIZE):
+    """Fallback: extract a single square frame as a static preview."""
+    start, _ = _segment(duration)
+    r = _run([
+        ffmpeg, "-y", "-ss", str(start), "-i", video_path,
+        "-frames:v", "1", "-vf", _scale_filter(size), out_path,
+    ])
+    return r.returncode == 0 and os.path.isfile(out_path) \
+        and os.path.getsize(out_path) > 0
+
+
+class VideoItem:
+    """One video in the source folder."""
+
+    def __init__(self, video_path):
+        self.video_path = os.path.normpath(video_path)
+        self.basename = os.path.basename(self.video_path)          # clip.mp4
+        self.filename = os.path.splitext(self.basename)[0]         # clip
+        self.size = self._safe_size(self.video_path)
+
+    @staticmethod
+    def _safe_size(path):
+        try:
+            return os.path.getsize(path)
+        except OSError:
+            return 0
+
+    @property
+    def valid(self):
+        """Every readable video is buildable — the preview is generated."""
+        return os.path.isfile(self.video_path)
+
+
+def scan_source(source_dir):
+    """Scan the source folder and return VideoItems, sorted by name."""
+    items = []
+    if not os.path.isdir(source_dir):
+        return items
+    for entry in sorted(os.listdir(source_dir)):
+        if entry.lower().endswith(VIDEO_EXTS):
+            full = os.path.join(source_dir, entry)
+            if os.path.isfile(full):
+                items.append(VideoItem(full))
+    return items
+
+
+def human_size(num_bytes):
+    for unit in ("B", "KB", "MB", "GB", "TB"):
+        if abs(num_bytes) < 1024.0:
+            return f"{num_bytes:.1f} {unit}"
+        num_bytes /= 1024.0
+    return f"{num_bytes:.1f} PB"
+
+
 class BuildEngine:
     """
-    Фоновый движок сборки проектов Wallpaper Engine.
+    Background engine that turns bare videos into Wallpaper Engine projects.
 
-    Колбэки (опциональны, вызываются из рабочего потока):
-        log(text)               — строка в лог
-        progress(done, total)   — общий прогресс по клипам
-        item_done(name, status) — итог по одному клипу ('ok' | 'failed')
-        finished(report)        — завершение (report = список dict)
+    Callbacks (optional, called from the worker thread) — same shape as
+    creator.BuildEngine so the UI layer stays uniform:
+        log(text)               — a log line
+        progress(done, total)   — overall progress by video
+        item_done(name, status) — per-video result ('ok' | 'failed')
+        finished(report)        — completion (report = list of dict)
     """
 
     def __init__(self, log=None, progress=None, item_done=None, finished=None):
@@ -155,7 +259,7 @@ class BuildEngine:
         self._cancel = threading.Event()
         self._thread = None
 
-    # ----- управление потоком -------------------------------------------------
+    # ----- thread control -----------------------------------------------------
 
     def start(self, items, target_dir, move=True):
         if self.is_running():
@@ -173,63 +277,91 @@ class BuildEngine:
     def is_running(self):
         return self._thread is not None and self._thread.is_alive()
 
-    # ----- основная логика ----------------------------------------------------
+    # ----- main logic ---------------------------------------------------------
 
     def _run(self, items, target_dir, move):
         report = []
-        valid = [it for it in items if it.valid]
-        skipped = [it for it in items if not it.valid]
-
-        total = len(valid)
+        total = len(items)
         self._progress(0, total)
-        self._log(
-            f"[START] К сборке: {total} клип(ов), "
-            f"пропущено без превью: {len(skipped)}. Режим: "
-            f"{'перемещение' if move else 'копирование'}."
-        )
 
-        for it in skipped:
-            self._log(f"[SKIP]  {it.basename} — превью не найдено.")
+        ffmpeg = find_ffmpeg()
+        if not ffmpeg:
+            self._log("[ERROR] ffmpeg not found. Install it or add the "
+                      "imageio-ffmpeg package (pip install imageio-ffmpeg).")
+            self._finished(report)
+            return
+
+        self._log(
+            f"[START] Building {total} video(s). Mode: "
+            f"{'move' if move else 'copy'}. Preview: {GIF_SIZE}×{GIF_SIZE} (1:1) "
+            f"@ {GIF_FPS}fps, {GIF_DURATION:g}s from {GIF_SKIP:g}s."
+        )
 
         try:
             os.makedirs(target_dir, exist_ok=True)
         except OSError as exc:
-            self._log(f"[ERROR] Не удалось создать целевую папку: {exc}")
+            self._log(f"[ERROR] Could not create target folder: {exc}")
             self._finished(report)
             return
 
         done = 0
-        for it in valid:
+        for it in items:
             if self._cancel.is_set():
-                self._log("[CANCEL] Операция отменена пользователем.")
+                self._log("[CANCEL] Operation cancelled by user.")
                 break
-            entry = self._process_item(it, target_dir, move)
+            entry = self._process_item(it, target_dir, move, ffmpeg)
             report.append(entry)
             self._item_done(it.basename, entry["status"])
             done += 1
             self._progress(done, total)
 
-        self._print_summary(report, len(skipped))
+        self._print_summary(report)
         self._finished(report)
 
-    def _process_item(self, item, target_dir, move):
-        entry = {"name": item.basename, "status": "failed", "folder": None}
+    def _process_item(self, item, target_dir, move, ffmpeg):
+        entry = {"name": item.basename, "status": "failed", "folder": None,
+                 "preview": None}
+        folder = None
         try:
             folder_name = f"{item.filename}-{generate_suffix()}"
             folder = os.path.join(target_dir, folder_name)
             os.makedirs(folder, exist_ok=True)
             entry["folder"] = folder_name
 
-            # --- видео ---
+            # --- preview: GIF, falling back to a still frame ---
+            self._log(f"[GIF]   {item.basename} → rendering preview…")
+            duration = probe_duration(ffmpeg, item.video_path)
+            gif_path = os.path.join(folder, "preview.gif")
+            preview_name = None
+
+            if make_gif(ffmpeg, item.video_path, gif_path, duration):
+                preview_name = "preview.gif"
+                self._log(
+                    f"        ⤷ preview.gif ({human_size(os.path.getsize(gif_path))})")
+            else:
+                self._log(f"[WARN]  {item.basename}: GIF failed, trying a still frame…")
+                jpg_path = os.path.join(folder, "preview.jpg")
+                if make_still(ffmpeg, item.video_path, jpg_path, duration):
+                    preview_name = "preview.jpg"
+                    self._log("        ⤷ preview.jpg (static fallback)")
+
+            if not preview_name:
+                self._log(f"[ERROR] {item.basename}: could not create any preview.")
+                self._cleanup(folder)
+                return entry
+            entry["preview"] = preview_name
+
+            if self._cancel.is_set():
+                self._cleanup(folder)
+                self._log(f"[CANCEL] {item.basename}: rolled back.")
+                return entry
+
+            # --- video ---
             dst_video = os.path.join(folder, item.basename)
             if move:
                 shutil.move(item.video_path, dst_video)
             else:
                 shutil.copy2(item.video_path, dst_video)
-
-            # --- превью ---
-            preview_name = "preview" + item.preview_ext
-            shutil.copy2(item.preview_path, os.path.join(folder, preview_name))
 
             # --- project.json ---
             data = build_project_json(item.basename, item.filename, preview_name)
@@ -238,16 +370,27 @@ class BuildEngine:
 
             entry["status"] = "ok"
             self._log(f"[OK]    {folder_name}")
-        except Exception as exc:  # noqa: BLE001 — один сбой не валит весь процесс
+        except Exception as exc:  # noqa: BLE001 — one failure must not stop the run
             self._log(f"[ERROR] {item.basename}: {exc}")
+            if folder:
+                self._cleanup(folder)
         return entry
 
-    def _print_summary(self, report, skipped):
+    @staticmethod
+    def _cleanup(folder):
+        """Remove a half-built project folder so nothing broken is left behind."""
+        try:
+            shutil.rmtree(folder)
+        except OSError:
+            pass
+
+    def _print_summary(self, report):
         ok = sum(1 for e in report if e["status"] == "ok")
         failed = sum(1 for e in report if e["status"] == "failed")
+        gifs = sum(1 for e in report if e["preview"] == "preview.gif")
+        stills = sum(1 for e in report if e["preview"] == "preview.jpg")
         self._log("")
         self._log("=" * 50)
-        self._log(
-            f"ИТОГ: создано {ok}, ошибок {failed}, пропущено {skipped}."
-        )
+        self._log(f"RESULT: created {ok}, failed {failed} "
+                  f"(previews: {gifs} gif, {stills} still).")
         self._log("=" * 50)

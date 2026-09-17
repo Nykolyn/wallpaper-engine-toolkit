@@ -5,7 +5,6 @@ from PySide6.QtWidgets import QMainWindow
 
 from .animations import FadingTabWidget
 from .settings import Settings
-from .ui.auto_creator_tab import AutoCreatorTab
 from .ui.copier_tab import CopierTab
 from .ui.creator_tab import CreatorTab
 from .ui.rotator_tab import RotatorTab
@@ -29,7 +28,6 @@ class MainWindow(QMainWindow):
         # manages its own verbatim Config/History.
         self.tabs.addTab(CopierTab(self.settings), "Copier")
         self.tabs.addTab(CreatorTab(self.settings), "Creator")
-        self.tabs.addTab(AutoCreatorTab(self.settings), "Auto Creator")
         self.tabs.addTab(RotatorTab(), "Rotator")
         self.tabs.addTab(TrackerTab(self.settings), "Tracker")
         self.tabs.addTab(ReviewTab(self.settings), "Review")
