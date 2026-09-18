@@ -4,6 +4,7 @@ from __future__ import annotations
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QMainWindow
 
+from . import __version__
 from .animations import FadingTabWidget
 from .settings import Settings
 from .ui.copier_tab import CopierTab
@@ -18,7 +19,7 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.settings = Settings.load()
 
-        self.setWindowTitle("Wallpaper Engine Toolkit")
+        self.setWindowTitle(f"Wallpaper Engine Toolkit {__version__}")
         self.resize(1040, 780)
 
         self.tabs = FadingTabWidget()

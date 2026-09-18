@@ -6,24 +6,28 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-### Fixed
+## [1.0.0] - 2026-09-18
 
-- **The window froze during a Review** — while counting what was new and
-  clicking through authors. Every call from Python into Qt waits for Python's
-  global lock whenever another thread is busy in Python, and the gallery's
-  animation made hundreds of those calls a second. Frames are now decoded and
-  scaled by Qt alone, the animation pauses itself when the window falls behind,
-  and the interpreter hands the lock over ten times sooner. On a real page with
-  a busy thread beside it the window went from never answering to at most 4 ms
-  late. See [Gallery](docs/gallery.md#and-never-at-the-windows-expense).
-- **The gallery kept every preview it had ever shown in memory** — 945 MB after
-  ninety authors. It keeps the page on screen, and stays at 150–200 MB.
-- Turning a page no longer leaves the previous page's downloads queued ahead of
-  the one on screen.
-- "Count what is new" and a click on an author it had not reached yet no longer
-  fetch the same author twice at once.
-- Noticing a wallpaper subscribed elsewhere no longer lists Steam's workshop
-  folder on the GUI thread every four seconds.
+### Added
+
+- **Versions.** The toolkit has a version — 1.0.0 is the first — shown in
+  the window title, by `--version`, and on the exe's Details tab. Every change
+  that reaches `main` raises it and gets a section here, and merging it tags
+  `vX.Y.Z` and publishes a GitHub release with that section as its notes. See
+  [Versions](CONTRIBUTING.md#versions).
+- **Hang logs.** If the window or the tray stops answering for five seconds,
+  the stack of every thread goes to `data/window-hangs.log` or
+  `data/tracker-hangs.log`, written while it is still stuck.
+- `--tab NAME` opens the window on a given tab.
+- `app/engines/steam_paths.py` — locates Steam, its libraries, and Wallpaper
+  Engine within them.
+- Documentation covering every tab and how the pieces fit together, under
+  [`docs/`](docs/).
+- **Tags for built wallpapers.** The Creator writes Wallpaper Engine's genre
+  tags into each `project.json`, set for a whole batch and overridable per clip.
+  A card follows the batch until it is given tags of its own, and "deliberately
+  untagged" is a state distinct from "not decided". The dialog offers the 25
+  tags Wallpaper Engine uses and takes free text for anything else.
 
 ### Changed
 
@@ -49,7 +53,6 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the open window forward instead of starting another. Its Tracker tab looks
   for itself, on the tray's schedule — about 4 ms a look, taken only when
   Wallpaper Engine writes.
-
 - **Renamed to Wallpaper Engine Toolkit** (from "Wallpaper Suite"). The window
   title, the built executable and the logon task all carry the new name.
   An existing autostart entry registered under the old name is migrated on the
@@ -64,18 +67,6 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   takes the cluster host from `DB_CLUSTER` in the `.env` it reads, or from the
   `WET_DB_CLUSTER` environment variable.
 
-### Added
-
-- **Hang logs.** If the window or the tray stops answering for five seconds,
-  the stack of every thread goes to `data/window-hangs.log` or
-  `data/tracker-hangs.log`, written while it is still stuck.
-- `--tab NAME` opens the window on a given tab.
-
-- `app/engines/steam_paths.py` — locates Steam, its libraries, and Wallpaper
-  Engine within them.
-- Documentation covering every tab and how the pieces fit together, under
-  [`docs/`](docs/).
-
 ### Removed
 
 - **The preview-matching Creator.** There were two creator tabs: one that
@@ -88,17 +79,28 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   indistinguishable. Settings move from the `autocreator` section of
   `data/suite.json` to `creator` on first start.
 
-### Added
-
-- **Tags for built wallpapers.** The Creator writes Wallpaper Engine's genre
-  tags into each `project.json`, set for a whole batch and overridable per clip.
-  A card follows the batch until it is given tags of its own, and "deliberately
-  untagged" is a state distinct from "not decided". The dialog offers the 25
-  tags Wallpaper Engine uses and takes free text for anything else.
-
 ### Fixed
 
+- **The window froze during a Review** — while counting what was new and
+  clicking through authors. Every call from Python into Qt waits for Python's
+  global lock whenever another thread is busy in Python, and the gallery's
+  animation made hundreds of those calls a second. Frames are now decoded and
+  scaled by Qt alone, the animation pauses itself when the window falls behind,
+  and the interpreter hands the lock over ten times sooner. On a real page with
+  a busy thread beside it the window went from never answering to at most 4 ms
+  late. See [Gallery](docs/gallery.md#and-never-at-the-windows-expense).
+- **The gallery kept every preview it had ever shown in memory** — 945 MB after
+  ninety authors. It keeps the page on screen, and stays at 150–200 MB.
+- Turning a page no longer leaves the previous page's downloads queued ahead of
+  the one on screen.
+- "Count what is new" and a click on an author it had not reached yet no longer
+  fetch the same author twice at once.
+- Noticing a wallpaper subscribed elsewhere no longer lists Steam's workshop
+  folder on the GUI thread every four seconds.
 - **No genre is hard-coded any more.** Every wallpaper this tool built came out
   tagged `Girls`, a literal inherited from the tool the engine grew out of. It
   was right for one library and wrong for every other. Nothing is tagged now
   unless you ask for it.
+
+[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/releases/tag/v1.0.0

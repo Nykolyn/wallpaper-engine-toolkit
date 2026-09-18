@@ -18,6 +18,19 @@ if exist ".venv\Scripts\pyinstaller.exe" (
 ) else (
     set "PYI=pyinstaller"
 )
+if exist ".venv\Scripts\python.exe" (
+    set "PY=.venv\Scripts\python.exe"
+) else (
+    set "PY=python"
+)
+
+:: The exe's Details tab carries the version from app\__init__.py.
+%PY% tools\release.py version-file build\version_info.txt
+if errorlevel 1 (
+    echo BUILD FAILED - could not write the version resource.
+    pause
+    exit /b 1
+)
 
 :: This file must stay CRLF and plain ASCII. cmd.exe reads it in the OEM code
 :: page, and a caret continuation followed by a bare LF does not continue - the
@@ -43,6 +56,7 @@ if exist ".venv\Scripts\pyinstaller.exe" (
   --windowed ^
   --name "WallpaperEngineToolkit" ^
   --icon "assets\icon.ico" ^
+  --version-file "build\version_info.txt" ^
   --add-data "assets\icon.ico;assets" ^
   --collect-submodules app ^
   --collect-all imageio_ffmpeg ^

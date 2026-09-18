@@ -24,6 +24,14 @@ jobs:
       - name: Install dependencies
         run: python -m pip install --upgrade pip && pip install -r requirements.txt
 
+      - name: Check the version was raised and written up
+        # Every pull request is a release: a higher version in app/__init__.py
+        # and a dated CHANGELOG section for it. See CONTRIBUTING.md#versions.
+        if: github.event_name == 'pull_request'
+        run: |
+          git fetch --no-tags --depth=1 origin +refs/heads/${{ github.base_ref }}:refs/remotes/origin/${{ github.base_ref }}
+          python tools/release.py check --base origin/${{ github.base_ref }}
+
       - name: Check every module imports
         run: python run_app.py --selfcheck
 
@@ -46,3 +54,33 @@ jobs:
               exit 1
           }
           Write-Host "all test files passed"
+
+  release:
+    # A green main is a release: tag vX.Y.Z and publish the CHANGELOG section
+    # as its notes. A push that did not raise the version finds its tag already
+    # there and does nothing, so re-runs are harmless.
+    needs: tests
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Tag and publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python tools/release.py check
+          version="$(python tools/release.py version)"
+          if gh release view "v$version" >/dev/null 2>&1; then
+            echo "v$version is already released"
+            exit 0
+          fi
+          python tools/release.py notes > notes.md
+          gh release create "v$version" --target "$GITHUB_SHA"             --title "v$version" --notes-file notes.md

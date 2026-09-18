@@ -8,6 +8,7 @@ Run:
                                        #   on | off | status
     python run_app.py --selfcheck      # report what a built exe can actually
                                        #   import, and exit
+    python run_app.py --version        # print the version and exit
 """
 from __future__ import annotations
 
@@ -64,7 +65,10 @@ def _selfcheck() -> int:
     """
     from app.settings import app_data_dir
 
-    lines = [f"frozen: {bool(getattr(sys, 'frozen', False))}"]
+    from app import __version__
+
+    lines = [f"version: {__version__}",
+             f"frozen: {bool(getattr(sys, 'frozen', False))}"]
     ok = True
     for module, why in (("PySide6.QtWidgets", "the window"),
                         ("pymongo", "the authors database"),
@@ -157,6 +161,14 @@ def _migrate_autostart() -> None:
 
 
 def main():
+    # Before anything with side effects: asking the version changes nothing.
+    # A windowed build has no console, so read it redirected:
+    # `WallpaperEngineToolkit.exe --version | more`.
+    if "--version" in sys.argv[1:]:
+        from app import __version__
+        print(__version__)
+        sys.exit(0)
+
     sys.setswitchinterval(SWITCH_INTERVAL)
     QApplication.setHighDpiScaleFactorRoundingPolicy(
         Qt.HighDpiScaleFactorRoundingPolicy.PassThrough)
@@ -178,6 +190,8 @@ def main():
 
     app = QApplication(sys.argv)
     app.setApplicationName("Wallpaper Engine Toolkit")
+    from app import __version__
+    app.setApplicationVersion(__version__)
 
     tab = ""
     if "--tab" in args:

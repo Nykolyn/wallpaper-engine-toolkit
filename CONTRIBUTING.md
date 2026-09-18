@@ -89,8 +89,56 @@ running often enough to matter on a short playlist.
 3. **Update the documentation in the same pull request.** A behaviour change
    with stale docs is a half-finished change. The pages are in [`docs/`](docs/).
 
-4. **Add a line to [CHANGELOG.md](CHANGELOG.md)** under `## [Unreleased]` for
-   anything a user would notice.
+4. **Raise the version and write it up** — see [Versions](#versions). The
+   pull request cannot go green without it.
+
+## Versions
+
+Every pull request is a release. The version lives in one place —
+`__version__` in [`app/__init__.py`](app/__init__.py) — and follows
+[Semantic Versioning](https://semver.org/):
+
+| Raise | When the change… | Example |
+|---|---|---|
+| **patch** `1.0.0 → 1.0.1` | fixes something, or only touches docs, tests or the build | a freeze fixed, a doc page corrected |
+| **minor** `1.0.1 → 1.1.0` | adds something you can see or use | a new tab, a new setting, a new flag |
+| **major** `1.1.0 → 2.0.0` | breaks what was there | a setting that no longer carries over, `data/` in a shape an older build cannot read |
+
+In the same pull request, give [CHANGELOG.md](CHANGELOG.md) a section for the
+new version, newest first, under an empty `## [Unreleased]`:
+
+```
+## [Unreleased]
+
+## [1.0.1] - 2026-09-19
+
+### Fixed
+
+- **What a user would notice**, then why, in a sentence or two.
+```
+
+Use the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) headings —
+Added, Changed, Deprecated, Removed, Fixed, Security — and update the link
+references at the foot of the file (`[Unreleased]` compares from the new tag;
+the new version gets a line of its own).
+
+The `tests` workflow runs `tools/release.py check` on every pull request and
+fails it when the version is not higher than the last release on `main`, when
+it has no dated section, or when entries are left under `[Unreleased]`. Run
+the same check before pushing:
+
+```
+.venv\Scripts\python.exe tools\release.py check --base origin/main
+```
+
+Once the merge is green on `main`, the workflow tags it `vX.Y.Z` and publishes a
+GitHub release with that CHANGELOG section as its notes. The version also shows
+in the window title, in `run_app.py --version`, at the top of
+`data/selfcheck.txt`, and on the built exe's Details tab.
+
+**Two pull requests open at once** will often pick the same number. The second
+to merge rebases, takes the next number, and moves its section above the
+first's.
 
 ## What must never be committed
 
