@@ -77,6 +77,64 @@ for label, broken in (("a file that is not a playlist state", text("NOTMAGIC") +
     check(f"{label} is refused rather than half-read", refused)
 
 
+# ---- Following the two files ---------------------------------------------------
+#
+# The countdown and the tracker share one watcher, which reads each file again
+# only when a stat says it was rewritten, and numbers every read that succeeded.
+
+watched = TMP / "watched"
+(watched / "bin").mkdir(parents=True)
+files = wt.EngineFiles(watched / "config.json")
+files.refresh()
+check("with neither file there, there is nothing to follow",
+      (files.config_version, files.state_version, files.state_ok) == (0, 0, False))
+
+(watched / "config.json").write_text("{}", encoding="utf-8")
+files.refresh()
+files.refresh()
+check("a config.json that appears is one new version, however often it is looked at",
+      files.config_version == 1)
+
+parses = {"n": 0}
+real_parse = wt.parse_playlist_state
+
+
+def counted_parse(data):
+    parses["n"] += 1
+    return real_parse(data)
+
+
+wt.parse_playlist_state = counted_parse
+state_file = watched / "bin" / "playliststate.bin"
+state_file.write_bytes(state_bytes({"Monitor0": ("W:/a.mp4", ["W:/b.mp4"])}))
+os.utime(state_file, (5_000, 5_000))
+files.refresh()
+check("a state file is read and numbered",
+      files.state_ok and files.state_version == 1 and files.decks["Monitor0"].current == "W:/a.mp4")
+check("and dated by when it was written, not when it was read", files.state_written == 5_000)
+files.refresh()
+check("an unchanged state file is not read again", parses["n"] == 1 and files.state_version == 1)
+
+state_file.write_bytes(state_bytes({"Monitor0": ("W:/b.mp4", [])})[:20])
+files.refresh()
+check("one caught half-written is not taken, and is not a new version",
+      not files.state_ok and files.state_version == 1)
+check("while what was read before is kept", files.decks["Monitor0"].current == "W:/a.mp4")
+files.refresh()
+check("nor is the same broken file parsed again every second", parses["n"] == 2)
+
+state_file.write_bytes(state_bytes({"Monitor0": ("W:/b.mp4", [])}))
+os.utime(state_file, (5_600, 5_600))
+files.refresh()
+check("once written in full it is the next version",
+      files.state_ok and files.state_version == 2 and files.decks["Monitor0"].current == "W:/b.mp4")
+
+state_file.unlink()
+files.refresh()
+check("a state file that goes away leaves nothing to follow", not files.state_ok)
+wt.parse_playlist_state = real_parse
+
+
 # ---- Wallpaper Engine's pause rules ----------------------------------------------
 
 rules = wt.PlaybackRules.from_user({"playbackfocus": "pause", "playbackmaximized": "stop",

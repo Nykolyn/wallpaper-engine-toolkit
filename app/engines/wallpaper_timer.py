@@ -152,6 +152,77 @@ def parse_playlist_state(data: bytes) -> dict[str, MonitorDeck]:
     return decks
 
 
+# ---- Following Wallpaper Engine's files ---------------------------------------
+
+class EngineFiles:
+    """config.json and playliststate.bin, each read again only once rewritten.
+
+    Between them these two files are everything a program can see of Wallpaper
+    Engine changing its mind: the state file is rewritten at every wallpaper
+    change, to the second, and config.json when the engine starts, exits or
+    saves a playlist. Each is looked at with a stat — about 20 µs — and read
+    only when that says it changed, so following them every second costs
+    next to nothing.
+
+    The countdown and the tracker share one of these. Every read that succeeds
+    bumps a version number, and each follower keeps the last version it acted
+    on, so neither can swallow a change the other has not seen yet. A file
+    caught half-written fails to parse, keeps its old version, and is read again
+    on the next look.
+    """
+
+    def __init__(self, config_path: str | Path):
+        self.config_path = Path(config_path)
+        self.state_path = self.config_path.parent / STATE_FILE
+        self.config_version = 0
+        self.state_version = 0
+        self.state_written: float | None = None     # when the state read was written
+        self.decks: dict[str, MonitorDeck] = {}
+        # Whether the last look found a state file that parses. Without one there
+        # is nothing to follow, and the tracker goes back to polling.
+        self.state_ok = False
+        self._config_key: tuple | None = None
+        self._state_key: tuple | None = None
+        self._broken_key: tuple | None = None
+
+    @staticmethod
+    def _key(path: Path) -> tuple | None:
+        # Size as well as time: two writes inside one tick of the file-time
+        # clock would otherwise look like one.
+        try:
+            st = path.stat()
+        except OSError:
+            return None
+        return st.st_mtime_ns, st.st_size
+
+    def refresh(self) -> None:
+        key = self._key(self.config_path)
+        if key is not None and key != self._config_key:
+            self._config_key = key
+            self.config_version += 1
+
+        key = self._key(self.state_path)
+        if key is None:
+            self.state_ok = False
+            return
+        if key in (self._state_key, self._broken_key):
+            return
+        try:
+            decks = parse_playlist_state(self.state_path.read_bytes())
+        except (OSError, ValueError):
+            # Tried once per version of the file: one written half-way changes
+            # again when it is finished, one this cannot parse at all is not
+            # read again every second for nothing.
+            self._broken_key = key
+            self.state_ok = False
+            return
+        self._state_key = key
+        self.state_version += 1
+        self.state_written = key[0] / 1e9
+        self.decks = decks
+        self.state_ok = True
+
+
 # ---- Settings -----------------------------------------------------------------
 
 @dataclass
@@ -555,9 +626,13 @@ class WallpaperTimer:
                  clock: Callable[[], float] = time.time,
                  save_path: Path | None = SAVE_PATH,
                  open_memory: Callable[[int], "we_memory.Memory"] | None = we_memory.ProcessMemory,
-                 background: bool = True):
+                 background: bool = True,
+                 files: EngineFiles | None = None):
         self.config_path = Path(config_path)
         self.state_path = self.config_path.parent / STATE_FILE
+        # Shared with the tracker when the tray runs both, so the two files are
+        # looked at once a second rather than once per reader.
+        self.files = files or EngineFiles(self.config_path)
         self.find_engine = find_engine
         self.measure_screens = measure_screens
         self.find_displays = find_displays
@@ -569,7 +644,7 @@ class WallpaperTimer:
         self.rects: dict[str, Rect] = {}
         self.clocks: dict[str, MonitorClock] = {}
         self.countdowns: dict[str, Countdown] = {}
-        self._config_mtime = self._state_mtime = None
+        self._config_version = self._state_version = 0     # of `files`, last acted on
         self._last_tick: float | None = None
         self._last_save = 0.0
         self._engine: tuple[int, float] | None = None
@@ -601,17 +676,13 @@ class WallpaperTimer:
     # -- reading Wallpaper Engine -------------------------------------------
 
     def _read_config(self) -> None:
-        try:
-            mtime = self.config_path.stat().st_mtime
-        except OSError:
-            return
-        if mtime == self._config_mtime:
+        if self.files.config_version == self._config_version:
             return
         try:
             data = json.loads(self.config_path.read_text(encoding="utf-8-sig"))
         except (OSError, ValueError):
             return
-        self._config_mtime = mtime
+        self._config_version = self.files.config_version
         for user in data.values():
             general = user.get("general") if isinstance(user, dict) else None
             if not isinstance(general, dict):
@@ -627,18 +698,11 @@ class WallpaperTimer:
             return
 
     def _read_state(self, now: float) -> None:
-        try:
-            mtime = self.state_path.stat().st_mtime
-        except OSError:
+        if self.files.state_version == self._state_version:
             return
-        if mtime == self._state_mtime:
-            return
-        try:
-            decks = parse_playlist_state(self.state_path.read_bytes())
-        except (OSError, ValueError):
-            return
-        self._state_mtime = mtime
-        self._decks = decks
+        self._state_version = self.files.state_version
+        mtime = self.files.state_written
+        self._decks = decks = self.files.decks
         started = self._engine[1] if self._engine else None
         for monitor, deck in decks.items():
             clock = self.clocks.setdefault(monitor, MonitorClock(monitor))
@@ -831,6 +895,7 @@ class WallpaperTimer:
                     clock.known = False
                 self._forget_memory()
             self._engine = engine
+        self.files.refresh()
         self._read_config()
         if self._restored is not None:
             self._apply_saved(now)
@@ -921,10 +986,9 @@ class WallpaperTimer:
         saved, self._restored = self._restored, None
         if not self._engine or abs(saved.get("engine_started", -1) - self._engine[1]) > 2:
             return
-        try:
-            decks = parse_playlist_state(self.state_path.read_bytes())
-        except (OSError, ValueError):
+        if not self.files.state_ok:
             return
+        decks = self.files.decks
         gap = now - float(saved.get("saved_at") or now)
         for monitor, entry in (saved.get("clocks") or {}).items():
             deck = decks.get(monitor)

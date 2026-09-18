@@ -732,6 +732,63 @@ check("the old cycle is archived with the reason",
 check("the next poll does not start it over again", tracker.poll()[0].cycle_id == p.cycle_id)
 state_file.unlink()
 
+
+# ---- When to look ------------------------------------------------------------
+#
+# Every 30 seconds was nineteen looks in twenty for nothing, and a change reached
+# the count up to half a minute late. Wallpaper Engine rewrites playliststate.bin
+# at every change, so a rewrite is what calls for a look; a slow heartbeat covers
+# the rest, and without a state file to follow the old pace comes back.
+
+from app.engines.wallpaper_timer import EngineFiles                  # noqa: E402
+
+sched_dir = TMP / "schedule"
+(sched_dir / "bin").mkdir(parents=True)
+(sched_dir / "config.json").write_text("{}", encoding="utf-8")
+sched_state = sched_dir / "bin" / "playliststate.bin"
+engine_state(sched_state, {"Monitor0": ("W:/s/a.mp4", ["W:/s/b.mp4"])})
+ticks = {"t": 0.0}
+schedule = tr.PollSchedule(EngineFiles(sched_dir / "config.json"), heartbeat=300,
+                           clock=lambda: ticks["t"])
+
+
+def look() -> str | None:
+    why = schedule.due()
+    if why:
+        schedule.looked()
+    return why
+
+
+check("the first look is due at once", look() == "first look")
+check("with nothing written since, the next is not", look() is None)
+ticks["t"] += 60
+check("a minute of nothing is still nothing", look() is None)
+
+engine_state(sched_state, {"Monitor0": ("W:/s/b.mp4", [])})
+check("a rewritten state file is a reason to look", look() == "Wallpaper Engine wrote its files")
+check("once", look() is None)
+
+(sched_dir / "config.json").write_text('{"x": 1}', encoding="utf-8")
+check("so is a rewritten config.json", look() == "Wallpaper Engine wrote its files")
+
+ticks["t"] += 299
+check("the heartbeat waits its full interval", look() is None)
+ticks["t"] += 1
+check("and then looks anyway", look() == "heartbeat")
+
+schedule.due()
+schedule.looked()
+engine_state(sched_state, {"Monitor0": ("W:/s/a.mp4", ["W:/s/b.mp4"])})
+check("a file written while a look runs is still new to the next one",
+      schedule.due() == "Wallpaper Engine wrote its files")
+schedule.looked()
+
+sched_state.unlink()
+schedule.due()
+check("without a state file there is nothing to follow", not schedule.following)
+ticks["t"] += tr.FALLBACK_SECONDS
+check("so the tracker looks at the old pace instead", look() == "heartbeat")
+
 print()
 print("PASSED %d/%d" % (sum(results), len(results)))
 sys.exit(0 if all(results) else 1)

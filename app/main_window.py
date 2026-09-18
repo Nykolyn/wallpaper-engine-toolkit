@@ -13,7 +13,8 @@ from .ui.tracker_tab import TrackerTab
 
 
 class MainWindow(QMainWindow):
-    def __init__(self):
+    def __init__(self, tracker_feed=None):
+        """`tracker_feed` is the tray's, when the tray opens this window."""
         super().__init__()
         self.settings = Settings.load()
 
@@ -29,5 +30,5 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(CopierTab(self.settings), "Copier")
         self.tabs.addTab(CreatorTab(self.settings), "Creator")
         self.tabs.addTab(RotatorTab(), "Rotator")
-        self.tabs.addTab(TrackerTab(self.settings), "Tracker")
+        self.tabs.addTab(TrackerTab(self.settings, tracker_feed), "Tracker")
         self.tabs.addTab(ReviewTab(self.settings), "Review")

@@ -34,15 +34,16 @@ import ctypes
 import json
 import os
 import sys
+import time
 import uuid
 from ctypes import wintypes
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
+from typing import Callable
 
 from . import steam_paths
-from .wallpaper_timer import (
-    STATE_FILE, MonitorDeck, parse_playlist_state, wallpaper_engine_process)
+from .wallpaper_timer import EngineFiles, MonitorDeck, wallpaper_engine_process
 
 
 # ---- Where things live ----------------------------------------------------
@@ -441,19 +442,6 @@ class Cycle:
             restarted_at=d.get("restarted_at"),
             restarted_from=d.get("restarted_from"),
         )
-
-
-def read_engine_decks(config_path: str) -> tuple[dict, float | None]:
-    """Wallpaper Engine's own record of each monitor's pass, and when it was written.
-
-    ({}, None) when there is no readable state file beside config.json.
-    """
-    path = Path(config_path).parent / STATE_FILE
-    try:
-        written = path.stat().st_mtime
-        return parse_playlist_state(path.read_bytes()), written
-    except (OSError, ValueError):
-        return {}, None
 
 
 def engine_restarted(cycle: "Cycle", deck: MonitorDeck) -> bool:
@@ -977,13 +965,83 @@ class TrackerState:
         del self.archive[self.MAX_ARCHIVE:]
 
 
+# ---- When to look ---------------------------------------------------------
+#
+# The tracker used to look every 30 seconds whether or not anything had
+# happened. On a 10-minute playlist nineteen looks in twenty found nothing, and
+# each still cost about 50 ms on the tray's GUI thread — config.json parsed,
+# 1618 files opened and 1618 stat'ed on this machine — plus a rewrite of
+# tracker.json: some 2900 looks and 570 MB of rewrites a day, for about 290
+# changes. And a change still reached the count up to half a minute late, while
+# the countdown ring beside it had already started over.
+#
+# Wallpaper Engine says when something happens. It rewrites playliststate.bin
+# at every wallpaper change, a skip included, and config.json when it starts,
+# exits or saves a playlist. So the tracker looks when either file is rewritten,
+# within a second of it — every change, not one in thirty seconds, so wallpapers
+# skipped in a hurry are not lost between two looks.
+#
+# A slow heartbeat stays for what no write announces: a wallpaper deleted from
+# disk, the periodic access-time sweep, a change the files somehow failed to
+# report. And where there is no state file to follow — a Wallpaper Engine that
+# does not write one, or writes one this cannot parse — the tracker looks as
+# often as it always did, because then nothing else will tell it.
+
+HEARTBEAT_SECONDS = 300
+FALLBACK_SECONDS = 30
+# How often the two files are stat'ed. The state file is written about three
+# seconds after the change it records, so a second more is lost in the noise.
+WATCH_SECONDS = 1
+
+
+class PollSchedule:
+    """Says when the tracker should look again, from Wallpaper Engine's own writes."""
+
+    def __init__(self, files: EngineFiles, heartbeat: float = HEARTBEAT_SECONDS,
+                 clock: Callable[[], float] = time.monotonic):
+        self.files = files
+        self.heartbeat = heartbeat
+        self.clock = clock
+        self._seen: tuple[int, int] | None = None     # file versions last looked at
+        self._last: float | None = None
+
+    @property
+    def following(self) -> bool:
+        """Whether there is a state file to follow, rather than a timer to poll on."""
+        return self.files.state_ok
+
+    def due(self) -> str | None:
+        """Why the tracker should look now, or None when it need not."""
+        self.files.refresh()
+        if self._last is None:
+            return "first look"
+        if (self.files.config_version, self.files.state_version) != self._seen:
+            return "Wallpaper Engine wrote its files"
+        every = self.heartbeat if self.following else FALLBACK_SECONDS
+        if self.clock() - self._last >= every:
+            return "heartbeat"
+        return None
+
+    def looked(self) -> None:
+        """Call just before the tracker looks: what it is about to see counts as seen.
+
+        Before rather than after, so a file rewritten while the look runs is
+        still new to the next `due` — at worst one look too many, never one
+        too few.
+        """
+        self._seen = (self.files.config_version, self.files.state_version)
+        self._last = self.clock()
+
+
 # ---- The tracker ----------------------------------------------------------
 
 class Tracker:
-    """Polls Wallpaper Engine and keeps `data/tracker.json` up to date."""
+    """Reads Wallpaper Engine and keeps `data/tracker.json` up to date."""
 
-    def __init__(self, config_path: str | None = None):
+    def __init__(self, config_path: str | None = None, files: EngineFiles | None = None):
         self.config_path = config_path or find_we_config() or DEFAULT_WE_CONFIG or ""
+        # Shared with the countdown in the tray, so each file is watched once.
+        self.files = files or EngineFiles(self.config_path)
         self.error: str | None = None
         self.atime_ok = last_access_enabled()
 
@@ -1073,7 +1131,9 @@ class Tracker:
         state = TrackerState.load()
         claimed: set[str] = set()
         out: list[Progress] = []
-        decks, written = read_engine_decks(self.config_path)
+        self.files.refresh()
+        decks = self.files.decks if self.files.state_ok else {}
+        written = self.files.state_written
         engine = wallpaper_engine_process() if decks else None
 
         for view in views:
