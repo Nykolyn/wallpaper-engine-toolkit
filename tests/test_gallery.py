@@ -18,6 +18,7 @@ started for something that is actually animated.
 from __future__ import annotations
 
 import sys
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -247,12 +248,13 @@ still_view._sync_players()
 check("a still preview starts no animation", "50" not in still_view._players)
 
 still_view.model_._raw["51"] = QByteArray(b"GIF89a" + b"\x00" * 20)
+still_view.model_._images["51"] = QPixmap(gal.THUMB_W, gal.THUMB_H)
 still_view._sync_players()
 check("an animated one plays without waiting for the cursor",
       "51" in still_view._players)
 still_view._stop_all()
 check("and everything stops together when the gallery is replaced",
-      not still_view._players and not still_view.delegate.frames)
+      not still_view._players and not still_view.delegate.movies)
 
 
 # ---- Pages ------------------------------------------------------------------
@@ -332,21 +334,70 @@ on_screen = moving._on_screen_in_order()
 check("and they are the ones nearest the top, where the eye is",
       list(moving._players) == on_screen[:gal.MAX_PLAYERS])
 
-# Frames must not each repaint on the spot; they are collected and painted on
-# one clock, so the cost belongs to the page rather than to every player.
-first = on_screen[0]
-moving.delegate.frames.clear()
-moving._dirty.clear()
-moving._frame(first)
-check("a new frame marks its row rather than repainting it",
-      moving._dirty == {first} and moving._repaint.isActive())
-moving._repaint_dirty()
-check("and the clock clears what it painted", moving._dirty == set())
+# No Python runs per frame. Every call into Qt from Python gives up the GIL and
+# waits to get it back, so a scale and a pixmap per frame, eight players at 25
+# frames a second, was a queue of waits whenever another thread was busy.
+from PySide6.QtCore import SIGNAL                                 # noqa: E402
 
-moving._dirty.add(first)
+first = on_screen[0]
+movie = moving._players[first][0]
+check("a player has nothing in Python listening to its frames",
+      movie.receivers(SIGNAL("frameChanged(int)")) == 0
+      and movie.receivers(SIGNAL("updated(QRect)")) == 0)
+check("Qt scales its frames itself, to the size the still was fitted to",
+      movie.scaledSize() == moving.model_.image(first).size())
+check("the delegate paints the player's own frame",
+      moving.delegate.movies[first] is movie)
+check("and one clock repaints the page", moving._clock.isActive())
+
+
+class Viewport:
+    """Stands in for the view's viewport, to count what gets repainted."""
+
+    def __init__(self):
+        self.rects = []
+
+    def update(self, rect):
+        self.rects.append(rect)
+
+
+spy = Viewport()
+real_viewport = moving.viewport
+moving.viewport = lambda: spy
+moving._painted.clear()
+moving._last_tick = time.monotonic() - gal.FRAME_MS / 1000
+moving._tick()
+painted_first = len(spy.rects)
+moving._last_tick = time.monotonic() - gal.FRAME_MS / 1000
+moving._tick()
+check("a tick repaints every card whose frame has moved on",
+      painted_first == len(moving._players))
+check("and none whose frame has not", len(spy.rects) == painted_first)
+moving.viewport = real_viewport
+
+# Late twice running means the GUI thread is behind with something; the
+# animation stops adding to it until the clock has been on time for a while.
+now = time.monotonic()
+moving._pace(0.6, now)
+check("one late tick is not enough to stop anything", not moving.resting)
+moving._pace(0.6, now + 0.1)
+check("two in a row stop the animation",
+      moving.resting and all(m.state() == m.MovieState.Paused
+                             for m, _b in moving._players.values()))
+moving._pace(0.0, now + 0.2)
+moving._pace(0.0, now + 0.2 + gal.CALM_SECONDS / 2)
+check("it stays stopped while the window has only just caught up", moving.resting)
+moving._pace(0.0, now + 0.3 + gal.CALM_SECONDS)
+check("and starts again once it has kept up for a while",
+      not moving.resting and all(m.state() == m.MovieState.Running
+                                 for m, _b in moving._players.values()))
+
 moving._stop_one(first)
-check("a player that stops leaves no repaint owing for a row it no longer feeds",
-      first not in moving._dirty and first not in moving._players)
+check("a player that stops leaves nothing behind for a row it no longer feeds",
+      first not in moving._players and first not in moving.delegate.movies
+      and first not in moving._painted)
+moving._stop_all()
+check("and with no players the clock stops too", not moving._clock.isActive())
 
 # A still preview is never given a decoder, however many there are.
 stills = gal.GalleryView()
@@ -361,7 +412,6 @@ check("a still preview gets no decoder at all", stills._players == {})
 
 # ---- Whole pictures, not cropped ones ---------------------------------------
 
-import time                                                       # noqa: E402
 from app.settings import Settings                                 # noqa: E402
 
 # Every preview measured on an author's first page was square. A 16:10 frame
@@ -383,6 +433,46 @@ check("a square preview fills the tile exactly",
       kept.width() == gal.THUMB_W and kept.height() == gal.THUMB_H)
 check("a wide one is fitted inside it, whole, instead of cropped to fill",
       fitted.width() == gal.THUMB_W and fitted.height() == gal.THUMB_H // 2)
+
+
+# ---- Memory: only the page on screen -----------------------------------------
+#
+# Every preview of every page ever shown used to stay in memory: after clicking
+# through ninety authors, 662 previews and 945 MB. A page is thirty.
+
+kept_view = gal.GalleryView()
+kept_view.resize(900, 700)
+kept_view.show_items([wallpaper(f"m{i}") for i in range(70)])
+tile = QImage(8, 8, QImage.Format_RGB32)
+tile.fill(QColor("#447799"))
+for card in kept_view.current_page():
+    kept_view.model_.set_image(card.id, QByteArray(b"x" * 10), tile)
+check("the page on screen keeps its previews",
+      len(kept_view.model_._images) == gal.PAGE_SIZE)
+first_page = [w.id for w in kept_view.current_page()]
+kept_view.next_page()
+check("turning the page lets go of the last page's previews",
+      not set(first_page) & (set(kept_view.model_._images) | set(kept_view.model_._raw)))
+kept_view.model_.set_image(first_page[0], QByteArray(b"late"), tile)
+check("and a download for a page already left is not kept when it lands",
+      first_page[0] not in kept_view.model_._images)
+kept_view.set_page(2)
+check("showing the same page again keeps what it already had",
+      len(kept_view.model_._images) == 0 or all(
+          i in {w.id for w in kept_view.current_page()} for i in kept_view.model_._images))
+
+# And the download queue follows the page: nothing asked for a page already
+# left is still waiting ahead of the page on screen.
+queue_loader = gal.ThumbLoader(threads=1)
+queue_loader.stopped = True           # nothing runs; only the bookkeeping is tested
+for i in range(5):
+    queue_loader.request(f"q{i}", "https://example/q.jpg")
+queue_loader.retarget()
+check("a new page drops the downloads queued for the old one",
+      queue_loader._asked == set())
+queue_loader.request("q1", "https://example/q.jpg")
+check("so the new page can ask for any of them again", queue_loader._asked == {"q1"})
+queue_loader.stop()
 
 
 # ---- What a card says about a wallpaper -------------------------------------
@@ -540,6 +630,50 @@ check("pressing it again does not ask twice for the same wallpapers",
 tab.mode.setCurrentIndex(1)
 check("it is switched off when subscribing means opening Steam's page for each",
       not tab.subscribe_all_btn.isEnabled())
+
+# Noticing a subscription made elsewhere is a listing of Steam's workshop
+# folder, on a hard disk Wallpaper Engine streams from. It used to run on the
+# GUI thread every four seconds.
+import threading                                                   # noqa: E402
+
+
+class WatchedLibrary:
+    def __init__(self):
+        self.threads = []
+
+    def subscribed(self):
+        self.threads.append(threading.current_thread() is threading.main_thread())
+        return {"w2"}
+
+    def note_subscribed(self, item_id):
+        pass
+
+
+tab.library = WatchedLibrary()
+tab.gallery.show_items([wallpaper("w1"), wallpaper("w2")])
+tab._notice_subscriptions()
+tab._notice_subscriptions()           # while the first look is still out
+check("a wallpaper subscribed elsewhere is noticed",
+      wait_for(lambda: tab.gallery.showing()[1].subscribed))
+check("by looking at the folder off the GUI thread", tab.library.threads == [False])
+check("and only once while a look is already under way", len(tab.library.threads) == 1)
+check("the other stays on offer", not tab.gallery.showing()[0].subscribed)
+
+# Finished work does not stay behind as a child of the tab.
+from PySide6.QtCore import QCoreApplication, QEvent                # noqa: E402
+
+
+def tasks_alive():
+    return len([c for c in tab.children() if isinstance(c, tab_mod.Task)])
+
+
+wait_for(lambda: tab._watching is None)
+QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+before_tasks = tasks_alive()
+tab._notice_subscriptions()
+wait_for(lambda: tab._watching is None)
+QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+check("a finished look leaves no thread object behind", tasks_alive() == before_tasks)
 tab.gallery.close_loader()
 tab.close()
 check("and nothing it did touched the settings file in the project",

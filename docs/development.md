@@ -80,7 +80,9 @@ for %f in (tests\test_*.py) do .venv\Scripts\python.exe %f
 | `test_migration.py` | the identifier re-keying |
 | `test_mongo_srv.py` | SRV/TXT resolution and URI rewriting |
 | `test_review.py` | the weekly walk |
-| `test_gallery.py` | every delegate, painted in every state |
+| `test_gallery.py` | every delegate, painted in every state; memory and animation bounds |
+| `test_hang_watch.py` | a stuck GUI thread leaves its stacks in the hang log |
+| `test_window_instance.py` | one window, raised from the tray, in a process of its own |
 
 Most need **PySide6** (they build real widgets); none need Wallpaper Engine,
 windows on screen, or a network.

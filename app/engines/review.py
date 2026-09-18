@@ -251,6 +251,11 @@ class Review:
         self.library = library
         self._log = on_log or (lambda _message: None)
         self._progress = on_progress or (lambda _stage, _done, _total: None)
+        # One fetch per author at a time. "Count what is new" and a click on an
+        # author it has not reached yet used to fetch the same catalogue twice,
+        # side by side, and write the same card from two threads.
+        self._filling: dict[str, threading.Lock] = {}
+        self._filling_guard = threading.Lock()
 
     # -- phase one: who ----------------------------------------------------
 
@@ -327,7 +332,19 @@ class Review:
 
         The badge and the gallery are the same set, so one fill serves both and
         ``full`` no longer changes anything; it is kept so callers need not.
+
+        A second caller for an author already being filled waits for the first
+        and takes its answer, rather than asking Steam again.
         """
+        with self._filling_guard:
+            lock = self._filling.setdefault(card.id64, threading.Lock())
+        with lock:
+            if card.filled and card.deep and not refresh:
+                return card
+            return self._fill(card, refresh, subscribed, ever)
+
+    def _fill(self, card: AuthorCard, refresh: bool, subscribed: set[str] | None,
+              ever: set[str] | None) -> AuthorCard:
         # Both are re-read from disk each time they are asked for, so a batch
         # hands them in once rather than rebuilding them per card.
         subscribed = self.library.subscribed() if subscribed is None else subscribed
@@ -344,6 +361,7 @@ class Review:
             return card
 
         cutoff = int(visited.timestamp()) if visited else None
+        card.error = ""             # whatever went wrong last time did not now
         card.total = found.total
         card.complete = found.complete
         card.items = [

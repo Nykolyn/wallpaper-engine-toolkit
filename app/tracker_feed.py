@@ -1,10 +1,10 @@
 """The tracker, looked at whenever Wallpaper Engine does something.
 
-One feed runs wherever the count is shown. In the tray process the tray and —
-once it is opened — the toolkit window's Tracker tab share it, where they used
-to poll separately; the window only hides when closed, so its timer went on
-polling beside the tray's for the rest of the session. A toolkit window started
-on its own builds a feed of its own.
+One feed runs in each process that shows the count: the tray has one, and the
+toolkit window — a program of its own, see `window_instance` — builds another
+for its Tracker tab. Two are cheap now that a look is taken only when Wallpaper
+Engine writes; sharing one meant building the window inside the tray, where a
+window that froze took the count down with it.
 
 When to look is `PollSchedule`'s business (see engines/tracker.py): every time
 Wallpaper Engine rewrites playliststate.bin or config.json, and on a slow

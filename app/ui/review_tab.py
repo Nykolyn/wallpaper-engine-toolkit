@@ -363,9 +363,11 @@ class ReviewTab(QWidget):
         self._task: Task | None = None
         self._tasks: set[Task] = set()          # author loads in flight
         self._loading: AuthorCard | None = None
+        self._watching: Task | None = None      # a look at the workshop folder
         self._busy_count = 0
         self._status_text = ""
         self._status_kind = "muted"
+        self._styled_kind = None                # the colour the label has now
         self._summary = ""                      # what the status returns to
 
         outer = QVBoxLayout(self)
@@ -532,7 +534,11 @@ class ReviewTab(QWidget):
         """
         self._status_text = text
         self._status_kind = kind
-        self.status.setStyleSheet(theme.label_style(kind))
+        # A style sheet is re-parsed on every set, and the count sets the
+        # status once per author: only a change of colour is worth one.
+        if kind != self._styled_kind:
+            self._styled_kind = kind
+            self.status.setStyleSheet(theme.label_style(kind))
         self._fit_status()
 
     def _fit_status(self) -> None:
@@ -647,6 +653,11 @@ class ReviewTab(QWidget):
     def _finished(self) -> None:
         self._busy(False)
         self.scan_btn.setEnabled(True)
+        # Every Task is a child of the tab, and a finished one used to stay one
+        # for the rest of the session: a QThread object per author ever opened.
+        if self._task is not None:
+            self._task.deleteLater()
+            self._task = None
 
     def _failed(self, message: str) -> None:
         self._say(message, "danger")
@@ -756,6 +767,7 @@ class ReviewTab(QWidget):
     def _task_done(self, task: Task) -> None:
         self._tasks.discard(task)
         self._busy(False)
+        task.deleteLater()
 
     def _author_ready(self, card: AuthorCard) -> None:
         if self._loading is card:
@@ -884,16 +896,35 @@ class ReviewTab(QWidget):
             self._describe(self.current)
 
     def _notice_subscriptions(self) -> None:
-        """Catch wallpapers subscribed anywhere else, including Steam's page."""
-        if self.library is None or not self.isVisible():
+        """Catch wallpapers subscribed anywhere else, including Steam's page.
+
+        The look itself is a listing of Steam's workshop folder, and it runs on
+        a thread of its own. It used to run here, on the GUI thread, every four
+        seconds — and that folder sits on whatever disk Steam does, which on
+        this machine is a hard disk Wallpaper Engine is streaming video from,
+        and which Steam writes every new subscription to.
+        """
+        if self.library is None or not self.isVisible() or self._watching is not None:
             return
-        showing = [w for w in self.gallery.showing() if w and not w.subscribed]
-        if not showing:
+        if not any(w and not w.subscribed for w in self.gallery.showing()):
             return
-        on_disk = self.library.subscribed()
-        for wallpaper in showing:
-            if wallpaper.id in on_disk:
+        library = self.library
+        task = Task(lambda _step: library.subscribed(), self)
+        task.done.connect(self._subscriptions_seen)
+        task.finished.connect(lambda t=task: self._watch_done(t))
+        self._watching = task
+        task.start()
+
+    def _subscriptions_seen(self, on_disk: set) -> None:
+        for wallpaper in self.gallery.showing():
+            if wallpaper is not None and not wallpaper.subscribed \
+                    and wallpaper.id in on_disk:
                 self._mark_subscribed(wallpaper.id)
+
+    def _watch_done(self, task: Task) -> None:
+        if self._watching is task:
+            self._watching = None
+        task.deleteLater()
 
     def open_in_steam(self, item_id: str) -> None:
         """Steam's own page for this wallpaper — the path that needs no SDK."""

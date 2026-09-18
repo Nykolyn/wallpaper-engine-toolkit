@@ -591,6 +591,31 @@ check("four cards of 200 ms each take one wait, not four",
       elapsed < 0.5, )
 check("and all four are filled regardless", all(c.filled for c in cards))
 
+# "Count what is new" and a click on an author it has not reached yet used to
+# fetch the same catalogue side by side, and write the same card from two
+# threads. One fetch per author: whoever comes second waits and takes the answer.
+twice = FakeSteam(items=steam.items,
+                  authors={"76561198000000077": [wallpaper("77", "76561198000000077", 1)]},
+                  profiles={})
+twice.delay = 0.3
+same = rv.AuthorCard(id64="76561198000000077", profile=None, records=[], queued=[])
+both = rv.Review(FakeDb([]), twice, library)
+racers = [threading.Thread(target=both.fill, args=(same,)) for _ in range(2)]
+for racer in racers:
+    racer.start()
+for racer in racers:
+    racer.join()
+check("two fills of one author at once ask Steam once",
+      len(twice.author_calls) == 1 and same.deep and len(same.items) == 1)
+both.fill(same, refresh=True)
+check("while asking again on purpose still asks again", len(twice.author_calls) == 2)
+
+# An author whose fetch failed once is not marked failed for ever.
+flaky = rv.AuthorCard(id64="76561198000000077", profile=None, records=[], queued=[])
+flaky.error = "Steam timed out"
+both.fill(flaky)
+check("a fetch that works clears the error of the one before", flaky.error == "")
+
 library.subscribed, library.ever_had = real_subscribed, real_ever
 
 print()

@@ -1,6 +1,7 @@
 """Top-level window: the bundled tools as tabs under one roof."""
 from __future__ import annotations
 
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QMainWindow
 
 from .animations import FadingTabWidget
@@ -13,8 +14,7 @@ from .ui.tracker_tab import TrackerTab
 
 
 class MainWindow(QMainWindow):
-    def __init__(self, tracker_feed=None):
-        """`tracker_feed` is the tray's, when the tray opens this window."""
+    def __init__(self):
         super().__init__()
         self.settings = Settings.load()
 
@@ -30,5 +30,22 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(CopierTab(self.settings), "Copier")
         self.tabs.addTab(CreatorTab(self.settings), "Creator")
         self.tabs.addTab(RotatorTab(), "Rotator")
-        self.tabs.addTab(TrackerTab(self.settings, tracker_feed), "Tracker")
+        self.tabs.addTab(TrackerTab(self.settings), "Tracker")
         self.tabs.addTab(ReviewTab(self.settings), "Review")
+
+    def show_tab(self, name: str) -> bool:
+        """Switch to the tab with this title. False if there is none."""
+        for i in range(self.tabs.count()):
+            if self.tabs.tabText(i).casefold() == (name or "").casefold():
+                self.tabs.setCurrentIndex(i)
+                return True
+        return False
+
+    def bring_forward(self, tab: str = "") -> None:
+        """Answer a click on the tray icon, or a second launch of the program."""
+        if tab:
+            self.show_tab(tab)
+        self.show()
+        self.setWindowState((self.windowState() & ~Qt.WindowMinimized) | Qt.WindowActive)
+        self.raise_()
+        self.activateWindow()

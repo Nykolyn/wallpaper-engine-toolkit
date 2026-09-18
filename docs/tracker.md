@@ -31,13 +31,16 @@ python run_app.py --tracker
 middle; the tooltip carries `seen/total` per monitor. A balloon fires once a
 playlist has been shown end to end — that is the cue to rotate.
 
-Clicking the icon opens the main window on this tab. It is the same window each
-time, built on first use and kept when closed, so the tray goes on counting
-either way — and the tab in it shows the tray's own count rather than looking
-alongside it. A named mutex keeps autostart and a manual `run_tracker.cmd` from
-becoming two icons both looking. A toolkit window started by itself looks on its
-own; it and a tray write the same state file and merge on save, so running both
-is fine.
+Clicking the icon opens the main window on this tab — as a **program of its
+own**, at normal priority, and clicking again brings the same window forward
+rather than opening another. The window used to be built inside the tray; when
+it froze during a Review, ending it ended the count as well, and it ran at the
+below-normal priority the logon task gives the tray. Now either can stop
+without the other. The tab in it looks for itself, on the same schedule as the
+tray — a look is about 4 ms, taken only when Wallpaper Engine writes — and the
+two write the same state file and merge on save, so running both is fine. A
+named mutex keeps autostart and a manual `run_tracker.cmd` from becoming two
+icons both looking, and another keeps the window to one.
 
 **New cycle** resets the count by hand. You should rarely need it — see
 [cycles](#cycles).
