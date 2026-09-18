@@ -47,7 +47,7 @@ app/engines/data/
 | Destination | [Rotator](rotator.md) | `myprojects`, detected |
 | Duplicates | [Rotator](rotator.md) | empty — pick it |
 | Count | [Rotator](rotator.md) | 1000 |
-| Poll interval | [Tracker](tracker.md) | 30 s |
+| Safety check ("Also check every") | [Tracker](tracker.md) | 5 min — changes themselves are picked up as Wallpaper Engine writes them |
 | `config.json` path | [Tracker](tracker.md) | Wallpaper Engine's, detected |
 
 ### How the detected ones are found

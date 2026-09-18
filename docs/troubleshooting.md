@@ -72,12 +72,13 @@ Set the key in the Review tab's credentials dialog and press **Test**. See
 
 This is usually **deleted wallpapers**: Wallpaper Engine goes on listing a
 wallpaper after its folder is gone, and it can never come up again. The tracker
-detects these each poll and holds them out of the total, so the count can reach
-the end.
+looks for these every five minutes and holds them out of the total, so the
+count can reach the end.
 
-If it is still stuck, the remainder are likely **web wallpapers** (`.html`),
-which are never held open and can only be credited from access times — that
-sweep runs every ten minutes.
+If it is still stuck on a **sorted** playlist, the remainder are likely **web
+wallpapers** (`.html`), which are never held open and can only be credited from
+access times — that sweep runs every ten minutes. A random playlist is counted
+from Wallpaper Engine's own record of the pass, which has no such blind spot.
 
 ## The count jumped by a hundred after a rotation
 

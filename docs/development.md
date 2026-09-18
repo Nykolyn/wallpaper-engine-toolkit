@@ -20,13 +20,14 @@ app/
 ├── secrets.py            data/secrets.json, DPAPI-encrypted
 ├── workers.py            Qt signal bridges for the callback engines
 ├── tracker_tray.py       the tracker as a tray-only app (--tracker)
+├── tracker_feed.py       one tracker, looked at when Wallpaper Engine writes
 ├── autostart.py          the logon task, and the rename migration
 ├── engines/
 │   ├── steam_paths.py    where Steam, its libraries and Wallpaper Engine are
 │   ├── copier.py         verbatim  wallpaper_copier/copier.py
 │   ├── creator.py        projects from videos: ffmpeg preview.gif + project.json
-│   ├── tracker.py        playlist progress
-│   ├── wallpaper_timer.py  the countdown, and the PLPV0005 parser
+│   ├── tracker.py        playlist progress, and when to look at it
+│   ├── wallpaper_timer.py  the countdown, the PLPV0005 parser, the file watcher
 │   ├── we_memory.py      reading wallpaper64.exe's timer, read-only
 │   ├── steam_api.py      the Steam Web API
 │   ├── steam_ugc.py      Steamworks, for subscribing
@@ -69,8 +70,8 @@ for %f in (tests\test_*.py) do .venv\Scripts\python.exe %f
 | File | Covers |
 |---|---|
 | `test_creator.py` | project.json, and which tags win between a batch and one clip |
-| `test_tracker.py` | anchoring a cycle, rebuilding history, merging two writers |
-| `test_wallpaper_timer.py` | the PLPV0005 parser, the countdown, pause rules |
+| `test_tracker.py` | anchoring a cycle, rebuilding history, merging two writers, following the engine's deck, when to look |
+| `test_wallpaper_timer.py` | the PLPV0005 parser, the file watcher, the countdown, pause rules |
 | `test_rotator_cleanup.py` | the reserve check and what it offers to delete |
 | `test_autostart.py` | the command line, the task XML, and the rename migration |
 | `test_animations.py` | motion, by sampling real widgets over real time |
