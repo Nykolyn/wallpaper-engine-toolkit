@@ -26,9 +26,11 @@ from PySide6.QtGui import (
 from PySide6.QtWidgets import QApplication, QMenu, QSystemTrayIcon
 
 from . import autostart, theme
-from .engines.tracker import TIME_FMT, Progress, Tracker, app_data_dir, pick_primary
+from .engines.tracker import (
+    FALLBACK_SECONDS, TIME_FMT, Progress, Tracker, app_data_dir, pick_primary)
 from .engines.wallpaper_timer import Countdown, WallpaperTimer
 from .settings import Settings
+from .tracker_feed import TrackerFeed, heartbeat_setting
 
 
 # A windowed build has no console, so a start that goes wrong leaves no trace.
@@ -42,8 +44,8 @@ LOG_KEEP_LINES = 300
 TRAY_WAIT_SECONDS = 120
 TRAY_POLL_SECONDS = 2
 
-# The countdown ring moves once a second; the playlist count still polls on the
-# interval in the settings, because that is the expensive part.
+# The countdown ring moves once a second. The playlist count is looked at when
+# Wallpaper Engine rewrites its files — see TrackerFeed.
 CLOCK_TICK_MS = 1000
 # A restart found later than this (the tray was not running) is not news any more.
 RESTART_NOTICE_SECONDS = 15 * 60
@@ -122,21 +124,29 @@ def tray_icon(number: int | None, ring: float | None, paused: bool = False,
 
 
 class TrackerTray:
-    """Polls in the background and renders the result into the tray."""
+    """Follows Wallpaper Engine in the background and renders the result into the tray."""
 
     def __init__(self, app: QApplication):
         self.app = app
         self.settings = Settings.load()
-        self.tracker = Tracker(self.settings.get("tracker", "we_config", None))
         self.results: list[Progress] = []
         self.completed: set[str] = set()
         self.restarts_told: set[str] = set()
         self.window = None          # the toolkit window, built the first time it is asked for
-        self.clock = WallpaperTimer(self.tracker.config_path)
-        self.clock.log = log            # whether Wallpaper Engine's own timer was found
         self.countdowns: dict[str, Countdown] = {}
         self._icon_key = None
         self._clock_failed = False
+        self._following: bool | None = None
+
+        # The count and the countdown read the same two files through one
+        # watcher. The count does not wait on the countdown's tick, though: that
+        # tick reads other processes' windows and memory, and if it ever fails
+        # the count must carry on regardless.
+        self.feed = TrackerFeed(self.settings.get("tracker", "we_config", None),
+                                heartbeat_setting(self.settings))
+        self.feed.updated.connect(self._on_update)
+        self.feed.config_changed.connect(self._build_clock)
+        self._build_clock()
 
         self.icon = QSystemTrayIcon(tray_icon(0, None))
         self.icon.setToolTip("Wallpaper Tracker")
@@ -148,18 +158,30 @@ class TrackerTray:
         self.icon.setContextMenu(self.menu)
         self.icon.show()
 
-        self.timer = QTimer()
-        self.timer.timeout.connect(self.refresh)
-        self.timer.start(int(self.settings.get("tracker", "interval", 30)) * 1000)
-
         self.clock_timer = QTimer()
         self.clock_timer.timeout.connect(self._tick_clock)
         self.clock_timer.start(CLOCK_TICK_MS)
-        self.refresh()
+
+    @property
+    def tracker(self) -> Tracker:
+        return self.feed.tracker
+
+    def _build_clock(self):
+        self.clock = WallpaperTimer(self.tracker.config_path, files=self.feed.files)
+        self.clock.log = log            # whether Wallpaper Engine's own timer was found
 
     # ------------------------------------------------------------- polling
     def refresh(self):
-        self.results = self.tracker.poll()
+        self.feed.refresh()
+
+    def _on_update(self):
+        self.results = self.feed.results
+        if self.feed.following != self._following:
+            self._following = self.feed.following
+            log("tracker: following Wallpaper Engine's playliststate.bin"
+                if self._following else
+                f"tracker: no readable playliststate.bin — looking every "
+                f"{FALLBACK_SECONDS} s instead")
         self._announce_completions()
         self._render()
 
@@ -183,6 +205,20 @@ class TrackerTray:
             if (p.restarted_at and p.cycle_id not in self.restarts_told
                     and _seconds_since(p.restarted_at) < RESTART_NOTICE_SECONDS):
                 self.restarts_told.add(p.cycle_id)
+                if p.previous_finished:
+                    # A pass that ran to its end. Wallpaper Engine may shuffle the
+                    # next one as it draws the last wallpaper, so the finished
+                    # cycle is never seen whole — this is then the only place
+                    # the news can come from, and it must come once.
+                    if p.previous_id not in self.completed:
+                        self.completed.add(p.previous_id)
+                        total = p.restarted_from.split("/")[-1]
+                        self.icon.showMessage(
+                            "Playlist finished",
+                            f"{p.monitor} · “{p.playlist}”: all {total} wallpapers shown, "
+                            f"and Wallpaper Engine has begun the next pass. Time to rotate.",
+                            QSystemTrayIcon.Information, 20000)
+                    continue
                 self.icon.showMessage(
                     "Playlist started over",
                     f"Wallpaper Engine began “{p.playlist}” on {p.monitor} again. "
@@ -319,7 +355,9 @@ class TrackerTray:
         """
         if self.window is None:
             from .main_window import MainWindow      # heavy — only on demand
-            self.window = MainWindow()
+            # The window's Tracker tab shows this tray's feed rather than
+            # polling one of its own beside it.
+            self.window = MainWindow(tracker_feed=self.feed)
             for i in range(self.window.tabs.count()):
                 if self.window.tabs.tabText(i) == "Tracker":
                     self.window.tabs.setCurrentIndex(i)

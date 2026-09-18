@@ -4,15 +4,17 @@ One card per monitor showing `seen/total`, and, underneath, the two lists that
 card is made of: what has already been shown and what is still waiting. The
 counting itself lives in ``engines/tracker.py``; this is only its face.
 
-The tab polls on its own timer while it is open, and the tray poller
-(``--tracker``) polls while it is not. Both write the same ``data/tracker.json``.
+The tab shows a `TrackerFeed`: the tray's own when the tray opened this window,
+so the two never look twice at the same change, or one of its own in a window
+started by itself. A separate tray process looks too, and both write the same
+``data/tracker.json``.
 """
 from __future__ import annotations
 
 import subprocess
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QTimer, Signal
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGroupBox, QLabel,
@@ -24,6 +26,7 @@ from .. import animations, autostart, theme
 from ..engines.tracker import (
     ANCHOR_NONE, Progress, Tracker, elapsed_since, format_minutes, pick_primary,
     title_for)
+from ..tracker_feed import TrackerFeed, heartbeat_setting
 from .widgets import FolderListPanel
 
 
@@ -108,15 +111,23 @@ class MonitorCard(QGroupBox):
         parts.append(f"{p.order}, every {p.delay} min")
         self.stats.setText("  ·  ".join(parts))
 
-        if p.restarted_from:
+        if p.restarted_from and p.previous_finished:
+            origin = (f"Wallpaper Engine began the next pass at "
+                      f"{(p.restarted_at or '')[11:16]}, after all "
+                      f"{p.restarted_from.split('/')[-1]} of the last one were shown")
+        elif p.restarted_from:
             origin = (f"Wallpaper Engine started the playlist over at "
                       f"{(p.restarted_at or '')[11:16]} — the previous count had reached "
                       f"{p.restarted_from}")
         else:
             origin = ("cycle counted from when tracking started" if p.anchor == ANCHOR_NONE
                       else f"cycle dated from {p.anchor}")
+        if p.from_engine:
+            origin += "  ·  following Wallpaper Engine's own record of the pass"
         if p.inferred:
-            origin += f"  ·  {p.inferred} restored from file access times"
+            origin += (f"  ·  {p.inferred} drawn while nothing was watching"
+                       if p.from_engine else
+                       f"  ·  {p.inferred} restored from file access times")
         if p.gone:
             # Deleted wallpapers Wallpaper Engine still lists. Held out of the
             # total, because otherwise they stall the count short of the end.
@@ -125,7 +136,9 @@ class MonitorCard(QGroupBox):
         self.origin.setText(origin)
 
         if p.current:
-            stale = "" if p.live else "  (nothing open — last known)"
+            stale = ("" if p.live else
+                     "  (Wallpaper Engine is not running — last known)" if p.from_engine else
+                     "  (nothing open — last known)")
             self.now.setText(f"<b>Now:</b> {p.current_title}  "
                              f"<span style='color:{theme.C['faint']}'>— for "
                              f"{elapsed_since(p.current_since)}{stale}</span>")
@@ -140,10 +153,11 @@ class MonitorCard(QGroupBox):
 
 
 class TrackerTab(QWidget):
-    def __init__(self, settings):
+    def __init__(self, settings, feed: TrackerFeed | None = None):
         super().__init__()
         self.settings = settings
-        self.tracker = Tracker(settings.get("tracker", "we_config", None))
+        self.feed = feed or TrackerFeed(settings.get("tracker", "we_config", None),
+                                        heartbeat_setting(settings), parent=self)
         self.cards: dict[str, MonitorCard] = {}
         self._list_key: tuple | None = None
 
@@ -164,10 +178,13 @@ class TrackerTab(QWidget):
 
         self._show_autostart_method()
 
-        self.timer = QTimer(self)
-        self.timer.timeout.connect(self.refresh)
-        self._apply_interval(self.in_interval.value())
-        self.refresh()
+        self.feed.updated.connect(self._show)
+        if self.feed.results:
+            self._show()          # the tray's feed has looked already
+
+    @property
+    def tracker(self) -> Tracker:
+        return self.feed.tracker
 
     # ------------------------------------------------------------- building
     def _build_config_box(self) -> QGroupBox:
@@ -188,13 +205,20 @@ class TrackerTab(QWidget):
         controls = QWidget()
         c = QHBoxLayout(controls)
         c.setContentsMargins(0, 0, 0, 0)
-        self.in_interval = QSpinBox()
-        self.in_interval.setRange(5, 600)
-        self.in_interval.setSuffix(" s")
-        self.in_interval.setValue(int(self.settings.get("tracker", "interval", 30)))
-        self.in_interval.valueChanged.connect(self._apply_interval)
-        c.addWidget(QLabel("Poll every"))
-        c.addWidget(self.in_interval)
+        self.in_heartbeat = QSpinBox()
+        self.in_heartbeat.setRange(1, 60)
+        self.in_heartbeat.setSuffix(" min")
+        self.in_heartbeat.setValue(heartbeat_setting(self.settings) // 60)
+        self.in_heartbeat.valueChanged.connect(self._apply_heartbeat)
+        heartbeat_tip = (
+            "Every wallpaper change is picked up within a second or so of Wallpaper\n"
+            "Engine writing it down. This is only the safety check in between, for what\n"
+            "nothing announces — a wallpaper deleted from disk, say.")
+        label = QLabel("Also check every")
+        for widget in (label, self.in_heartbeat):
+            widget.setToolTip(heartbeat_tip)
+        c.addWidget(label)
+        c.addWidget(self.in_heartbeat)
         c.addSpacing(16)
 
         self.chk_autostart = QCheckBox("Keep counting in the background (tray, starts with Windows)")
@@ -220,7 +244,7 @@ class TrackerTab(QWidget):
         c.addWidget(self.rebuild_btn)
 
         refresh_btn = QPushButton("Refresh now")
-        refresh_btn.clicked.connect(self.refresh)
+        refresh_btn.clicked.connect(lambda: self.feed.refresh())
         c.addWidget(refresh_btn)
         form.addRow("", controls)
 
@@ -237,7 +261,7 @@ class TrackerTab(QWidget):
     def _rebuild(self):
         recovered = self.tracker.rebuild()
         self._list_key = None
-        self.refresh()
+        self.feed.refresh()
         QMessageBox.information(
             self, "Rebuild from file times",
             f"Recovered {recovered} wallpaper(s) that had been shown without being watched."
@@ -309,14 +333,18 @@ class TrackerTab(QWidget):
             self.in_config.setText(path)
             self.settings.set("tracker", "we_config", path)
             self.settings.save()
-            self.tracker = Tracker(path)
             self._clear_cards()
-            self.refresh()
+            self.feed.use_config(path)
 
-    def _apply_interval(self, seconds: int):
-        self.settings.set("tracker", "interval", int(seconds))
+    def _apply_heartbeat(self, minutes: int):
+        seconds = int(minutes) * 60
+        tracker = self.settings.section("tracker")
+        tracker["heartbeat"] = seconds
+        # The old 30-second poll interval means nothing now; left in place it
+        # would only suggest otherwise to whoever reads the file.
+        tracker.pop("interval", None)
         self.settings.save()
-        self.timer.start(int(seconds) * 1000)
+        self.feed.set_heartbeat(seconds)
 
     def _toggle_autostart(self, on: bool):
         try:
@@ -344,7 +372,7 @@ class TrackerTab(QWidget):
             "The current one is kept in the archive.")
         if answer == QMessageBox.Yes:
             self.tracker.reset(monitor)
-            self.refresh()
+            self.feed.refresh()
 
     # -------------------------------------------------------------- refresh
     def _clear_cards(self):
@@ -354,8 +382,8 @@ class TrackerTab(QWidget):
         self.monitor_pick.clear()
         self._list_key = None
 
-    def refresh(self):
-        results = self.tracker.poll()
+    def _show(self):
+        results = self.feed.results
 
         if self.tracker.error:
             self.status.setText(self.tracker.error)

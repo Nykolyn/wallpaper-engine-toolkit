@@ -33,9 +33,11 @@ playlist has been shown end to end — that is the cue to rotate.
 
 Clicking the icon opens the main window on this tab. It is the same window each
 time, built on first use and kept when closed, so the tray goes on counting
-either way. A named mutex keeps autostart and a manual `run_tracker.cmd` from
-becoming two icons both polling. The tab and the tray write the same state file
-and merge on save, so running both is fine.
+either way — and the tab in it shows the tray's own count rather than looking
+alongside it. A named mutex keeps autostart and a manual `run_tracker.cmd` from
+becoming two icons both looking. A toolkit window started by itself looks on its
+own; it and a tray write the same state file and merge on save, so running both
+is fine.
 
 **New cycle** resets the count by hand. You should rarely need it — see
 [cycles](#cycles).
@@ -90,11 +92,58 @@ That file is **not** a live source for what is on screen. Wallpaper Engine
 flushes it when it starts and when it exits, so the current-wallpaper field
 stays frozen at whatever was showing at launch.
 
-What *is* live is the **file handle**. The renderer keeps the wallpaper it is
-showing open, so opening a path with no sharing flags gets
-`ERROR_SHARING_VIOLATION` for exactly that one file and succeeds for every
+What *is* live is `bin/playliststate.bin`, rewritten at every wallpaper change
+(see [the countdown ring](#the-countdown-ring)). Per monitor it names the
+wallpaper on screen and every entry the current pass has **not drawn yet**. For
+a random playlist that is the count itself: what the pass has drawn has been
+shown, what is waiting has not.
+
+### When it looks
+
+The tracker looks whenever Wallpaper Engine rewrites `playliststate.bin` or
+`config.json` — both are checked with a `stat` once a second, about 20 µs — so
+a change reaches the count within a second or so of the engine writing it down,
+together with the ring. Every change is seen, including wallpapers skipped in a
+hurry.
+
+It used to look every 30 seconds whether anything had happened or not. On a
+10-minute playlist nineteen looks in twenty found nothing, and each still cost
+about 50 ms on the tray's GUI thread plus a rewrite of the 200 KB
+`data/tracker.json` — some 2900 looks and 570 MB of rewrites a day, for about
+290 changes on two monitors. A look now costs about 4 ms, and the file is
+written only when something in it changed.
+
+A slower **safety check** stays, every five minutes by default ("Also check
+every" on the tab), for what no write announces — chiefly a wallpaper deleted
+from disk. Where there is no readable `playliststate.bin` at all, the tracker
+goes back to looking every 30 seconds, because then nothing else will tell it;
+`data/tracker.log` says which of the two it is doing.
+
+### Wallpaper Engine's own record
+
+Where the state file describes the playlist — random order, the wallpaper on
+screen in the playlist and no longer waiting, a deck of this playlist rather
+than another — the count follows it. Credits it contradicts are withdrawn. A
+change looked at as it is written is dated to the second from the write;
+anything drawn between two looks, or while nothing was running, is counted too
+and marked `~`, dated from its file's access time. The card says "following
+Wallpaper Engine's own record of the pass".
+
+Checked against the live tracker before the switch, the deck named the same
+wallpaper on screen as the handle probe on both monitors, and disagreed with the
+count only where access times had credited something the engine had not drawn:
+181 counted on a playlist it had drawn 180 of, 6 on one it had drawn 4 of. Each
+such credit made "playlist finished" arrive a wallpaper early.
+
+### Where the record does not reach
+
+A **sorted** playlist, whose deck has not been checked against a real one, and a
+state file that does not fit the playlist, are counted the way everything was
+before the state file was understood — by the **file handle**. The renderer
+keeps the wallpaper it is showing open, so opening a path with no sharing flags
+gets `ERROR_SHARING_VIOLATION` for exactly that one file and succeeds for every
 other — for `.mp4` and `scene.pkg` alike. The whole playlist is swept every
-poll, about 17 ms for 1300 items.
+look, about 17 ms for 1300 items.
 
 The sweep deliberately does **not** stop at the item found last time. Wallpaper
 Engine does not always release a wallpaper it has moved on from; two files were
@@ -102,20 +151,19 @@ caught held at once, one playing and one abandoned half an hour earlier. When
 several are held, the one whose file was **read most recently** is the one on
 screen.
 
-### What the probe cannot see
-
-Two kinds of entry are never caught by a handle, and both used to stall the
-count one short of the end for good:
+### What neither can see
 
 - **Deleted wallpapers.** Wallpaper Engine goes on listing a wallpaper after its
-  folder is gone, and it can never come up again. These are found by checking
-  existence each poll (~2 ms for 200 items) and held out of the total. On the
-  playlist that prompted this: 197 of 208 shown, all 11 stragglers deleted
+  folder is gone — in its deck too — and it can never come up again. These are
+  found by checking existence every five minutes and whenever `config.json` or
+  the cycle changes (about 12 ms for 1600 items), and held out of the total. On
+  the playlist that prompted this: 197 of 208 shown, all 11 stragglers deleted
   mid-cycle — the tracker would have read 197/208 for ever. A file missing from
   a folder that has *itself* vanished is left alone instead: that is an
   unmounted drive, not a deletion.
-- **Web wallpapers.** An `.html` wallpaper is read once by a browser process and
-  never held. Its access time still moves, which is the only thing that ever
+- **Web wallpapers**, to the handle probe. An `.html` wallpaper is read once by
+  a browser process and never held. The engine's record counts them like any
+  other; where the probe is in use, its access time is the only thing that
   credits one — see reconciliation below.
 
 ### Cycles
@@ -130,6 +178,10 @@ added or removed — keep the cycle and adjust the total.
 
 ### Time nobody was watching
 
+A pass followed through Wallpaper Engine's record needs none of this section:
+the deck says what was drawn while nothing ran. What follows is for the
+playlists counted by the handle probe.
+
 A tally that only advances while the app happens to be running drifts behind
 silently. NTFS fills the gap: with last-access updates on (the Windows default,
 `fsutil behavior query disablelastaccess`), showing a wallpaper stamps its
@@ -137,7 +189,7 @@ file's access time, at one-hour granularity — far finer than the delay between
 wallpapers.
 
 So the tracker is a **reconciler**, not a counter. It re-reads those stamps when
-it adopts a playlist it has not been watching, when a poll finds more than five
+it adopts a playlist it has not been watching, when a look finds more than five
 minutes passed since the last, and in any case every ten minutes. Recovered
 entries are marked `~` and counted separately, so observation and reconstruction
 are never confused. Where last-access updates are off, the tab says so and falls
@@ -214,12 +266,24 @@ current pass has not drawn yet. Everything counted as shown should be missing
 from that list, and before the restart it was. After it, 77 of 83 were waiting
 again; on the other monitor, 196 of 200.
 
-So on every poll, when at least half of what the cycle counts as shown (and no
+So on every look, when at least half of what the cycle counts as shown (and no
 fewer than three) is back in the engine's deck, the cycle is archived with the
 reason and a new one begins from what the engine has drawn — credited from the
-engine's record and marked `~`. A few wallpapers back in the deck change
-nothing; a deck that does not fit the playlist is ignored. The tray says when it
-happens ("Playlist started over") and the card says what the old count reached.
+engine's record and marked `~`. A deck that does not fit the playlist is
+ignored. The tray says when it happens ("Playlist started over") and the card
+says what the old count reached.
+
+A pass that ran to its **end** begins again the same way, and is told apart by
+what was left: nothing, or only the wallpaper now on screen. That covers both
+things Wallpaper Engine might do at the end — write out an empty deck first, or
+shuffle the next pass as it draws the last wallpaper, in which case the finished
+cycle is never seen whole. Either way the tray says "Playlist finished" once,
+and the card says the next pass began after all of the last one was shown.
+
+**New cycle** on a followed pass sets aside what the pass has drawn so far,
+since the engine's record would otherwise restore the whole count at the next
+look. The set-aside wallpapers count again once Wallpaper Engine deals them
+again.
 
 **What causes it, and how to avoid it.** Wallpaper Engine keeps a pass with the
 playlist *as applied to a monitor*, and discards it whenever the playlist is
@@ -340,6 +404,12 @@ where drawing with replacement from 208 would yield about 125. Repeats are also
 only visible in the displays actually watched, never in the ones rebuilt from
 file times, so they are far too weak a signal to pivot a model on.
 
+On a pass followed through Wallpaper Engine's record there is no stretching at
+all: nothing is drawn twice within a pass, so what is left is exactly
+`remaining x delay`. A repeat rate carried over from the probe's count — 22
+"repeats" on a 189-wallpaper playlist here, most of them the probe losing track
+— has nothing to say about it.
+
 Wallpaper time is not wall-clock time — it only passes while Wallpaper Engine is
 running and unpaused, and `playbackfullscreen` / `playbackmaximized` stop the
 timer behind a game. So the card also projects a finish from the pace the cycle
@@ -353,7 +423,7 @@ number that answers "when can I rotate?".
 | `data/tracker.json` | the live cycle per monitor, plus the last 40 finished cycles |
 | `data/wallpaper_timer.json` | the countdown, saved every 15 seconds |
 | `data/tracker.log` | every launch, whether the tray appeared, any crash |
-| `data/suite.json` under `tracker` | poll interval, `config.json` path, which monitor the icon shows |
+| `data/suite.json` under `tracker` | safety-check interval (`heartbeat`, seconds), `config.json` path, which monitor the icon shows |
 
 It **reads** the Rotator's `history.json` to date a cycle and never writes to
 it. Nothing is ever written back to Wallpaper Engine.
