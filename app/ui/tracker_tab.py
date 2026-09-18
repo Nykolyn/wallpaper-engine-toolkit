@@ -111,15 +111,23 @@ class MonitorCard(QGroupBox):
         parts.append(f"{p.order}, every {p.delay} min")
         self.stats.setText("  ·  ".join(parts))
 
-        if p.restarted_from:
+        if p.restarted_from and p.previous_finished:
+            origin = (f"Wallpaper Engine began the next pass at "
+                      f"{(p.restarted_at or '')[11:16]}, after all "
+                      f"{p.restarted_from.split('/')[-1]} of the last one were shown")
+        elif p.restarted_from:
             origin = (f"Wallpaper Engine started the playlist over at "
                       f"{(p.restarted_at or '')[11:16]} — the previous count had reached "
                       f"{p.restarted_from}")
         else:
             origin = ("cycle counted from when tracking started" if p.anchor == ANCHOR_NONE
                       else f"cycle dated from {p.anchor}")
+        if p.from_engine:
+            origin += "  ·  following Wallpaper Engine's own record of the pass"
         if p.inferred:
-            origin += f"  ·  {p.inferred} restored from file access times"
+            origin += (f"  ·  {p.inferred} drawn while nothing was watching"
+                       if p.from_engine else
+                       f"  ·  {p.inferred} restored from file access times")
         if p.gone:
             # Deleted wallpapers Wallpaper Engine still lists. Held out of the
             # total, because otherwise they stall the count short of the end.
@@ -128,7 +136,9 @@ class MonitorCard(QGroupBox):
         self.origin.setText(origin)
 
         if p.current:
-            stale = "" if p.live else "  (nothing open — last known)"
+            stale = ("" if p.live else
+                     "  (Wallpaper Engine is not running — last known)" if p.from_engine else
+                     "  (nothing open — last known)")
             self.now.setText(f"<b>Now:</b> {p.current_title}  "
                              f"<span style='color:{theme.C['faint']}'>— for "
                              f"{elapsed_since(p.current_since)}{stale}</span>")

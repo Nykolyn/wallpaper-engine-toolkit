@@ -146,6 +146,10 @@ check("nothing is projected for a finished playlist",
       snapshot(seen=200, total=200).finish_estimate is None)
 check("nothing is projected without a usable start",
       snapshot(started="nonsense").finish_estimate is None)
+check("a repeat rate left over from before the engine's pass was followed is ignored",
+      snapshot(seen=100, total=150, changes=150, from_engine=True).eta_minutes == 500)
+check("while the probe's own count still stretches its estimate",
+      snapshot(seen=100, total=150, changes=150).eta_minutes == 750)
 
 
 # ------------------------------------------------------- a cycle, poll by poll
@@ -730,6 +734,167 @@ check("and says what the previous count had reached", p.restarted_from == "5/8")
 check("the old cycle is archived with the reason",
       state.archive and state.archive[0].get("reason") == "Wallpaper Engine started the playlist over")
 check("the next poll does not start it over again", tracker.poll()[0].cycle_id == p.cycle_id)
+state_file.unlink()
+
+
+# ---- Following Wallpaper Engine's own record of the pass -----------------------
+#
+# For a random playlist the deck is the count: what the pass has drawn has been
+# shown, what is waiting has not. Checked against the live tracker, it named the
+# same wallpaper on screen as the probe and disagreed with the count only where
+# access times had credited something the engine had not drawn — 181 against 180
+# on one monitor, 6 against 4 on the other.
+
+import time as _time                                                 # noqa: E402
+
+written_at = {"t": _time.time() - 1000}
+
+
+def deal(current: str, waiting: list[str], at: float | None = None) -> float:
+    """Write a state file as Wallpaper Engine does at a change; return its time."""
+    engine_state(state_file, {"Monitor0": (current, waiting)})
+    written_at["t"] = at if at is not None else max(_time.time(), written_at["t"] + 0.01)
+    os.utime(state_file, (written_at["t"], written_at["t"]))
+    return written_at["t"]
+
+
+probed = {"n": 0}
+
+
+def counting_probe(path: str) -> bool:
+    probed["n"] += 1
+    return path == playing["now"]
+
+
+check("the deck stands in for a random playlist of its own",
+      tr.deck_describes(tr.Cycle("M", "p", tr._now(), items=letters, order="random"),
+                        MonitorDeck(letters[0], letters[1:])))
+check("not for a sorted one, whose deck has never been checked",
+      not tr.deck_describes(tr.Cycle("M", "p", tr._now(), items=letters, order="sorted"),
+                            MonitorDeck(letters[0], letters[1:])))
+check("nor when the wallpaper on screen is still waiting, as no pass's can be",
+      not tr.deck_describes(tr.Cycle("M", "p", tr._now(), items=letters, order="random"),
+                            MonitorDeck(letters[0], letters)))
+check("nor when it is not in the playlist",
+      not tr.deck_describes(tr.Cycle("M", "p", tr._now(), items=letters, order="random"),
+                            MonitorDeck("W:/elsewhere.mp4", letters[1:])))
+check("nor for another playlist's deck",
+      not tr.deck_describes(tr.Cycle("M", "p", tr._now(), items=letters, order="random"),
+                            MonitorDeck(letters[0], [f"W:/other/{n}.mp4" for n in range(9)])))
+
+tr.wallpaper_engine_process = lambda: (4242, _time.time() - 3600)
+tr.is_in_use = counting_probe
+playing["now"] = None                       # nothing is ever held open
+deck_items = [make_item(f"deck{i}", 1) for i in range(8)]
+tracker = fresh_tracker(deck_items, atime_ok=True)
+deal(deck_items[0], deck_items[1:])
+p = tracker.poll()[0]
+check("the wallpaper on screen counts with nothing held open at all",
+      (p.seen, p.current, p.from_engine) == (1, deck_items[0], True))
+check("Wallpaper Engine running is what makes it live", p.live)
+check("and no file was opened to find it", probed["n"] == 0)
+
+when = deal(deck_items[1], deck_items[2:])
+p = tracker.poll()[0]
+check("a change looked at as it is written is counted", (p.seen, p.changes) == (2, 2))
+check("as watched, not reconstructed", p.inferred == 0)
+check("and dated to the second from the write, less the engine's own lag",
+      p.current_since == datetime.fromtimestamp(when - 3.0).strftime(tr.TIME_FMT))
+
+deal(deck_items[3], deck_items[4:])
+p = tracker.poll()[0]
+check("two wallpapers skipped between looks both count", p.seen == 4)
+check("the one passed over unseen is marked so, the one on screen is not", p.inferred == 1)
+
+state = tr.TrackerState.load()
+state.cycles["Monitor0"].seen[deck_items[6]] = tr._now()
+state.cycles["Monitor0"].inferred.append(deck_items[6])
+state.cycles["Monitor0"].changes += 1
+state.save()
+p = tracker.poll()[0]
+check("a credit the deck contradicts is withdrawn", (p.seen, p.repeats) == (4, 0))
+check("and stays withdrawn on disk, rather than merged back from it",
+      deck_items[6] not in tr.TrackerState.load().cycles["Monitor0"].seen)
+
+state = tr.TrackerState.load()
+three_hours_ago = (NOW - timedelta(hours=3)).strftime(tr.TIME_FMT)
+state.cycles["Monitor0"].last_poll = three_hours_ago
+state.save()
+deal(deck_items[5], deck_items[6:], at=(NOW - timedelta(hours=2)).timestamp())
+p = tracker.poll()[0]
+check("what the pass drew while nothing was looking is counted from the record",
+      p.seen == 6)
+check("marked as not watched, bar the one still on screen", p.inferred == 2)
+check("which is not dated to a write that may have been the other monitor's",
+      p.current_since != datetime.fromtimestamp(written_at["t"] - 3.0).strftime(tr.TIME_FMT))
+
+deal(deck_items[7], [])
+p = tracker.poll()[0]
+check("an empty deck is a pass shown to its end", (p.seen, p.total, p.remaining) == (8, 8, 0))
+
+finished_id = p.cycle_id
+deal(deck_items[2], [i for i in deck_items if i != deck_items[2]])
+p = tracker.poll()[0]
+check("the next pass starts a new cycle", p.cycle_id != finished_id and p.seen == 1)
+check("which knows the one before it was finished",
+      p.previous_finished and p.previous_id == finished_id and p.restarted_from == "8/8")
+check("and the archive says so",
+      tr.TrackerState.load().archive[0]["reason"].startswith("shown to the end"))
+
+# Wallpaper Engine may instead shuffle the next pass as it draws the last
+# wallpaper, and never write the empty deck. The last one is then the one on
+# screen, dealt out of the old pass, and the old pass was still finished.
+tracker = fresh_tracker(deck_items, atime_ok=False)
+deal(deck_items[0], deck_items[1:])
+tracker.poll()
+deal(deck_items[6], [deck_items[7]])
+tracker.poll()
+old_id = tracker.cycle("Monitor0").id
+deal(deck_items[7], deck_items[:7])
+p = tracker.poll()[0]
+check("a pass shuffled away as its last wallpaper came up still counts as finished",
+      p.previous_finished and p.previous_id == old_id and p.restarted_from == "8/8")
+
+# A pass thrown away half-way is not finished — that is the restart it always was.
+tracker = fresh_tracker(deck_items, atime_ok=False)
+deal(deck_items[0], deck_items[1:])
+tracker.poll()
+deal(deck_items[4], deck_items[5:])
+tracker.poll()
+deal(deck_items[6], [i for i in deck_items if i != deck_items[6]])
+p = tracker.poll()[0]
+check("a pass the engine threw away half-way is not reported finished",
+      p.restarted_from == "5/8" and not p.previous_finished)
+
+# A reset has to hold against a record that says otherwise.
+tracker = fresh_tracker(deck_items, atime_ok=False)
+deal(deck_items[0], deck_items[1:])
+tracker.poll()
+deal(deck_items[3], deck_items[4:])
+tracker.poll()
+tracker.reset("Monitor0")
+p = tracker.poll()[0]
+check("a reset starts from the wallpaper on screen, whatever the pass has drawn",
+      (p.seen, p.from_engine) == (1, True))
+deal(deck_items[4], deck_items[5:])
+check("and counts on from there", tracker.poll()[0].seen == 2)
+deal(deck_items[0], [i for i in deck_items if i not in (deck_items[0], deck_items[3], deck_items[4])])
+tracker.poll()
+check("what it set aside counts again once the engine deals it again",
+      tr.TrackerState.load().cycles["Monitor0"].excluded == [])
+
+# The probe is still there for what the deck does not describe.
+tracker = fresh_tracker(deck_items, atime_ok=False)
+write_cfg(deck_items, order="sorted")
+deal(deck_items[0], deck_items[1:])
+playing["now"] = deck_items[2]
+probed["n"] = 0
+p = tracker.poll()[0]
+check("a sorted playlist is still watched through its file handles",
+      not p.from_engine and p.current == deck_items[2] and probed["n"] > 0)
+
+tr.is_in_use = lambda path: path == playing["now"]
+tr.wallpaper_engine_process = lambda: None
 state_file.unlink()
 
 

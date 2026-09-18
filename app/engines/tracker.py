@@ -9,14 +9,22 @@ but it is only flushed when the app starts or exits: ``selectedwallpapers.
 <Monitor>.file`` stays frozen at whatever was on screen at launch, so it cannot
 say what is showing right now.
 
-What *is* live is the file handle. The renderer keeps the wallpaper it is
-showing open, so opening a path with no sharing flags gets ERROR_SHARING_VIOLATION
-for exactly that one file. That probe is the signal polled here — the whole
-playlist every time, about 17 ms for 1300 items, because Wallpaper Engine does
-not always release the wallpaper it has moved on from.
+``bin/playliststate.bin`` can. Wallpaper Engine rewrites it at every change,
+with, per monitor, the wallpaper on screen and the entries this pass has not
+drawn yet — which for a random playlist is the count itself. The tracker looks
+whenever that file is rewritten, and follows it wherever it describes the
+playlist (`deck_describes`, `Tracker._follow_deck`).
 
-The probe alone is not enough, and the two things it misses are what the rest of
-this module is mostly about:
+Where it does not — a sorted playlist, or a state file that does not fit — the
+tracker does what it did before it knew of that file, and watches the file
+handle. The renderer keeps the wallpaper it is showing open, so opening a path
+with no sharing flags gets ERROR_SHARING_VIOLATION for exactly that one file.
+That probe sweeps the whole playlist every look, about 17 ms for 1300 items,
+because Wallpaper Engine does not always release the wallpaper it has moved on
+from.
+
+The probe alone is not enough, and the two things it misses are what much of
+the rest of this module is about:
 
 * wallpapers that are **gone** — Wallpaper Engine goes on listing a deleted one,
   and an entry that can never come up again would stall the count one short of
@@ -43,7 +51,7 @@ from pathlib import Path
 from typing import Callable
 
 from . import steam_paths
-from .wallpaper_timer import EngineFiles, MonitorDeck, wallpaper_engine_process
+from .wallpaper_timer import WRITE_LAG, EngineFiles, MonitorDeck, wallpaper_engine_process
 
 
 # ---- Where things live ----------------------------------------------------
@@ -337,10 +345,14 @@ class Cycle:
     last_reconcile: str | None = None
     # The playlist came out of a rotation, whatever this cycle is dated from.
     from_rotation: bool = False
-    # Set when Wallpaper Engine started the playlist over: when, and what the
-    # previous cycle had reached ("87/201").
+    # Set when Wallpaper Engine started the playlist over: when, what the
+    # previous cycle had reached ("87/201"), and which cycle that was.
     restarted_at: str | None = None
     restarted_from: str | None = None
+    previous_id: str | None = None
+    # Drawn in Wallpaper Engine's pass before a manual reset. The engine's
+    # record still has them as shown; this cycle, by request, does not.
+    excluded: list[str] = field(default_factory=list)
 
     @classmethod
     def start(cls, view: PlaylistView) -> "Cycle":
@@ -358,6 +370,7 @@ class Cycle:
             self.seen = {k: v for k, v in self.seen.items() if k in live}
             self.inferred = [i for i in self.inferred if i in live]
             self.missing = [i for i in self.missing if i in live]
+            self.excluded = [i for i in self.excluded if i in live]
 
     # ----- what still counts -----------------------------------------------
     #
@@ -417,6 +430,7 @@ class Cycle:
             "last_reconcile": self.last_reconcile,
             "from_rotation": self.from_rotation,
             "restarted_at": self.restarted_at, "restarted_from": self.restarted_from,
+            "previous_id": self.previous_id, "excluded": self.excluded,
         }
 
     @classmethod
@@ -441,6 +455,8 @@ class Cycle:
             from_rotation=bool(d.get("from_rotation")),
             restarted_at=d.get("restarted_at"),
             restarted_from=d.get("restarted_from"),
+            previous_id=d.get("previous_id"),
+            excluded=[str(i) for i in d.get("excluded", [])],
         )
 
 
@@ -493,7 +509,8 @@ def restart_from_engine(old: "Cycle", deck: MonitorDeck, written: float | None,
         # Stamped so the reconciler does not reach back into the old pass and
         # credit its displays to this one.
         last_poll=_now(), last_reconcile=_now(),
-        restarted_at=_now(), restarted_from=f"{old.seen_count}/{old.total}")
+        restarted_at=_now(), restarted_from=f"{old.seen_count}/{old.total}",
+        previous_id=old.id)
     if old.current and old.current == deck.current:
         cycle.current, cycle.current_since = old.current, old.current_since
         if old.current_since:
@@ -816,6 +833,67 @@ def upcoming(items: list[str], waiting: set[str], order: str,
     return [i for i in items[start:] + items[:start] if i in waiting]
 
 
+# ---- Wallpaper Engine's own record of the pass ------------------------------
+#
+# The handle probe and the access times were the only witnesses there were when
+# the tracker was written. Wallpaper Engine turned out to keep the record itself:
+# playliststate.bin names, per monitor, the wallpaper on screen and every entry
+# this pass has not drawn yet (see wallpaper_timer). For a random playlist that
+# *is* the count — what the pass has drawn has been shown, what is waiting has
+# not — and it holds across the hours nothing was running to watch.
+#
+# Checked against the live tracker before switching: the deck named the same
+# wallpaper on screen as the probe, on both monitors, and it disagreed with the
+# count in three places, every one of them an access-time credit — 181 counted
+# on a playlist the engine had drawn 180 of, 6 on one it had drawn 4 of (a
+# project.json something had read, an mp4 read while the tray was starting).
+# Each such credit makes "playlist finished" arrive a wallpaper early. The probe
+# itself was never wrong, but it cannot see a web wallpaper at all — twenty on
+# one playlist here — and it opens every file in the playlist on every look.
+#
+# So where the deck describes the playlist it is the source, and the probe and
+# the access-time sweep run only where it does not: a sorted playlist, whose
+# deck has not been checked against a real one, or a state file that does not
+# fit what config.json says.
+
+ORDER_RANDOM = "random"
+# A write the tracker looked at this soon after it happened was watched as it
+# happened; one found later came up while nothing was looking.
+FRESH_WRITE_SECONDS = 60
+# The longest a running tracker goes between looks: the longest heartbeat the
+# tab offers, and a minute's grace.
+MAX_LOOK_GAP_SECONDS = 3600 + 60
+
+
+def deck_describes(cycle: "Cycle", deck: MonitorDeck | None) -> bool:
+    """Whether the engine's deck can stand in for watching this cycle's playlist.
+
+    Only a random playlist, the one order whose deck has been checked against a
+    real playlist; only when the wallpaper on screen is in the playlist and no
+    longer waiting, as the current wallpaper of a pass must be; and only when
+    the deck is of this playlist, give or take what config.json and the state
+    file disagree on between their writes.
+    """
+    if deck is None or (cycle.order or "").lower() != ORDER_RANDOM:
+        return False
+    items = set(cycle.items)
+    waiting = set(deck.waiting)
+    if deck.current not in items or deck.current in waiting:
+        return False
+    return len(waiting - items) <= max(2, DECK_TOLERANCE * len(waiting))
+
+
+def pass_finished(cycle: "Cycle", deck: MonitorDeck) -> bool:
+    """Whether a pass the engine has just replaced had been drawn to its end.
+
+    Everything counted but the wallpaper now on screen: whether Wallpaper Engine
+    writes out an empty deck before it shuffles the next one, or shuffles as it
+    draws the last, the last is then the one showing.
+    """
+    unseen = {i for i in cycle.live_items if i not in cycle.seen}
+    return bool(cycle.live_items) and unseen <= {deck.current}
+
+
 # ---- The snapshot handed to the UI ----------------------------------------
 
 @dataclass
@@ -840,10 +918,21 @@ class Progress:
     from_rotation: bool = False
     restarted_at: str | None = None     # Wallpaper Engine started the playlist over
     restarted_from: str | None = None   # what the previous cycle had reached
+    previous_id: str | None = None      # and which cycle that was
+    from_engine: bool = False           # counted from Wallpaper Engine's own record
 
     @property
     def remaining(self) -> int:
         return max(self.total - self.seen, 0)
+
+    @property
+    def previous_finished(self) -> bool:
+        """Whether the cycle before a restart had been shown to its end."""
+        try:
+            reached, total = (int(n) for n in (self.restarted_from or "").split("/"))
+        except ValueError:
+            return False
+        return total > 0 and reached >= total
 
     @property
     def percent(self) -> int:
@@ -851,7 +940,12 @@ class Progress:
 
     @property
     def eta_minutes(self) -> int:
-        return estimate_minutes(self.remaining, self.delay, self.changes, self.seen)
+        # Nothing is drawn twice within one of Wallpaper Engine's passes, so a
+        # repeat rate carried over from the probe's count — 22 "repeats" on a
+        # playlist of 189 here, most of them the probe losing track — says
+        # nothing about what is left of a pass being followed.
+        changes = self.seen if self.from_engine else self.changes
+        return estimate_minutes(self.remaining, self.delay, changes, self.seen)
 
     @property
     def finish_estimate(self) -> str | None:
@@ -900,9 +994,12 @@ def pick_primary(results: list["Progress"], preferred: str | None = None) -> "Pr
 class TrackerState:
     """`data/tracker.json`: the live cycle per monitor plus the finished ones.
 
-    Both the Tracker tab and the background tray poller write this file, so a
-    save re-reads what is on disk and merges first. Every update is either a new
-    `seen` entry or a counter that only grows, so the merge is a union.
+    A tray and a separately started toolkit window can both write this file, so
+    a save re-reads what is on disk and merges first. The merge is three-way:
+    what the other writer added since this state was loaded is kept, and what
+    this one took away stays away. A plain union used to do, while every update
+    only ever added a `seen` entry; it stopped doing once the engine's record
+    could withdraw a credit, because the union put each one straight back.
     """
 
     MAX_ARCHIVE = 40
@@ -911,6 +1008,13 @@ class TrackerState:
                  archive: list[dict] | None = None):
         self.cycles = cycles or {}
         self.archive = archive or []
+        # Each cycle as it stood on disk when loaded: id, seen, inferred, changes.
+        self._base: dict[str, tuple[str, set[str], set[str], int]] = {}
+        self._remember()
+
+    def _remember(self) -> None:
+        self._base = {k: (c.id, set(c.seen), set(c.inferred), c.changes)
+                      for k, c in self.cycles.items()}
 
     @classmethod
     def load(cls) -> "TrackerState":
@@ -927,10 +1031,17 @@ class TrackerState:
             theirs = disk.cycles.get(key)
             if theirs is None or theirs.id != mine.id:
                 continue  # different cycle entirely — ours wins
+            base_id, base_seen, base_inferred, base_changes = self._base.get(
+                key, (None, set(), set(), None))
+            if base_id != mine.id:
+                # Not loaded as this cycle: everything on disk is theirs to keep.
+                base_seen, base_inferred, base_changes = set(), set(), None
             for item, when in theirs.seen.items():
-                mine.seen.setdefault(item, when)
-            mine.changes = max(mine.changes, theirs.changes)
-            mine.inferred = sorted((set(mine.inferred) | set(theirs.inferred))
+                if item not in base_seen:
+                    mine.seen.setdefault(item, when)
+            if theirs.changes != base_changes:
+                mine.changes = max(mine.changes, theirs.changes)
+            mine.inferred = sorted((set(mine.inferred) | (set(theirs.inferred) - base_inferred))
                                    & set(mine.seen))
         if len(disk.archive) > len(self.archive):
             self.archive = disk.archive
@@ -946,6 +1057,7 @@ class TrackerState:
             os.replace(tmp, STATE_PATH)
         except OSError:
             pass
+        self._remember()
 
     def archive_cycle(self, cycle: Cycle, reason: str | None = None) -> None:
         """Retire a cycle: keep the summary, drop the bulky item/seen lists."""
@@ -1105,15 +1217,91 @@ class Tracker:
         cycle.last_reconcile = _now()
 
     def rebuild(self) -> int:
-        """Re-derive every cycle from file access times. Returns items recovered."""
+        """Re-derive every cycle from file access times. Returns items recovered.
+
+        A cycle that follows Wallpaper Engine's own record is left alone: that
+        record is what access times were only ever a guess at.
+        """
         state = TrackerState.load()
+        self.files.refresh()
+        decks = self.files.decks if self.files.state_ok else {}
         recovered = 0
-        for cycle in state.cycles.values():
+        for monitor, cycle in state.cycles.items():
+            if deck_describes(cycle, decks.get(monitor)):
+                continue
             before = cycle.seen_count
             self._adopt(cycle)
             recovered += cycle.seen_count - before
         state.save()
         return recovered
+
+    # ----- following the engine's record -------------------------------------
+
+    def _drawn_at(self, item: str, written: float | None, now: datetime) -> str:
+        """When a wallpaper the deck says was drawn came up, as near as can be told.
+
+        Its access time where those are kept — the engine read the file to show
+        it — unless that is later than the write that recorded the draw, which
+        makes it some other read. Otherwise the write itself, which is no
+        earlier than the draw.
+        """
+        if self.atime_ok:
+            try:
+                atime = os.stat(item.replace("/", "\\")).st_atime
+            except OSError:
+                atime = None
+            # The file is read to show it a few seconds before the draw is written.
+            if atime is not None and atime <= (written or now.timestamp()) + 5:
+                return datetime.fromtimestamp(atime).strftime(TIME_FMT)
+        if written is None:
+            return now.strftime(TIME_FMT)
+        return datetime.fromtimestamp(written - WRITE_LAG).strftime(TIME_FMT)
+
+    def _follow_deck(self, cycle: Cycle, deck: MonitorDeck, written: float | None) -> None:
+        """Bring the cycle into line with Wallpaper Engine's record of the pass.
+
+        Whatever the pass has drawn is shown; whatever is still waiting is not,
+        whatever the count said. The wallpaper on screen is seen, and when its
+        change was looked at within moments of the engine writing it down it is
+        dated to the second from that write. Anything else drawn since the last
+        look came up unwatched — skipped through between two looks, or while
+        nothing was running — and is marked so, dated as well as can be.
+        """
+        now = datetime.now()
+        waiting = set(deck.waiting)
+        # A manual reset set these aside. One back in the deck, or on screen
+        # again, has been dealt again and counts as soon as it is drawn.
+        cycle.excluded = [i for i in cycle.excluded
+                          if i not in waiting and i != deck.current]
+        withdrawn = [i for i in cycle.seen if i in waiting]
+        for item in withdrawn:
+            del cycle.seen[item]
+        if withdrawn:
+            gone_back = set(withdrawn)
+            cycle.inferred = [i for i in cycle.inferred if i not in gone_back]
+            cycle.changes = max(cycle.changes - len(withdrawn), 0)
+
+        last = _parse(cycle.last_poll)
+        watched = (written is not None and last is not None
+                   and -1 <= written - last.timestamp() <= MAX_LOOK_GAP_SECONDS
+                   and now.timestamp() - written <= FRESH_WRITE_SECONDS)
+        if deck.current != cycle.current or cycle.current_since is None:
+            cycle.current = deck.current
+            cycle.current_since = (
+                datetime.fromtimestamp(written - WRITE_LAG).strftime(TIME_FMT)
+                if watched else self._drawn_at(deck.current, written, now))
+
+        gone = set(cycle.missing)
+        skip = set(cycle.excluded)
+        fresh = [i for i in cycle.items
+                 if i not in waiting and i not in gone and i not in skip and i not in cycle.seen]
+        for item in fresh:
+            if item == deck.current:
+                cycle.seen[item] = cycle.current_since
+            else:
+                cycle.seen[item] = self._drawn_at(item, written, now)
+                cycle.inferred.append(item)
+        cycle.changes = max(cycle.changes + len(fresh), len(cycle.seen))
 
     def poll(self) -> list[Progress]:
         """One tick: read the playlists, find what is playing, record it."""
@@ -1138,6 +1326,7 @@ class Tracker:
 
         for view in views:
             cycle = state.cycles.get(view.monitor)
+            deck = decks.get(view.monitor)
             if cycle is None or diverged(cycle.items, view.items):
                 if cycle is not None:
                     state.archive_cycle(cycle)
@@ -1148,13 +1337,21 @@ class Tracker:
                 cycle.from_rotation = cycle.anchor == ANCHOR_ROTATION
             else:
                 cycle.sync(view)
-                deck = decks.get(view.monitor)
                 if deck is not None and engine_restarted(cycle, deck):
-                    state.archive_cycle(cycle, "Wallpaper Engine started the playlist over")
+                    finished = pass_finished(cycle, deck)
+                    if finished and deck.current not in cycle.seen:
+                        # Shuffled as the last one was drawn: that one closed
+                        # the old pass, whatever the new one goes on to do.
+                        cycle.seen[deck.current] = self._drawn_at(
+                            deck.current, written, datetime.now())
+                        cycle.changes += 1
+                    state.archive_cycle(
+                        cycle, "shown to the end; Wallpaper Engine began the next pass"
+                        if finished else "Wallpaper Engine started the playlist over")
                     cycle = restart_from_engine(cycle, deck, written,
                                                 engine[1] if engine else None)
                     state.cycles[view.monitor] = cycle
-                else:
+                elif not deck_describes(cycle, deck):
                     self._catch_up(cycle)
 
             # Re-checked every poll rather than once: a wallpaper deleted mid
@@ -1162,20 +1359,27 @@ class Tracker:
             # start again. Costs about 2 ms for 200 items.
             cycle.missing = scan_missing(cycle.items)
 
-            current = probe_current(cycle.live_items, prefer=cycle.current,
-                                    exclude=claimed)
-            if current:
-                claimed.add(current)
-                if current != cycle.current:
-                    # First sight of a wallpaper the reconstruction already
-                    # credited is not a transition — it is the one that was on
-                    # screen all along, so it must not read as a repeat.
-                    resync = cycle.current is None and current in cycle.seen
-                    cycle.current = current
-                    cycle.current_since = _now()
-                    if not resync:
-                        cycle.changes += 1
-                        cycle.seen.setdefault(current, cycle.current_since)
+            from_engine = deck_describes(cycle, deck)
+            if from_engine:
+                self._follow_deck(cycle, deck, written)
+                claimed.add(deck.current)
+                live = engine is not None
+            else:
+                current = probe_current(cycle.live_items, prefer=cycle.current,
+                                        exclude=claimed)
+                if current:
+                    claimed.add(current)
+                    if current != cycle.current:
+                        # First sight of a wallpaper the reconstruction already
+                        # credited is not a transition — it is the one that was
+                        # on screen all along, so it must not read as a repeat.
+                        resync = cycle.current is None and current in cycle.seen
+                        cycle.current = current
+                        cycle.current_since = _now()
+                        if not resync:
+                            cycle.changes += 1
+                            cycle.seen.setdefault(current, cycle.current_since)
+                live = current is not None
             cycle.last_poll = _now()
 
             out.append(Progress(
@@ -1192,13 +1396,15 @@ class Tracker:
                 current=cycle.current,
                 current_title=title_for(cycle.current) if cycle.current else "",
                 current_since=cycle.current_since,
-                live=current is not None,
+                live=live,
                 inferred=cycle.inferred_count,
                 anchor=cycle.anchor,
                 gone=cycle.gone_count,
                 from_rotation=cycle.from_rotation,
                 restarted_at=cycle.restarted_at,
                 restarted_from=cycle.restarted_from,
+                previous_id=cycle.previous_id,
+                from_engine=from_engine,
             ))
 
         state.save()
@@ -1248,13 +1454,28 @@ class Tracker:
         if cycle is None:
             return
         state.archive_cycle(cycle)
-        state.cycles[monitor] = Cycle(
+        fresh = state.cycles[monitor] = Cycle(
             monitor=cycle.monitor, playlist=cycle.playlist, started=_now(),
             items=list(cycle.items), delay=cycle.delay, order=cycle.order,
             missing=list(cycle.missing),
             # Stamped so the reconciler reads this as a watched cycle starting
             # now, and does not immediately restore what was just cleared.
             last_poll=_now(), last_reconcile=_now())
+        self.files.refresh()
+        deck = self.files.decks.get(monitor) if self.files.state_ok else None
+        if deck_describes(fresh, deck):
+            # The engine's pass goes on regardless, and following it would
+            # restore the whole count at the next look. What it has drawn so
+            # far is set aside instead, bar the wallpaper on screen — the one
+            # a reset has always started from.
+            waiting = set(deck.waiting)
+            fresh.excluded = [i for i in fresh.items
+                              if i not in waiting and i != deck.current]
+            fresh.current = deck.current
+            fresh.current_since = (cycle.current_since if cycle.current == deck.current
+                                   else _now())
+            fresh.seen = {deck.current: fresh.current_since}
+            fresh.changes = 1
         state.save()
 
     def archive(self) -> list[dict]:

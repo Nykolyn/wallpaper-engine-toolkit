@@ -205,6 +205,20 @@ class TrackerTray:
             if (p.restarted_at and p.cycle_id not in self.restarts_told
                     and _seconds_since(p.restarted_at) < RESTART_NOTICE_SECONDS):
                 self.restarts_told.add(p.cycle_id)
+                if p.previous_finished:
+                    # A pass that ran to its end. Wallpaper Engine may shuffle the
+                    # next one as it draws the last wallpaper, so the finished
+                    # cycle is never seen whole — this is then the only place
+                    # the news can come from, and it must come once.
+                    if p.previous_id not in self.completed:
+                        self.completed.add(p.previous_id)
+                        total = p.restarted_from.split("/")[-1]
+                        self.icon.showMessage(
+                            "Playlist finished",
+                            f"{p.monitor} · “{p.playlist}”: all {total} wallpapers shown, "
+                            f"and Wallpaper Engine has begun the next pass. Time to rotate.",
+                            QSystemTrayIcon.Information, 20000)
+                    continue
                 self.icon.showMessage(
                     "Playlist started over",
                     f"Wallpaper Engine began “{p.playlist}” on {p.monitor} again. "
