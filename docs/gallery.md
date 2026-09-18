@@ -100,3 +100,49 @@ Three things fixed it:
 
 The same gallery that froze now opens and stays open, with the GUI thread never
 more than **76 ms** behind.
+
+### And never at the window's expense
+
+That was not the end of it. On 18 September the window froze again, during
+**Count what is new**, a few authors into clicking through the results — and
+the cause turned out to be one level down, in how Python and Qt share a process.
+
+PySide gives up Python's global lock (the GIL) around every call into Qt and
+takes it back afterwards. Taking it back is free while nothing else wants it.
+While another thread is busy in Python — parsing a page of Steam's answer,
+building an author's item list — it is a wait of up to the interpreter's switch
+interval, 5 ms by default, *per call*. A repaint makes hundreds of calls. And the
+animation made a few hundred more every second: each frame of each player was
+scaled and turned into a pixmap in Python, eight players at 25 frames a second.
+
+Measured on one real page of thirty GIF previews, eight of them playing, with
+threads busy in Python beside it:
+
+| | busy threads | timer ticks out of 400 | worst delay |
+|---|---|---|---|
+| before, 5 ms switch interval | 1 | 2 | 4.1 s |
+| before, 5 ms switch interval | 2 | **0** | the window never answered |
+| now, 5 ms switch interval | 1 | 257 | 0.4 s, and the animation rested |
+| now, 0.5 ms switch interval | 1 | 399 | 4 ms |
+| now, 0.5 ms switch interval | 4 | 398 | 23 ms |
+
+What changed:
+
+- **No Python runs per frame.** `QMovie` is given the size the still was fitted
+  to and scales its own frames; the delegate paints the movie's current frame;
+  and one 50 ms clock repaints only the cards whose frame number moved on.
+- **The animation rests when the window is behind.** The same clock notices
+  when it runs late — twice running by more than a quarter of a second — pauses
+  every player, and resumes them after two seconds on time. Whatever else is
+  holding the window up, the animation is never what tips it over.
+- **The switch interval is 0.5 ms**, set once at start-up, so a busy thread
+  hands the GIL back ten times sooner.
+- **Only the page on screen is kept in memory.** Every preview of every page
+  ever shown used to stay: 662 previews and 945 MB after clicking through ninety
+  authors. Now that is 150–200 MB, flat. The bytes are in `data/thumbs`, and a
+  page revisited is read back from disk.
+- **Turning the page drops the downloads queued for the last one**, instead of
+  making the page on screen wait behind them.
+
+If the window ever stops answering anyway, it leaves the stacks of every thread
+in `data/window-hangs.log` — see [Troubleshooting](troubleshooting.md#the-window-stopped-answering).

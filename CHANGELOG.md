@@ -6,6 +6,25 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **The window froze during a Review** — while counting what was new and
+  clicking through authors. Every call from Python into Qt waits for Python's
+  global lock whenever another thread is busy in Python, and the gallery's
+  animation made hundreds of those calls a second. Frames are now decoded and
+  scaled by Qt alone, the animation pauses itself when the window falls behind,
+  and the interpreter hands the lock over ten times sooner. On a real page with
+  a busy thread beside it the window went from never answering to at most 4 ms
+  late. See [Gallery](docs/gallery.md#and-never-at-the-windows-expense).
+- **The gallery kept every preview it had ever shown in memory** — 945 MB after
+  ninety authors. It keeps the page on screen, and stays at 150–200 MB.
+- Turning a page no longer leaves the previous page's downloads queued ahead of
+  the one on screen.
+- "Count what is new" and a click on an author it had not reached yet no longer
+  fetch the same author twice at once.
+- Noticing a wallpaper subscribed elsewhere no longer lists Steam's workshop
+  folder on the GUI thread every four seconds.
+
 ### Changed
 
 - **The Tracker looks when Wallpaper Engine writes, not every 30 seconds.**
@@ -24,9 +43,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   that access times got wrong — which made "Playlist finished" arrive a
   wallpaper early. Sorted playlists are counted as before. See
   [Wallpaper Engine's own record](docs/tracker.md#wallpaper-engines-own-record).
-- **The toolkit window opened from the tray shows the tray's count** instead
-  of polling on a timer of its own beside it, which it went on doing after the
-  window was closed.
+- **The toolkit window is its own program when opened from the tray**, at
+  normal priority. Ending a frozen window used to end the tracker with it, since
+  they were one process. A second click, or a second launch of the exe, brings
+  the open window forward instead of starting another. Its Tracker tab looks
+  for itself, on the tray's schedule — about 4 ms a look, taken only when
+  Wallpaper Engine writes.
 
 - **Renamed to Wallpaper Engine Toolkit** (from "Wallpaper Suite"). The window
   title, the built executable and the logon task all carry the new name.
@@ -43,6 +65,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `WET_DB_CLUSTER` environment variable.
 
 ### Added
+
+- **Hang logs.** If the window or the tray stops answering for five seconds,
+  the stack of every thread goes to `data/window-hangs.log` or
+  `data/tracker-hangs.log`, written while it is still stuck.
+- `--tab NAME` opens the window on a given tab.
 
 - `app/engines/steam_paths.py` — locates Steam, its libraries, and Wallpaper
   Engine within them.

@@ -150,6 +150,22 @@ It should not: `build.cmd` copies `data/` out before PyInstaller wipes `dist/`
 and restores it afterwards. If it happened anyway, the backup is at
 `%TEMP%\WallpaperEngineToolkit_data_backup`.
 
+## The window stopped answering
+
+It should not — see [Gallery](gallery.md#and-never-at-the-windows-expense) for
+what made it freeze before and what changed. If it happens anyway, the record is
+already written:
+
+- `data/window-hangs.log` — the toolkit window. When its GUI thread goes five
+  seconds without answering, the stack of every thread is written here while it
+  is still stuck, followed by how long it was gone once it comes back. A hard
+  crash leaves its stack here too.
+- `data/tracker-hangs.log` — the same for the tray tracker.
+
+That file is what to look at, or to attach to an issue: it says which line every
+thread was on. Closing a frozen window from Task Manager no longer stops the
+tracker — they are separate programs.
+
 ## Nothing above
 
 `data/tracker.log` and `data/selfcheck.txt` are the two files worth reading

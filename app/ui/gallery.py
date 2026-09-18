@@ -22,6 +22,16 @@ makes that affordable is the **pagination**: thirty wallpapers to a page, so the
 number of decoders is fixed however much the author has published — and the
 wait is thirty previews rather than a thousand.
 
+**What the GUI thread may not do.** Every call from Python into Qt gives up
+the GIL and takes it back, and while any other thread is busy in Python, taking
+it back is a wait. So the animation runs no Python per frame: Qt decodes and
+scales each frame itself, and one clock twenty times a second repaints the
+cards whose frame moved on. If that clock ever finds itself running late, the
+animation stops until the window is keeping up again — a still gallery is a
+small price, and a window that does not answer is not. Memory is bounded the
+same way: only the page on screen keeps its previews in memory, because the
+bytes are on disk and come back in milliseconds.
+
 The marks on a card matter as much as the picture. A wallpaper here may be one
 that was owned once and deleted — 327 of one author's 1 155, in the library
 this was built against — and re-reviewing those from scratch every week is
@@ -30,6 +40,7 @@ exactly the work the tab exists to remove.
 from __future__ import annotations
 
 import hashlib
+import time
 from pathlib import Path
 from typing import Iterable
 
@@ -66,6 +77,16 @@ PAGE_SIZE = 30
 # buys a window that stays alive. They are started on a clock rather than on
 # arrival for the same reason.
 MAX_PLAYERS = 8
+
+# The animation clock. GIF previews here run at 25 frames a second at most
+# (470 measured), so 20 repaints a second drops one frame in five and nothing
+# the eye follows.
+FRAME_MS = 50
+# When the clock is this late twice running, the GUI thread is behind with
+# something, and the animation stops adding to it...
+LATE_SECONDS = 0.25
+# ...until the clock has been on time for this long.
+CALM_SECONDS = 2.0
 
 # How hard to look for a frame worth showing, and what counts as one.
 MAX_STILL_FRAMES = 24
@@ -195,6 +216,17 @@ class ThumbLoader(QObject):
     def forget(self) -> None:
         self._asked.clear()
 
+    def retarget(self) -> None:
+        """A different page is on screen: drop what was queued for the last one.
+
+        Nothing used to be dropped. Clicking through ninety authors queued 662
+        previews behind six download threads, and the page on screen waited for
+        the ones before it. Downloads already running finish and land on disk;
+        whatever they were for is simply not in the model any more.
+        """
+        self.pool.clear()
+        self._asked.clear()
+
     def stop(self) -> None:
         """Abandon everything in flight and wait for the threads to notice."""
         self.stopped = True
@@ -210,6 +242,7 @@ class GalleryModel(QAbstractListModel):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._items: list = []
+        self._rows: dict[str, int] = {}
         self._images: dict[str, QPixmap] = {}
         self._raw: dict[str, QByteArray] = {}
 
@@ -229,8 +262,18 @@ class GalleryModel(QAbstractListModel):
         return None
 
     def set_items(self, items: Iterable) -> None:
+        """Show these wallpapers, and let go of every other page's previews.
+
+        They used to be kept for every page ever shown: after clicking through
+        ninety authors that was 662 previews and 945 MB of memory, and the
+        window only ever showed thirty of them. The bytes are in `data/thumbs`
+        and come back from disk faster than the network ever delivered them.
+        """
         self.beginResetModel()
         self._items = list(items)
+        self._rows = {w.id: row for row, w in enumerate(self._items)}
+        self._images = {k: v for k, v in self._images.items() if k in self._rows}
+        self._raw = {k: v for k, v in self._raw.items() if k in self._rows}
         self.endResetModel()
 
     def item_at(self, row: int):
@@ -239,25 +282,31 @@ class GalleryModel(QAbstractListModel):
     def raw(self, item_id: str) -> QByteArray | None:
         return self._raw.get(item_id)
 
+    def image(self, item_id: str) -> QPixmap | None:
+        return self._images.get(item_id)
+
+    def row_of(self, item_id: str) -> int | None:
+        return self._rows.get(item_id)
+
     def set_image(self, item_id: str, data: QByteArray, frame: QImage) -> None:
         if frame.isNull():
+            return
+        row = self._rows.get(item_id)
+        if row is None:
+            # A preview for a page since left. Its bytes are on disk already.
             return
         self._raw[item_id] = data
         self._images[item_id] = QPixmap.fromImage(
             frame.scaled(THUMB_W, THUMB_H, Qt.KeepAspectRatio,
                          Qt.SmoothTransformation))
-        for row, wallpaper in enumerate(self._items):
-            if wallpaper.id == item_id:
-                where = self.index(row, 0)
-                self.dataChanged.emit(where, where, [IMAGE])
-                break
+        where = self.index(row, 0)
+        self.dataChanged.emit(where, where, [IMAGE])
 
     def refresh_row(self, item_id: str) -> None:
-        for row, wallpaper in enumerate(self._items):
-            if wallpaper.id == item_id:
-                where = self.index(row, 0)
-                self.dataChanged.emit(where, where)
-                return
+        row = self._rows.get(item_id)
+        if row is not None:
+            where = self.index(row, 0)
+            self.dataChanged.emit(where, where)
 
 
 # ---- Drawing one card -------------------------------------------------------
@@ -267,9 +316,9 @@ class GalleryDelegate(QStyledItemDelegate):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        # The current animation frame of every card that is playing, which is
-        # every animated one on screen.
-        self.frames: dict[str, QPixmap] = {}
+        # The player of every card that is animating. Its current frame is
+        # read at paint time, already scaled by Qt.
+        self.movies: dict[str, QMovie] = {}
         self.busy: set[str] = set()              # ids being subscribed right now
 
     def sizeHint(self, option, index) -> QSize:
@@ -292,7 +341,10 @@ class GalleryDelegate(QStyledItemDelegate):
         painter.drawRoundedRect(card, 6, 6)
 
         image_rect = QRect(card.left() + 4, card.top() + 4, THUMB_W, THUMB_H)
-        pixmap = self.frames.get(wallpaper.id) or index.data(IMAGE)
+        movie = self.movies.get(wallpaper.id)
+        pixmap = movie.currentPixmap() if movie is not None else None
+        if pixmap is None or pixmap.isNull():
+            pixmap = index.data(IMAGE)
         if pixmap is not None and not pixmap.isNull():
             # The whole picture, centred; anything that is not square gets bars
             # in the page colour rather than losing its edges.
@@ -422,14 +474,17 @@ class GalleryView(QListView):
         self._pending.timeout.connect(self._settled)
         self.verticalScrollBar().valueChanged.connect(self._pending.start)
 
-        # Rows whose player has a new frame, and the one clock that repaints
-        # them. 50 ms is twenty repaints a second for the whole page, however
-        # many players are running and whatever rate each of them wants.
-        self._dirty: set[str] = set()
-        self._repaint = QTimer(self)
-        self._repaint.setInterval(50)
-        self._repaint.setSingleShot(True)
-        self._repaint.timeout.connect(self._repaint_dirty)
+        # The one clock that repaints animated cards: twenty times a second for
+        # the whole page, however many players are running and whatever rate
+        # each of them wants. It is also how the gallery notices it is behind.
+        self._painted: dict[str, int] = {}      # frame number last painted
+        self._clock = QTimer(self)
+        self._clock.setInterval(FRAME_MS)
+        self._clock.timeout.connect(self._tick)
+        self._last_tick = 0.0
+        self._late_ticks = 0
+        self._calm_since: float | None = None
+        self.resting = False                    # animation stopped to catch up
 
         # Previews land in bursts of six; deciding who animates is done once a
         # burst rather than once an arrival.
@@ -468,6 +523,7 @@ class GalleryView(QListView):
         self._page = max(1, min(page, self.pages))
         start = (self._page - 1) * PAGE_SIZE
         self._stop_all()
+        self.loader.retarget()
         self.model_.set_items(self._all[start:start + PAGE_SIZE])
         self.scrollToTop()
         self._settled()
@@ -574,7 +630,8 @@ class GalleryView(QListView):
 
     def _start_one(self, item_id: str) -> None:
         data = self.model_.raw(item_id)
-        if data is None:
+        still = self.model_.image(item_id)
+        if data is None or still is None:
             return
         buffer = QBuffer(self)
         buffer.setData(data)
@@ -585,43 +642,66 @@ class GalleryView(QListView):
         # thirty previews of fifty frames is a lot of memory to hold for a
         # thumbnail. The frames are cheap to decode again as they come round.
         movie.setCacheMode(QMovie.CacheNone)
-        # Deliberately *not* setScaledSize: that stretches the frame to the
-        # card and the picture visibly changes shape the moment it starts
-        # moving. Frames are scaled the same way the still is — expanded to
-        # cover, then cropped when painted — so nothing shifts.
-        movie.frameChanged.connect(lambda _n, key=item_id: self._frame(key))
+        # Qt scales each frame itself, to exactly the size the still was fitted
+        # to, so the picture does not change shape when it starts to move. This
+        # used to be done in Python for every frame — a scale and a pixmap per
+        # frame, eight players at 25 frames a second, each call a wait for the
+        # GIL whenever a download or a Steam answer was being worked on.
+        movie.setScaledSize(still.size())
         self._players[item_id] = (movie, buffer)
+        self.delegate.movies[item_id] = movie
         movie.start()
+        if self.resting:
+            movie.setPaused(True)
+        if not self._clock.isActive():
+            self._last_tick = time.monotonic()
+            self._clock.start()
 
-    def _frame(self, item_id: str) -> None:
-        """A player has a new frame: scale it, and ask for one repaint soon.
+    def _tick(self) -> None:
+        """Repaint the cards whose frame has moved on — or, when behind, rest."""
+        now = time.monotonic()
+        late = now - self._last_tick - FRAME_MS / 1000
+        self._last_tick = now
+        if not self._players:
+            self._clock.stop()
+            return
+        self._pace(late, now)
+        if self.resting:
+            return
+        viewport = self.viewport()
+        for item_id, (movie, _buffer) in self._players.items():
+            number = movie.currentFrameNumber()
+            if self._painted.get(item_id) == number:
+                continue
+            self._painted[item_id] = number
+            row = self.model_.row_of(item_id)
+            if row is not None:
+                viewport.update(self.visualRect(self.model_.index(row, 0)))
 
-        Every player runs at whatever rate its GIF asks for, and each frame
-        used to repaint its row on the spot. Twenty-one players on a page came
-        to 178 frames a second, each one a `dataChanged` the view had to answer
-        — measured at 334 ms of lag on a GUI thread that should never be more
-        than a frame behind. The scaling stays per frame, because that is what
-        is being shown; the repainting is collected and done on one clock, so
-        the cost is the page's, not the sum of every player's.
+    def _pace(self, late: float, now: float) -> None:
+        """Stop the animation while the GUI thread is behind; resume once it is not.
+
+        Whatever else holds the window up — a burst of previews, a thread busy
+        in Python, a disk that takes its time — the animation must not be the
+        thing that tips it from slow into not answering.
         """
-        found = self._players.get(item_id)
-        if found is None:
-            return
-        image = found[0].currentImage()
-        if image.isNull():
-            return
-        self.delegate.frames[item_id] = QPixmap.fromImage(
-            image.scaled(THUMB_W, THUMB_H, Qt.KeepAspectRatio,
-                         Qt.SmoothTransformation))
-        self._dirty.add(item_id)
-        if not self._repaint.isActive():
-            self._repaint.start()
+        if late > LATE_SECONDS:
+            self._late_ticks += 1
+            self._calm_since = None
+        else:
+            self._late_ticks = 0
+            if self._calm_since is None:
+                self._calm_since = now
+        if not self.resting and self._late_ticks >= 2:
+            self._rest(True)
+        elif self.resting and self._calm_since is not None \
+                and now - self._calm_since >= CALM_SECONDS:
+            self._rest(False)
 
-    def _repaint_dirty(self) -> None:
-        """Repaint every row that got a new frame since the last tick."""
-        dirty, self._dirty = self._dirty, set()
-        for item_id in dirty:
-            self.model_.refresh_row(item_id)
+    def _rest(self, on: bool) -> None:
+        self.resting = on
+        for movie, _buffer in self._players.values():
+            movie.setPaused(on)
 
     def _stop_one(self, item_id: str) -> None:
         found = self._players.pop(item_id, None)
@@ -632,14 +712,15 @@ class GalleryView(QListView):
         movie.deleteLater()
         buffer.close()
         buffer.deleteLater()
-        self.delegate.frames.pop(item_id, None)
-        self._dirty.discard(item_id)
+        self.delegate.movies.pop(item_id, None)
+        self._painted.pop(item_id, None)
         self.model_.refresh_row(item_id)
 
     def _stop_all(self) -> None:
         for item_id in list(self._players):
             self._stop_one(item_id)
-        self.delegate.frames.clear()
+        self.delegate.movies.clear()
+        self._clock.stop()
 
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)

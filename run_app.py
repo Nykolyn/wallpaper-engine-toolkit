@@ -1,7 +1,8 @@
 """Wallpaper Engine Toolkit — single entry point bundling Copier, Creator, Rotator and Tracker.
 
 Run:
-    python run_app.py                  # the toolkit window
+    python run_app.py                  # the toolkit window (or bring it forward)
+    python run_app.py --tab Review     # ... on a given tab
     python run_app.py --tracker        # the background playlist tracker, tray only
     python run_app.py --autostart on   # install / remove / report autostart:
                                        #   on | off | status
@@ -17,6 +18,17 @@ from PySide6.QtWidgets import QApplication
 
 from app.main_window import MainWindow
 from app import theme
+
+# How long a Python thread may hold the GIL before it is asked to hand it over.
+#
+# PySide releases the GIL around every call into Qt and takes it back afterwards,
+# so the GUI thread asks for it back hundreds of times per repaint. At the
+# default 5 ms, any thread busy in Python — parsing a Steam answer, building an
+# item list — makes the GUI thread wait up to 5 ms for each of those, and a
+# repaint that took 24 ms took 4.1 s with two such threads beside it (177 times
+# slower, measured). At 0.5 ms the same repaint took 94 ms. The cost is more
+# switching between busy background threads, which is not what anyone waits on.
+SWITCH_INTERVAL = 0.0005
 
 
 def _autostart(action: str) -> int:
@@ -62,7 +74,9 @@ def _selfcheck() -> int:
                         ("app.engines.review", "the review itself"),
                         ("app.ui.review_tab", "the Review tab"),
                         ("app.engines.steam_ugc", "subscribing from the gallery"),
-                        ("app.secrets", "the stored key and connection string")):
+                        ("app.secrets", "the stored key and connection string"),
+                        ("PySide6.QtNetwork", "one window, raised from the tray"),
+                        ("app.window_instance", "starting the window on its own")):
         try:
             __import__(module)
             lines.append(f"ok      {module}  ({why})")
@@ -143,6 +157,7 @@ def _migrate_autostart() -> None:
 
 
 def main():
+    sys.setswitchinterval(SWITCH_INTERVAL)
     QApplication.setHighDpiScaleFactorRoundingPolicy(
         Qt.HighDpiScaleFactorRoundingPolicy.PassThrough)
 
@@ -163,10 +178,34 @@ def main():
 
     app = QApplication(sys.argv)
     app.setApplicationName("Wallpaper Engine Toolkit")
+
+    tab = ""
+    if "--tab" in args:
+        position = args.index("--tab")
+        tab = args[position + 1] if position + 1 < len(args) else ""
+
+    # One window. A second launch — the tray's, or a double-click on the exe —
+    # hands its request to the first and leaves.
+    from app import window_instance
+    instance = window_instance.WindowInstance.claim()
+    if instance is None:
+        window_instance.ask_to_show(tab)
+        sys.exit(0)
+    window_instance.make_normal_priority()
+
+    from app.hang_watch import HangWatch
+    from app.settings import app_data_dir
+    watch = HangWatch(app_data_dir() / "window-hangs.log", "the toolkit window").start()
+
     theme.apply(app)
     win = MainWindow()
+    if tab:
+        win.show_tab(tab)
+    instance.show_requested.connect(win.bring_forward)
     win.show()
-    sys.exit(app.exec())
+    code = app.exec()
+    watch.stop()
+    sys.exit(code)
 
 
 if __name__ == "__main__":

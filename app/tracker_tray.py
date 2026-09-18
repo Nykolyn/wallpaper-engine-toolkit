@@ -5,7 +5,8 @@ only trustworthy if something keeps polling. This is that something: a tray
 icon drawn as a progress ring, a tooltip with the per-monitor `seen/total`, and
 a balloon the moment a playlist has been shown end to end — which is the cue to
 run the next rotation. Clicking the icon opens the toolkit window on its Tracker
-tab; the tray outlives that window and keeps counting when it is closed.
+tab — as a program of its own, so the tray keeps counting whatever the window
+does, and when it is closed.
 
 Started with ``WallpaperEngineToolkit.exe --tracker`` (or ``run_tracker.cmd``), and by
 Windows itself when autostart is on.
@@ -25,7 +26,8 @@ from PySide6.QtGui import (
     QAction, QActionGroup, QColor, QFont, QIcon, QPainter, QPen, QPixmap)
 from PySide6.QtWidgets import QApplication, QMenu, QSystemTrayIcon
 
-from . import autostart, theme
+from . import autostart, theme, window_instance
+from .hang_watch import HangWatch
 from .engines.tracker import (
     FALLBACK_SECONDS, TIME_FMT, Progress, Tracker, app_data_dir, pick_primary)
 from .engines.wallpaper_timer import Countdown, WallpaperTimer
@@ -132,7 +134,6 @@ class TrackerTray:
         self.results: list[Progress] = []
         self.completed: set[str] = set()
         self.restarts_told: set[str] = set()
-        self.window = None          # the toolkit window, built the first time it is asked for
         self.countdowns: dict[str, Countdown] = {}
         self._icon_key = None
         self._clock_failed = False
@@ -349,24 +350,34 @@ class TrackerTray:
     def open_toolkit(self):
         """Bring up the Wallpaper Engine Toolkit window, on the Tracker tab.
 
-        Built here rather than launched as a second process, so a click always
-        raises the same window instead of stacking up copies. The tray keeps
-        running when it is closed (quitOnLastWindowClosed is off).
+        The window is a program of its own (see `window_instance`), not
+        something built inside the tray: when it was, a window that froze took
+        the count down with it, as it did on 18 September. An open window is
+        asked to come forward; otherwise one is started.
         """
-        if self.window is None:
-            from .main_window import MainWindow      # heavy — only on demand
-            # The window's Tracker tab shows this tray's feed rather than
-            # polling one of its own beside it.
-            self.window = MainWindow(tracker_feed=self.feed)
-            for i in range(self.window.tabs.count()):
-                if self.window.tabs.tabText(i) == "Tracker":
-                    self.window.tabs.setCurrentIndex(i)
-                    break
-        self.window.show()
-        self.window.setWindowState(
-            (self.window.windowState() & ~Qt.WindowMinimized) | Qt.WindowActive)
-        self.window.raise_()
-        self.window.activateWindow()
+        if window_instance.ask_to_show("Tracker", wait=0):
+            return
+        if window_instance.already_running():
+            # A window exists and its socket did not answer: it is still
+            # starting — give it a moment — or it has stopped answering. A second
+            # one would only stack up behind it, so say so instead.
+            if window_instance.ask_to_show("Tracker", wait=3):
+                return
+            log("the toolkit window did not answer a request to show itself")
+            self.icon.showMessage(
+                "Wallpaper Engine Toolkit",
+                "The toolkit window is not answering yet. If it stays that way, "
+                "close it from Task Manager — the tracker keeps counting either way.",
+                QSystemTrayIcon.Warning, 10000)
+            return
+        try:
+            child = window_instance.launch("Tracker")
+            log(f"opened the toolkit window: pid {child.pid}")
+        except OSError as err:
+            log(f"could not open the toolkit window: {err}")
+            self.icon.showMessage("Wallpaper Engine Toolkit",
+                                  f"Could not open the window: {err}",
+                                  QSystemTrayIcon.Warning, 10000)
 
 
 def _claim_single_instance() -> bool:
@@ -424,9 +435,14 @@ def run_tray() -> int:
             log(f"no notification area after {TRAY_WAIT_SECONDS}s — "
                 f"counting on without an icon")
 
+        # The tray's own GUI thread reads Wallpaper Engine's files on whatever
+        # disk they are on; if one of those reads ever holds it for seconds,
+        # this says which.
+        watch = HangWatch(app_data_dir() / "tracker-hangs.log", "the tray tracker").start()
         tray = TrackerTray(app)   # the local reference is what keeps the icon alive
         log(f"running; tray icon visible: {tray.icon.isVisible()}")
         exit_code = app.exec()
+        watch.stop()
         log(f"stopped with code {exit_code}")
         del tray
         return exit_code
