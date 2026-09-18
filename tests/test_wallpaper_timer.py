@@ -89,11 +89,26 @@ files.refresh()
 check("with neither file there, there is nothing to follow",
       (files.config_version, files.state_version, files.state_ok) == (0, 0, False))
 
-(watched / "config.json").write_text("{}", encoding="utf-8")
+(watched / "config.json").write_text('{"u": {"general": {}}}', encoding="utf-8")
 files.refresh()
+parsed = files.config
 files.refresh()
 check("a config.json that appears is one new version, however often it is looked at",
       files.config_version == 1)
+check("and is parsed once, for everyone following it", files.config is parsed and "u" in parsed)
+
+(watched / "config.json").write_text('{"u": {"gen', encoding="utf-8")
+os.utime(watched / "config.json", (4_000, 4_000))
+files.refresh()
+check("a config.json caught half-written is not a new version",
+      files.config_version == 1 and files.config_error)
+check("and what was read before stays in use meanwhile", files.config is parsed)
+(watched / "config.json").write_text('{"u": {"general": {"user": {}}}}', encoding="utf-8")
+os.utime(watched / "config.json", (4_100, 4_100))
+files.refresh()
+check("once written in full it is read",
+      files.config_version == 2 and files.config_error is None
+      and files.config["u"]["general"] == {"user": {}})
 
 parses = {"n": 0}
 real_parse = wt.parse_playlist_state

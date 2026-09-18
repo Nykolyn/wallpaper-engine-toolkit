@@ -171,8 +171,11 @@ class PlaylistView:
 
 def read_playlists(config_path: str) -> list[PlaylistView]:
     """Active playlist per monitor. Raises OSError/ValueError on an unreadable config."""
-    data = json.loads(Path(config_path).read_text(encoding="utf-8"))
+    return playlists_in(json.loads(Path(config_path).read_text(encoding="utf-8-sig")))
 
+
+def playlists_in(data: dict) -> list[PlaylistView]:
+    """Active playlist per monitor, out of an already parsed config.json."""
     views: list[PlaylistView] = []
     for _user, section in data.items():
         if not isinstance(section, dict):
@@ -1016,6 +1019,13 @@ class TrackerState:
         self._base = {k: (c.id, set(c.seen), set(c.inferred), c.changes)
                       for k, c in self.cycles.items()}
 
+    def fingerprint(self) -> str:
+        """Everything a save would write, bar when each cycle was last looked at."""
+        cycles = {k: {f: v for f, v in c.to_dict().items() if f != "last_poll"}
+                  for k, c in self.cycles.items()}
+        return json.dumps([cycles, len(self.archive), self.archive[:1]],
+                          sort_keys=True, ensure_ascii=False)
+
     @classmethod
     def load(cls) -> "TrackerState":
         try:
@@ -1101,6 +1111,15 @@ class TrackerState:
 
 HEARTBEAT_SECONDS = 300
 FALLBACK_SECONDS = 30
+# tracker.json is written when a look changed something, and otherwise only
+# once the last-looked stamps in it are this old.
+LAST_POLL_REFRESH = 600
+# Deleted wallpapers are looked for on a timer of their own, and whenever
+# config.json or the cycle changes, rather than on every look: a stat of every
+# file in the playlist was most of what a look still cost — 12 ms of 15 for
+# 1618 files here — and a deletion only matters to the count once a pass is
+# nearly through, which takes days.
+MISSING_EVERY = 300
 # How often the two files are stat'ed. The state file is written about three
 # seconds after the change it records, so a second more is lost in the noise.
 WATCH_SECONDS = 1
@@ -1156,6 +1175,9 @@ class Tracker:
         self.files = files or EngineFiles(self.config_path)
         self.error: str | None = None
         self.atime_ok = last_access_enabled()
+        self.missing_every = MISSING_EVERY
+        # monitor -> (when its deletions were last looked for, config version, cycle id)
+        self._missing_at: dict[str, tuple[float, int, str]] = {}
 
     # ----- reconciling with the filesystem ---------------------------------
 
@@ -1304,12 +1326,12 @@ class Tracker:
         cycle.changes = max(cycle.changes + len(fresh), len(cycle.seen))
 
     def poll(self) -> list[Progress]:
-        """One tick: read the playlists, find what is playing, record it."""
-        try:
-            views = read_playlists(self.config_path)
-        except (OSError, ValueError) as e:
-            self.error = f"Cannot read Wallpaper Engine's config.json: {e}"
+        """One look: read the playlists, find what is playing, record it."""
+        self.files.refresh()
+        if self.files.config is None:
+            self.error = f"Cannot read Wallpaper Engine's config.json: {self.files.config_error}"
             return []
+        views = playlists_in(self.files.config)
         if not views:
             self.error = ("No active playlist in config.json. Apply a playlist in Wallpaper "
                           "Engine and restart it — the config is only written on exit.")
@@ -1317,9 +1339,15 @@ class Tracker:
         self.error = None
 
         state = TrackerState.load()
+        before = state.fingerprint()
+        # Written back anyway once the stamps on disk grow old, so a gap in the
+        # looking still reads as one — to the reconciler, and to a change that
+        # has to tell whether it was watched.
+        stale = any((_parse(c.last_poll) or datetime.min)
+                    < datetime.now() - timedelta(seconds=LAST_POLL_REFRESH)
+                    for c in state.cycles.values())
         claimed: set[str] = set()
         out: list[Progress] = []
-        self.files.refresh()
         decks = self.files.decks if self.files.state_ok else {}
         written = self.files.state_written
         engine = wallpaper_engine_process() if decks else None
@@ -1354,10 +1382,15 @@ class Tracker:
                 elif not deck_describes(cycle, deck):
                     self._catch_up(cycle)
 
-            # Re-checked every poll rather than once: a wallpaper deleted mid
-            # cycle has to stop counting straight away, and one restored has to
-            # start again. Costs about 2 ms for 200 items.
-            cycle.missing = scan_missing(cycle.items)
+            # Re-checked as the cycle goes rather than once: a wallpaper deleted
+            # mid cycle has to stop counting, and one restored has to start
+            # again. See MISSING_EVERY for why not on every look.
+            checked = self._missing_at.get(view.monitor)
+            if (checked is None or checked[1:] != (self.files.config_version, cycle.id)
+                    or time.monotonic() - checked[0] >= self.missing_every):
+                cycle.missing = scan_missing(cycle.items)
+                self._missing_at[view.monitor] = (
+                    time.monotonic(), self.files.config_version, cycle.id)
 
             from_engine = deck_describes(cycle, deck)
             if from_engine:
@@ -1407,7 +1440,11 @@ class Tracker:
                 from_engine=from_engine,
             ))
 
-        state.save()
+        # Most looks change nothing but the time of looking — a heartbeat, a
+        # config.json rewritten with the same playlists — and rewriting 200 KB
+        # for that was most of what tracker.json was ever written for.
+        if stale or state.fingerprint() != before:
+            state.save()
         return out
 
     # ----- queries used by the UI ------------------------------------------

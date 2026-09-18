@@ -168,12 +168,18 @@ class EngineFiles:
     bumps a version number, and each follower keeps the last version it acted
     on, so neither can swallow a change the other has not seen yet. A file
     caught half-written fails to parse, keeps its old version, and is read again
-    on the next look.
+    once it changes; what was read before it stays in place meanwhile.
+
+    config.json is parsed here, once per rewrite, for both followers. It is
+    2.3 MB on this machine and took 15 ms to parse, which the tracker used to
+    pay on every look and the countdown again on its own.
     """
 
     def __init__(self, config_path: str | Path):
         self.config_path = Path(config_path)
         self.state_path = self.config_path.parent / STATE_FILE
+        self.config: dict | None = None
+        self.config_error: str | None = None       # why the last read failed
         self.config_version = 0
         self.state_version = 0
         self.state_written: float | None = None     # when the state read was written
@@ -182,6 +188,7 @@ class EngineFiles:
         # is nothing to follow, and the tracker goes back to polling.
         self.state_ok = False
         self._config_key: tuple | None = None
+        self._config_broken: tuple | None = None
         self._state_key: tuple | None = None
         self._broken_key: tuple | None = None
 
@@ -196,11 +203,31 @@ class EngineFiles:
         return st.st_mtime_ns, st.st_size
 
     def refresh(self) -> None:
-        key = self._key(self.config_path)
-        if key is not None and key != self._config_key:
-            self._config_key = key
-            self.config_version += 1
+        self._refresh_config()
+        self._refresh_state()
 
+    def _refresh_config(self) -> None:
+        key = self._key(self.config_path)
+        if key is None:
+            if self.config is None:
+                self.config_error = "it is not there"
+            return
+        if key in (self._config_key, self._config_broken):
+            return
+        try:
+            data = json.loads(self.config_path.read_text(encoding="utf-8-sig"))
+            if not isinstance(data, dict):
+                raise ValueError("it is not a JSON object")
+        except (OSError, ValueError) as e:
+            self._config_broken = key
+            self.config_error = str(e)
+            return
+        self._config_key = key
+        self.config = data
+        self.config_error = None
+        self.config_version += 1
+
+    def _refresh_state(self) -> None:
         key = self._key(self.state_path)
         if key is None:
             self.state_ok = False
@@ -678,11 +705,8 @@ class WallpaperTimer:
     def _read_config(self) -> None:
         if self.files.config_version == self._config_version:
             return
-        try:
-            data = json.loads(self.config_path.read_text(encoding="utf-8-sig"))
-        except (OSError, ValueError):
-            return
         self._config_version = self.files.config_version
+        data = self.files.config or {}
         for user in data.values():
             general = user.get("general") if isinstance(user, dict) else None
             if not isinstance(general, dict):

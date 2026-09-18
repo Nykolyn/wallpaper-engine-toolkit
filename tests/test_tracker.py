@@ -38,6 +38,9 @@ def check(label: str, condition: bool) -> None:
     print(("PASS " if condition else "FAIL ") + label)
 
 
+cfg_written = {"t": NOW.timestamp() - 10_000}
+
+
 def write_cfg(items: list[str], name: str = "custom", delay: int = 10,
               order: str = "random", monitor: str = "Monitor0") -> None:
     CFG.write_text(json.dumps({
@@ -47,6 +50,10 @@ def write_cfg(items: list[str], name: str = "custom", delay: int = 10,
                 "items": items, "name": name,
                 "settings": {"delay": delay, "order": order, "mode": "timer"}}}}}}},
     }), encoding="utf-8")
+    # config.json is read again only when its time or size moves. Two rewrites
+    # inside one tick of the file-time clock, the same size, would read as one.
+    cfg_written["t"] += 1
+    os.utime(CFG, (cfg_written["t"], cfg_written["t"]))
 
 
 def make_item(folder: str, days_ago: float) -> str:
@@ -390,6 +397,9 @@ def fresh_tracker(items: list[str], atime_ok: bool = False) -> tr.Tracker:
     write_cfg(items)
     tracker = tr.Tracker(str(CFG))
     tracker.atime_ok = atime_ok
+    # These sections delete and restore files between looks and want every
+    # look to notice; how often it really looks is checked on its own below.
+    tracker.missing_every = 0
     return tracker
 
 
@@ -436,6 +446,18 @@ check("and nothing unopenable is offered in 'not yet shown'", left == [])
 Path(gone_items[0].replace("/", "\\")).write_bytes(b"x")
 p = tracker.poll()[0]
 check("a wallpaper put back counts again", (p.total, p.gone, p.remaining) == (6, 2, 1))
+
+# Every file in the playlist is stat'ed to find them, which is most of what a
+# look costs, so it is done on a timer of its own and when config.json changes.
+tracker.missing_every = tr.MISSING_EVERY
+Path(kept_items[1].replace("/", "\\")).unlink()
+p = tracker.poll()[0]
+check("a deletion is not looked for on every look", p.gone == 2)
+write_cfg(kept_items + gone_items)
+p = tracker.poll()[0]
+check("but is as soon as config.json is rewritten", p.gone == 3)
+Path(kept_items[1].replace("/", "\\")).write_bytes(b"x")
+tracker.missing_every = 0
 
 
 # ------------------------- a handle Wallpaper Engine has not let go of
@@ -896,6 +918,39 @@ check("a sorted playlist is still watched through its file handles",
 tr.is_in_use = lambda path: path == playing["now"]
 tr.wallpaper_engine_process = lambda: None
 state_file.unlink()
+
+
+# ---- Writing only what changed -------------------------------------------------
+#
+# tracker.json is 200 KB on a real two-monitor setup, and it was rewritten on
+# every look whether the look had changed anything or not.
+
+tracker = fresh_tracker(deck_items, atime_ok=False)
+deal(deck_items[0], deck_items[1:])
+tracker.poll()
+long_ago = NOW.timestamp() - 3600
+os.utime(tr.STATE_PATH, (long_ago, long_ago))
+tracker.poll()
+check("a look that changes nothing leaves tracker.json alone",
+      tr.STATE_PATH.stat().st_mtime == long_ago)
+deal(deck_items[1], deck_items[2:])
+tracker.poll()
+check("one that counts a change writes it", tr.STATE_PATH.stat().st_mtime > long_ago)
+
+state = tr.TrackerState.load()
+state.cycles["Monitor0"].last_poll = (NOW - timedelta(seconds=tr.LAST_POLL_REFRESH + 60)
+                                      ).strftime(tr.TIME_FMT)
+state.save()
+os.utime(tr.STATE_PATH, (long_ago, long_ago))
+tracker.poll()
+check("and so does one that finds the last-looked stamps grown old",
+      tr.STATE_PATH.stat().st_mtime > long_ago)
+state_file.unlink()
+
+CFG.unlink()
+nowhere = tr.Tracker(str(CFG))
+check("with no config.json the tracker says so rather than failing",
+      nowhere.poll() == [] and "config.json" in (nowhere.error or ""))
 
 
 # ---- When to look ------------------------------------------------------------
