@@ -29,6 +29,8 @@ app/
 │   ├── tracker.py        playlist progress, and when to look at it
 │   ├── wallpaper_timer.py  the countdown, the PLPV0005 parser, the file watcher
 │   ├── we_memory.py      reading wallpaper64.exe's timer, read-only
+│   ├── engine_control.py closing Wallpaper Engine as its tray does, starting it again
+│   ├── playlist_refresh.py the rotation's playlist: found by contents, refilled, restarted
 │   ├── steam_api.py      the Steam Web API
 │   ├── steam_ugc.py      Steamworks, for subscribing
 │   ├── library.py        what is subscribed now, and what was owned once
@@ -39,7 +41,7 @@ app/
 │   └── rotator/
 │       ├── config.py     verbatim  wallpaper_rotator/app/config.py
 │       ├── core.py       + the [protected] rule
-│       └── worker.py     verbatim
+│       └── worker.py     + closing and restarting Wallpaper Engine around a run
 └── ui/
     ├── copier_tab.py, creator_tab.py
     ├── rotator_tab.py, cleanup_dialog.py
@@ -72,6 +74,7 @@ for %f in (tests\test_*.py) do .venv\Scripts\python.exe %f
 | `test_creator.py` | project.json, and which tags win between a batch and one clip |
 | `test_tracker.py` | anchoring a cycle, rebuilding history, merging two writers, following the engine's deck, when to look |
 | `test_wallpaper_timer.py` | the PLPV0005 parser, the file watcher, the countdown, pause rules |
+| `test_playlist_refresh.py` | finding the rotation's playlist, refilling it, restarting one monitor's pass, the state file written back byte for byte |
 | `test_rotator_cleanup.py` | the reserve check and what it offers to delete |
 | `test_autostart.py` | the command line, the task XML, and the rename migration |
 | `test_animations.py` | motion, by sampling real widgets over real time |

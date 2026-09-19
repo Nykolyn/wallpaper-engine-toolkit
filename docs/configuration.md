@@ -20,10 +20,11 @@ data/
 ├── steam_cache.sqlite      what Steam has already been asked
 ├── selfcheck.txt           the last --selfcheck report
 ├── thumbs/                 cached preview images
-└── authors_backup/         database plans and per-change backups
+├── authors_backup/         database plans and per-change backups
+└── playlist-refresh/       Wallpaper Engine's two files before the last rotation rewrote them
 
 app/engines/data/
-├── config.json             the Rotator's four settings
+├── config.json             the Rotator's five settings
 └── history.json            one record per rotation run
 ```
 
@@ -47,6 +48,7 @@ app/engines/data/
 | Destination | [Rotator](rotator.md) | `myprojects`, detected |
 | Duplicates | [Rotator](rotator.md) | empty — pick it |
 | Count | [Rotator](rotator.md) | 1000 |
+| Rebuild Wallpaper Engine's playlist | [Rotator](rotator.md#wallpaper-engines-playlist) | on |
 | Safety check ("Also check every") | [Tracker](tracker.md) | 5 min — changes themselves are picked up as Wallpaper Engine writes them |
 | `config.json` path | [Tracker](tracker.md) | Wallpaper Engine's, detected |
 

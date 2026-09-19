@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from PySide6.QtCore import QThread, Signal
 
+from ..playlist_refresh import PlaylistRefresh
 from .config import Config, History, RunRecord
 from .core import (
     Rotator, ProgressEvent, delete_folders, move_replace_to_reserve,
@@ -20,6 +21,8 @@ class RotationWorker(QThread):
         self.config = config
         self.history = history
         self._cancel = False
+        # What happened to Wallpaper Engine's playlist, for the summary.
+        self.playlist_summary: list[str] = []
 
     def cancel(self):
         self._cancel = True
@@ -31,10 +34,20 @@ class RotationWorker(QThread):
             if err:
                 self.error.emit(err)
                 return
-            record = rotator.run(
-                progress=lambda e: self.progress.emit(e),
-                cancelled=lambda: self._cancel,
-            )
+            relay = lambda e: self.progress.emit(e)  # noqa: E731
+            refresh = None
+            if self.config.refresh_playlist:
+                refresh = PlaylistRefresh(self.config.destination, relay)
+            try:
+                if refresh is not None:
+                    refresh.prepare()
+                record = rotator.run(progress=relay, cancelled=lambda: self._cancel)
+            finally:
+                # Also what starts Wallpaper Engine again, so it runs whatever
+                # became of the rotation.
+                if refresh is not None:
+                    refresh.finish(completed=rotator.completed)
+                    self.playlist_summary = refresh.summary
             self.finished_run.emit(record)
         except Exception as e:  # noqa: BLE001
             self.error.emit(f"Unexpected error: {e}")

@@ -11,7 +11,7 @@ Five tools in one window, sharing one dark theme and one set of habits.
 |---|---|
 | **[Copier](docs/copier.md)** | Duplicates wallpaper folders N times each — the weighting Wallpaper Engine's playlists do not have. |
 | **[Creator](docs/creator.md)** | Turns video clips into Wallpaper Engine projects, rendering each preview from the video itself. |
-| **[Rotator](docs/rotator.md)** | Moves folders between a reserve and `myprojects`, with duplicate handling, protected folders and a dead-folder check. |
+| **[Rotator](docs/rotator.md)** | Moves folders between a reserve and `myprojects`, with duplicate handling, protected folders and a dead-folder check — and rebuilds Wallpaper Engine's playlist from the new set. |
 | **[Tracker](docs/tracker.md)** | Reports how far Wallpaper Engine has got through the active playlist — `112/208` — so the next rotation is due when it reaches the end. |
 | **[Review](docs/review.md)** | Groups the week's new wallpapers by author, says what each has published since you last looked, and opens a gallery to subscribe from. |
 
@@ -55,10 +55,12 @@ main window on the Tracker tab.
 
 ## What it will not do
 
-Nothing here writes to Wallpaper Engine. The Tracker reads its `config.json` and
-the two state files in `bin/`, and its memory probe is opened read-only; none of
-them are ever modified. Rotation moves your folders between your own
-directories. The one action that reaches outside the machine is subscribing to a
+One thing writes to Wallpaper Engine, and says so first: a rotation rebuilding
+its playlist closes it, rewrites that playlist in `config.json` and the pass in
+`bin/playliststate.bin`, and starts it again — with both files copied aside
+beforehand, and a checkbox to turn it off. Nothing else does. The Tracker reads
+`config.json` and the two state files in `bin/`, and its memory probe is opened
+read-only. Rotation moves your folders between your own directories. The one action that reaches outside the machine is subscribing to a
 workshop item, which is a deliberate click.
 
 Nothing writes to a database without showing you the change first, as a line of

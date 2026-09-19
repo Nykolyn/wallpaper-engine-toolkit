@@ -204,18 +204,21 @@ class _MemoryPriority(ctypes.Structure):
     _fields_ = [("MemoryPriority", wintypes.ULONG)]
 
 
-def make_normal_priority() -> dict[str, bool]:
+def make_normal_priority(process=None) -> dict[str, bool]:
     """Undo anything below normal this process inherited, as far as allowed.
 
     CPU, disk and memory priority are three separate things, and a process
     started from a low one can inherit all three. Disk matters most here: the
     wallpapers live on a hard disk Wallpaper Engine is streaming video from,
     and a read at low priority waits behind every one of its reads.
+
+    `process` is a handle to another process to do the same for — Wallpaper
+    Engine, when the Rotator starts it again.
     """
     done = {"cpu": False, "io": False, "memory": False}
     if _k32 is None:
         return done
-    me = _k32.GetCurrentProcess()
+    me = process or _k32.GetCurrentProcess()
     done["cpu"] = bool(_k32.SetPriorityClass(me, _NORMAL_PRIORITY_CLASS))
     try:
         ntdll = ctypes.WinDLL("ntdll")

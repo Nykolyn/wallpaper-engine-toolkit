@@ -179,6 +179,10 @@ tracked one by less than half it is treated as a new playlist: the old cycle is
 archived and the count restarts by itself. Smaller edits — a handful of items
 added or removed — keep the cycle and adjust the total.
 
+A rotation that [rebuilds the playlist](rotator.md#wallpaper-engines-playlist)
+also starts the monitor's pass over, so the new cycle begins the moment
+Wallpaper Engine comes back and deals the first wallpaper of the new set.
+
 ### Time nobody was watching
 
 A pass followed through Wallpaper Engine's record needs none of this section:
@@ -429,7 +433,8 @@ number that answers "when can I rotate?".
 | `data/suite.json` under `tracker` | safety-check interval (`heartbeat`, seconds), `config.json` path, which monitor the icon shows |
 
 It **reads** the Rotator's `history.json` to date a cycle and never writes to
-it. Nothing is ever written back to Wallpaper Engine.
+it. The tracker writes nothing back to Wallpaper Engine; only a rotation does
+(see [the Rotator](rotator.md#wallpaper-engines-playlist)).
 
 ## Watch out for
 

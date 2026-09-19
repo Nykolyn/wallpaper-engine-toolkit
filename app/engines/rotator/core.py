@@ -253,6 +253,8 @@ class Rotator:
     def __init__(self, config: Config, history: History):
         self.config = config
         self.history = history
+        # Set once a run has gone all the way through and been recorded.
+        self.completed = False
 
     def validate(self) -> Optional[str]:
         if not Path(self.config.source).exists():
@@ -295,6 +297,7 @@ class Rotator:
         dup_dir = Path(cfg.duplicates)
         dup_dir.mkdir(parents=True, exist_ok=True)
 
+        self.completed = False
         record = RunRecord(
             id=uuid.uuid4().hex[:8],
             timestamp=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -386,6 +389,7 @@ class Rotator:
             f"duplicates {record.duplicate_count}, failed {len(record.failed)}."))
 
         self.history.add(record)
+        self.completed = True
         return record
 
 

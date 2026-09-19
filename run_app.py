@@ -80,7 +80,9 @@ def _selfcheck() -> int:
                         ("app.engines.steam_ugc", "subscribing from the gallery"),
                         ("app.secrets", "the stored key and connection string"),
                         ("PySide6.QtNetwork", "one window, raised from the tray"),
-                        ("app.window_instance", "starting the window on its own")):
+                        ("app.window_instance", "starting the window on its own"),
+                        ("app.engines.playlist_refresh",
+                         "rebuilding Wallpaper Engine's playlist after a rotation")):
         try:
             __import__(module)
             lines.append(f"ok      {module}  ({why})")

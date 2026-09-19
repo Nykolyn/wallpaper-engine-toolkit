@@ -110,6 +110,29 @@ Several harmless reasons:
   an update that moved the fields. `data/tracker.log` says so, and the tray
   falls back to its estimate.
 
+## The rotation did not rebuild the playlist
+
+The log says which of three it was:
+
+- **No playlist is made of what is in myprojects.** The playlist is found by
+  its contents: at least half of it must be folders the rotation takes back,
+  and it must hold at least half of them. Build it once in Wallpaper Engine
+  from what is in `myprojects`; every rotation after that keeps it current.
+- **Wallpaper Engine did not close.** A dialog of its own open at the time
+  can hold it. The rotation went ahead without touching it; rebuild the
+  playlist by hand that once.
+- **`config.json` could not be read.** Wallpaper Engine was started again
+  unchanged.
+
+What was in both files before the last rewrite is in `data/playlist-refresh/`.
+To put it back, quit Wallpaper Engine from its tray, copy the two files over
+`config.json` and `bin/playliststate.bin`, and start it.
+
+## Wallpaper Engine did not come back after a rotation
+
+The summary says so. Start it as usual; the playlist is already rewritten and
+it opens on the new set.
+
 ## A rotation produced a playlist smaller than the count I asked for
 
 Folders without a `project.json` can never be listed by Wallpaper Engine. Run
