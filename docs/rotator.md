@@ -28,12 +28,61 @@ a duplicate, and what should never move at all.
 3. **Duplicates** — where folders that turn out to be duplicates are moved.
    Starts empty.
 4. **Count** — how many folders to bring across. Default 1000.
-5. **Check folders** first if it has been a while — see below.
-6. Rotate. The confirmation dialog states exactly what will move before
-   anything does.
+5. **Wallpaper Engine** — rebuild the playlist from the new set and start it
+   over. On by default; see [below](#wallpaper-engines-playlist).
+6. **Check folders** first if it has been a while — see below.
+7. Rotate. The confirmation dialog states exactly what will move, and which
+   playlist will be rebuilt, before anything does.
 
-Afterwards, build a playlist in Wallpaper Engine from what is now in
-`myprojects`, and let the [Tracker](tracker.md) tell you when it is done.
+The first time, build a playlist in Wallpaper Engine from what is in
+`myprojects`. From then on every rotation rebuilds it and starts it over by
+itself, and the [Tracker](tracker.md) tells you when it is done.
+
+## Wallpaper Engine's playlist
+
+A rotation used to end with a chore in Wallpaper Engine: open the playlist,
+clear out wallpapers that had just gone back to the reserve, add everything
+now in `myprojects`, save, apply. The rotation does that part too now.
+
+**Which playlist.** The one made of what the rotation takes back, found by its
+contents and never by its name: any playlist — saved, or running on a monitor —
+at least half of whose wallpapers are folders about to return to the reserve,
+and which holds at least half of those folders. Renaming it changes nothing,
+and a saved twin of it is refilled as well. A playlist of workshop
+subscriptions never qualifies, nor a few favourites that happen to live in
+`myprojects`. If nothing qualifies — before the first playlist is built, say —
+the rotation says so and carries on.
+
+**What it becomes.** Every wallpaper now in `myprojects`, `[protected]` ones
+included, plus whatever the playlist held from elsewhere (a default wallpaper,
+say). Its name and settings — delay, order, transitions — stay as they were. A
+monitor that was playing it starts a fresh pass on the new set, as it would
+after applying the playlist by hand.
+
+**What happens to Wallpaper Engine.** It is closed before the first folder
+moves and started again after the last, a few seconds without wallpapers.
+There is no other way in: it reads its playlists from `config.json` as it
+starts and writes its own copy back as it exits, and its command line can only
+switch to a playlist it already has. So:
+
+1. It is closed the way its tray menu's **Quit** closes it — never killed, so
+   it saves what it saves on the way out. That took 0.2 s here.
+2. The folders move. Nothing in `myprojects` is held open while they do.
+3. The playlist in `config.json` is refilled, and the monitor's pass in
+   `bin/playliststate.bin` is reset to the whole new list — otherwise Wallpaper
+   Engine resumes the old pass, made of wallpapers that are gone. Other
+   monitors' passes are left byte for byte as they were.
+4. It is started again with the program and arguments it was running with.
+
+Both files are copied to `data/playlist-refresh/` before they are rewritten,
+and replaced whole rather than edited in place. Wallpaper Engine is started
+again whatever happens in between — a rotation that fails or is stopped leaves
+the playlist as it was, and still brings it back. If it will not close, the
+rotation goes ahead without touching it, and the summary says to rebuild the
+playlist by hand that once.
+
+Untick the box to leave Wallpaper Engine alone entirely; the rotation then only
+moves folders, as it always did.
 
 ## Protected folders
 
@@ -85,7 +134,7 @@ seventeen times faster on a negative answer (0.9 s against 16.8 s).
 The Rotator keeps its own files, separate from the rest of the app, exactly as
 the standalone tool did:
 
-- `app/engines/data/config.json` — the four settings above.
+- `app/engines/data/config.json` — the five settings above.
 - `app/engines/data/history.json` — one record per run: which folders moved,
   which were duplicates, how many came back, what failed.
 
@@ -94,12 +143,19 @@ the newest run sharing at least half its folders with a playlist *is* that
 playlist's starting moment, which is the difference between an exact cycle start
 and a guess. The Tracker never writes to it.
 
+Wallpaper Engine's `config.json` and `bin/playliststate.bin`, as they were
+before the last rotation rewrote them, are in `data/playlist-refresh/`.
+
 ## Watch out for
 
 - **Deletion in the reserve check is permanent.** Nothing goes to the Recycle
   Bin. Read the dialog.
 - **Rotation moves, it does not copy.** A folder is in exactly one of the two
   places.
-- A playlist outlives its files: after a rotation Wallpaper Engine goes on
-  listing folders that are now back in the reserve. That is expected, and the
-  Tracker [accounts for it](tracker.md#what-the-probe-cannot-see).
+- **Wallpaper Engine goes away for a few seconds** during a rotation that
+  rebuilds its playlist, and the monitor playing that playlist starts a fresh
+  pass. Rotate when the pass is done, which is when the Tracker says to
+  anyway.
+- A playlist the rotation did not rebuild outlives its files: Wallpaper Engine
+  goes on listing folders that are now back in the reserve. That is expected,
+  and the Tracker [accounts for it](tracker.md#what-the-probe-cannot-see).

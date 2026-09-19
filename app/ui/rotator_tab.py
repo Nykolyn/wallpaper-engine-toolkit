@@ -13,10 +13,11 @@ from PySide6.QtGui import QTextCursor
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QTabWidget, QPushButton,
     QLabel, QPlainTextEdit, QFormLayout, QLineEdit, QSpinBox,
-    QGroupBox, QMessageBox, QTreeWidget, QTreeWidgetItem, QFileDialog,
+    QGroupBox, QMessageBox, QTreeWidget, QTreeWidgetItem, QFileDialog, QCheckBox,
 )
 
 from .. import animations, theme
+from ..engines import playlist_refresh
 from ..engines.rotator.config import Config, History, RunRecord
 from ..engines.rotator.core import Rotator, list_subfolders, ProgressEvent
 from ..engines.rotator.worker import (
@@ -68,6 +69,14 @@ class RotatorTab(QWidget):
         form.addRow("myprojects (dest):", self._path_row(self.in_dest))
         form.addRow("Duplicates folder:", self._path_row(self.in_dup))
         form.addRow("Folders per run:", self.in_count)
+        self.in_refresh = QCheckBox(
+            "Rebuild the playlist from the new set and start it over")
+        self.in_refresh.setChecked(self.config.refresh_playlist)
+        self.in_refresh.setToolTip(
+            "Wallpaper Engine is closed for the move and started again afterwards —\n"
+            "a few seconds without wallpapers. The playlist is the one made of what\n"
+            "is in myprojects now, found by its contents whatever it is called.")
+        form.addRow("Wallpaper Engine:", self.in_refresh)
         save_btn = QPushButton("Save settings")
         save_btn.clicked.connect(self._save_settings)
         form.addRow("", save_btn)
@@ -131,6 +140,7 @@ class RotatorTab(QWidget):
         self.config.destination = self.in_dest.text().strip()
         self.config.duplicates = self.in_dup.text().strip()
         self.config.count = self.in_count.value()
+        self.config.refresh_playlist = self.in_refresh.isChecked()
         self.config.save()
         self.refresh_all()
         QMessageBox.information(self, "Saved", "Settings saved.")
@@ -341,7 +351,8 @@ class RotatorTab(QWidget):
             f"• Return {p['returning']} folders from myprojects to reserve\n"
             f"• Leave {p['protected']} [protected] folders untouched\n"
             f"• Move {p['duplicates_expected']} duplicates to duplicated_wallpapers\n"
-            f"• Then move {p['count']} random folders into myprojects\n\n"
+            f"• Then move {p['count']} random folders into myprojects\n"
+            f"{self._playlist_line()}\n"
             f"Reserve after return: ~{p['projected_reserve']} folders\n"
             f"Unique not-yet-used available: {p['available_unique']}\n"
         )
@@ -356,6 +367,16 @@ class RotatorTab(QWidget):
         self.rotation_worker.finished_run.connect(self._on_finished)
         self.rotation_worker.error.connect(self._on_error)
         self.rotation_worker.start()
+
+    def _playlist_line(self) -> str:
+        if not self.config.refresh_playlist:
+            return ""
+        labels = playlist_refresh.preview(self.config.destination)
+        if not labels:
+            return ("• Wallpaper Engine: no playlist is made of what is in myprojects "
+                    "now, so there is none to rebuild\n")
+        return ("• Close Wallpaper Engine, rebuild " + ", ".join(labels)
+                + " from the new set, and start it again on a fresh pass\n")
 
     def cancel_rotation(self):
         for worker in (self.rotation_worker, self.scan_worker):
@@ -373,6 +394,7 @@ class RotatorTab(QWidget):
             "return": "Phase 1/3 — Returning folders to reserve",
             "select": "Phase 2/3 — Selecting random folders",
             "move": "Phase 3/3 — Moving folders to myprojects",
+            "playlist": "Wallpaper Engine's playlist",
             "done": "Complete",
             "cancelled": "Cancelled",
             "error": "Error",
@@ -384,7 +406,7 @@ class RotatorTab(QWidget):
             self.progress.setValue(e.current)
             self.progress.setFormat(f"%v / %m  ({e.phase})")
         if (e.level != "INFO" or e.current in (0,)
-                or e.phase in ("select", "done", "scan", "delete")):
+                or e.phase in ("select", "done", "scan", "delete", "playlist")):
             self._append_log(e)
 
     def _append_log(self, e: ProgressEvent):
@@ -398,12 +420,14 @@ class RotatorTab(QWidget):
         self.phase_label.setText(
             f"Complete — moved {record.moved_count}, duplicates {record.duplicate_count}")
         self.refresh_all()
+        summary = self.rotation_worker.playlist_summary if self.rotation_worker else []
         QMessageBox.information(
             self, "Rotation complete",
             f"Moved {record.moved_count} folders.\n"
             f"Returned {record.returned}.\n"
             f"Duplicates set aside: {record.duplicate_count}.\n"
-            f"Failed: {len(record.failed)}.")
+            f"Failed: {len(record.failed)}."
+            + "".join(f"\n\n{line}" for line in summary))
 
     def _on_error(self, msg: str):
         self._set_running(False)
@@ -423,6 +447,7 @@ class RotatorTab(QWidget):
         self.config.destination = self.in_dest.text().strip()
         self.config.duplicates = self.in_dup.text().strip()
         self.config.count = self.in_count.value()
+        self.config.refresh_playlist = self.in_refresh.isChecked()
         self.config.save()
 
     # ---------------------------------------------------- Duplicate actions

@@ -27,7 +27,8 @@ HISTORY_PATH = app_data_dir() / "history.json"
 
 @dataclass
 class Config:
-    """The three folders a rotation moves between, and how many to keep.
+    """The three folders a rotation moves between, how many to keep, and
+    whether Wallpaper Engine's playlist is brought along.
 
     Only ``destination`` can be worked out in advance — it is Wallpaper
     Engine's own myprojects folder, which Steam put somewhere specific. The
@@ -40,6 +41,9 @@ class Config:
         default_factory=lambda: steam_paths.as_text(steam_paths.myprojects_dir()))
     duplicates: str = ""
     count: int = 1000
+    # Close Wallpaper Engine for the move, refill the playlist built from the
+    # previous rotation with the new set, and start it again on a fresh pass.
+    refresh_playlist: bool = True
 
     @classmethod
     def load(cls) -> "Config":

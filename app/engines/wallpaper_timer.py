@@ -106,14 +106,41 @@ class MonitorDeck:
     instance: int = 0
 
 
-def parse_playlist_state(data: bytes) -> dict[str, MonitorDeck]:
-    """The desktop section of playliststate.bin, by monitor.
+@dataclass
+class StateMonitor:
+    """One monitor's record in playliststate.bin, every field kept for writing back."""
+    name: str
+    instance: int
+    current: str
+    waiting: list[str] = field(default_factory=list)
+    # The u32 after the current wallpaper and after each waiting one: 0 in every
+    # file seen, meaning unknown, so carried through untouched.
+    mark: int = 0
+    marks: list[int] = field(default_factory=list)
+
+    def start_over(self, items: list[str], current: str) -> None:
+        """A fresh pass: `current` on screen, every other item still to come."""
+        self.current = current
+        self.waiting = [i for i in items if i != current]
+        self.mark = 0
+        self.marks = [0] * len(self.waiting)
+
+
+@dataclass
+class StateSection:
+    name: str
+    monitors: list[StateMonitor] = field(default_factory=list)
+
+
+def read_state_file(data: bytes, errors: str = "surrogateescape") -> list[StateSection]:
+    """Every section of playliststate.bin, as it lies in the file.
 
     The layout, confirmed by a parser that consumes the real file to its last
     byte: magic, a section count, then per section its name, a monitor count,
     and per monitor its name, a u32, the current wallpaper, a u32, a count, and
     that many (path, u32) entries still waiting in this pass. Raises ValueError
-    on anything that does not fit.
+    on anything that does not fit. With the default `errors` the bytes of every
+    path survive a write back exactly, whatever they are.
     """
     offset = 0
 
@@ -130,26 +157,65 @@ def parse_playlist_state(data: bytes) -> dict[str, MonitorDeck]:
         n = u32()
         if n > 1 << 16 or offset + n > len(data):
             raise ValueError("playliststate.bin has an impossible string")
-        value = data[offset:offset + n].decode("utf-8", "replace")
+        value = data[offset:offset + n].decode("utf-8", errors)
         offset += n
         return value
 
     if text() != MAGIC:
         raise ValueError("not a PLPV0005 playlist state")
-    decks: dict[str, MonitorDeck] = {}
+    sections: list[StateSection] = []
     for _ in range(u32()):
-        section = text()
+        section = StateSection(text())
         for _ in range(u32()):
-            monitor = text()
+            name = text()
             instance = u32()
-            deck = MonitorDeck(current=text(), instance=instance)
-            u32()
+            monitor = StateMonitor(name=name, instance=instance, current=text())
+            monitor.mark = u32()
             for _ in range(u32()):
-                deck.waiting.append(text())
-                u32()
-            if section == SECTION:
-                decks[monitor] = deck
-    return decks
+                monitor.waiting.append(text())
+                monitor.marks.append(u32())
+            section.monitors.append(monitor)
+        sections.append(section)
+    return sections
+
+
+def write_state_file(sections: list[StateSection]) -> bytes:
+    """playliststate.bin, laid out as Wallpaper Engine lays it out."""
+    out = bytearray()
+
+    def u32(value: int) -> None:
+        out.extend(struct.pack("<I", value))
+
+    def text(value: str) -> None:
+        raw = value.encode("utf-8", "surrogateescape")
+        u32(len(raw))
+        out.extend(raw)
+
+    text(MAGIC)
+    u32(len(sections))
+    for section in sections:
+        text(section.name)
+        u32(len(section.monitors))
+        for monitor in section.monitors:
+            text(monitor.name)
+            u32(monitor.instance)
+            text(monitor.current)
+            u32(monitor.mark)
+            u32(len(monitor.waiting))
+            marks = monitor.marks + [0] * (len(monitor.waiting) - len(monitor.marks))
+            for path, mark in zip(monitor.waiting, marks):
+                text(path)
+                u32(mark)
+    return bytes(out)
+
+
+def parse_playlist_state(data: bytes) -> dict[str, MonitorDeck]:
+    """The desktop section of playliststate.bin, by monitor (see read_state_file)."""
+    return {monitor.name: MonitorDeck(current=monitor.current, waiting=monitor.waiting,
+                                      instance=monitor.instance)
+            for section in read_state_file(data, errors="replace")
+            if section.name == SECTION
+            for monitor in section.monitors}
 
 
 # ---- Following Wallpaper Engine's files ---------------------------------------

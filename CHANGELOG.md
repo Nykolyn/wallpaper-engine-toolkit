@@ -6,6 +6,29 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-09-19
+
+### Added
+
+- **A rotation rebuilds Wallpaper Engine's playlist and starts it over.** No
+  more opening the playlist after a rotation to clear out what went back to the
+  reserve and add what came in. The playlist is found by what is in it, never
+  by its name — any playlist, saved or running on a monitor, made mostly of the
+  folders the rotation takes back — so renaming it or keeping a saved twin
+  breaks nothing. It is refilled with everything now in `myprojects`, keeping
+  its name, settings and anything it holds from elsewhere, and the monitor
+  playing it starts a fresh pass. Wallpaper Engine is closed for the move the
+  way its tray's Quit closes it and started again with the arguments it had —
+  a few seconds without wallpapers — and it comes back whatever became of the
+  rotation. Both files it rewrites are copied to `data/playlist-refresh/`
+  first. On by default; a checkbox on the Rotator tab turns it off. See
+  [Wallpaper Engine's playlist](docs/rotator.md#wallpaper-engines-playlist).
+
+### Changed
+
+- **The folder on screen moves too.** With Wallpaper Engine closed for the
+  rotation, nothing in `myprojects` is held open while the folders move.
+
 ## [1.0.0] - 2026-09-18
 
 ### Added
@@ -102,5 +125,6 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   was right for one library and wrong for every other. Nothing is tagged now
   unless you ask for it.
 
-[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/releases/tag/v1.0.0
