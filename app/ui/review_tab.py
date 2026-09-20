@@ -351,8 +351,13 @@ class AuthorList(QListView):
 # ---- The tab ---------------------------------------------------------------
 
 class ReviewTab(QWidget):
+    # Progress from the engine, on its way to the status line. It belongs to
+    # the tab because the tab is the thing that lasts: see `_progress_relay`.
+    progressed = Signal(str, int, int)
+
     def __init__(self, settings: Settings, parent=None):
         super().__init__(parent)
+        self.progressed.connect(self._step)
         self.settings = settings
         self.db: AuthorsDb | None = None
         self.steam: SteamClient | None = None
@@ -692,6 +697,26 @@ class ReviewTab(QWidget):
         self._task = task
         task.start()
 
+    def _progress_relay(self, stage: str, done: int, total: int) -> None:
+        """What the engine reports progress through, for the tab's whole life.
+
+        It used to be handed `task.step.emit` of whichever Task happened to be
+        running when the `Review` was built — the first scan's. A `Review` is
+        built once and kept, and a finished Task is deleted, so the second
+        thing to report progress emitted from a deleted QObject and PySide
+        raised **"Signal source has been deleted"** in red across the tab. It
+        took one press of "Count what is new" after one scan.
+
+        A signal on the tab has no such lifetime: the tab is what owns every
+        Task in the first place. The `RuntimeError` guard is for the one case
+        left — the tab itself going away while a fetch is still in flight, and
+        nobody is reading the status line then either.
+        """
+        try:
+            self.progressed.emit(stage, done, total)
+        except RuntimeError:
+            pass
+
     def _step(self, stage: str, done: int, total: int) -> None:
         if total:
             self.progress.setRange(0, total)
@@ -734,7 +759,7 @@ class ReviewTab(QWidget):
                     step("reading the local libraries", 0, 0)
                     self.library.refresh()
                 self.review = Review(self.db, self.steam, self.library,
-                                     on_progress=lambda s, d, n: step(s, d, n))
+                                     on_progress=self._progress_relay)
             return self.review.scan(scope)
 
         scope = self.scope.currentData() or rv.DEFAULT_SCOPE

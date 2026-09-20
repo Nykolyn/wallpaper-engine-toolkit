@@ -6,6 +6,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.2.1] - 2026-09-20
+
+### Fixed
+
+- **"Count what is new" failed with "Signal source has been deleted".** One
+  press after a scan and the tab printed that in red instead of counting
+  anything. The engine was given the scan's own worker thread to report
+  progress through, and a worker is deleted the moment it finishes — so the
+  next thing to report progress was reporting to something that no longer
+  existed. Progress goes through the tab now, which is what owns the workers
+  and outlives all of them. Introduced in 1.2.0.
+
 ## [1.2.0] - 2026-09-20
 
 ### Added
@@ -173,7 +185,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   was right for one library and wrong for every other. Nothing is tagged now
   unless you ask for it.
 
-[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v1.2.1...HEAD
+[1.2.1]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/releases/tag/v1.0.0
