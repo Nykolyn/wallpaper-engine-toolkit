@@ -365,6 +365,8 @@ class ReviewTab(QWidget):
         self._loading: AuthorCard | None = None
         self._watching: Task | None = None      # a look at the workshop folder
         self._busy_count = 0
+        self._owned_tasks: set[Task] = set()     # "was yours" passes in flight
+        self._owned_pending: set[str] = set()    # the authors those are for
         self._status_text = ""
         self._status_kind = "muted"
         self._styled_kind = None                # the colour the label has now
@@ -373,7 +375,18 @@ class ReviewTab(QWidget):
         outer = QVBoxLayout(self)
 
         bar = QHBoxLayout()
-        self.scan_btn = QPushButton("Scan the folder")
+        bar.addWidget(QLabel("Look at:"))
+        self.scope = QComboBox()
+        self.scope.setMinimumWidth(210)
+        self.scope.setToolTip(
+            "Which of Wallpaper Engine's wallpapers to review. The folders are "
+            "read from its own config.json, so a folder you made today is in "
+            "this list today.")
+        bar.addWidget(self.scope)
+        self._load_scopes()
+        self.scope.currentIndexChanged.connect(self._save_scope)
+
+        self.scan_btn = QPushButton("Scan")
         theme.make_accent(self.scan_btn)
         self.scan_btn.clicked.connect(self.start_scan)
         bar.addWidget(self.scan_btn)
@@ -419,8 +432,8 @@ class ReviewTab(QWidget):
         self.status.setWordWrap(False)
         self.status.setFixedHeight(self.status.fontMetrics().height() + 6)
         outer.addWidget(self.status)
-        self._say("Press “Scan the folder” to read Wallpaper Engine's “new” folder "
-                  "and find out who made what is in it.")
+        self._say("Choose what to look at, then press “Scan” to find out who "
+                  "made what is in it.")
 
         split = QSplitter(Qt.Horizontal)
         left = QWidget()
@@ -600,6 +613,41 @@ class ReviewTab(QWidget):
         else:
             self.list_count.setText(f"{len(cards)} of {total} authors match")
 
+    # -- what gets reviewed -------------------------------------------------
+
+    def _load_scopes(self) -> None:
+        """Fill the scope list from Wallpaper Engine's own folders.
+
+        Read rather than remembered, when the tab is built and again after
+        every scan: folders are made and emptied between sessions, and a list
+        that has to be right is not worth caching 15 ms of parsing for. The
+        three below the folders cross them — the last is the whole library,
+        which is the only way to reach a wallpaper that is in no folder at all.
+        """
+        wanted = self.settings.get(SECTION, "scope", rv.DEFAULT_SCOPE)
+        try:
+            folders = rv.we_folders()
+        except Exception:  # noqa: BLE001 — a tab with no list still scans
+            folders = {}
+        self.scope.blockSignals(True)
+        self.scope.clear()
+        for title, items in folders.items():
+            self.scope.addItem(f"{title}  ({len(items)})", rv.FOLDER + title)
+        if folders:
+            self.scope.insertSeparator(self.scope.count())
+        self.scope.addItem("All folders", rv.SCOPE_FOLDERS)
+        self.scope.addItem("Not in any folder", rv.SCOPE_LOOSE)
+        self.scope.addItem("Everything you have", rv.SCOPE_EVERYTHING)
+        found = self.scope.findData(wanted)
+        # The folder chosen last time may have been deleted since.
+        self.scope.setCurrentIndex(found if found >= 0
+                                   else self.scope.findData(rv.SCOPE_EVERYTHING))
+        self.scope.blockSignals(False)
+
+    def _save_scope(self) -> None:
+        self.settings.set(SECTION, "scope", self.scope.currentData())
+        self.settings.save()
+
     # -- settings ---------------------------------------------------------
 
     def _save_mode(self) -> None:
@@ -622,7 +670,7 @@ class ReviewTab(QWidget):
         if self.db is not None:
             self.db.close()
         self.db = self.steam = self.review = None
-        self._say("Saved. Press “Scan the folder” to use the new settings.")
+        self._say("Saved. Press “Scan” to use the new settings.")
 
     def _configured(self) -> bool:
         return bool(secrets.get(secrets.AUTHORS_DB_URI)
@@ -687,12 +735,21 @@ class ReviewTab(QWidget):
                     self.library.refresh()
                 self.review = Review(self.db, self.steam, self.library,
                                      on_progress=lambda s, d, n: step(s, d, n))
-            return self.review.scan()
+            return self.review.scan(scope)
 
-        self._run(work, self._scanned, "Reading Wallpaper Engine's folder…")
+        scope = self.scope.currentData() or rv.DEFAULT_SCOPE
+        self._save_scope()
+        # A scan is also the moment to notice a folder filled since the tab
+        # was opened — which is a wallpaper more that was yours before.
+        if self.review is not None:
+            self.review.forget_owned()
+        self._run(work, self._scanned, f"Reading {rv.scope_label(scope)}…")
 
     def _scanned(self, result: ReviewResult) -> None:
         self.result = result
+        self._owned_tasks.clear()
+        self._owned_pending.clear()
+        self._load_scopes()
         self._refresh_list()
         self.fill_btn.setEnabled(True)
         self.update_btn.setEnabled(True)
@@ -704,13 +761,15 @@ class ReviewTab(QWidget):
             return
         result = self.result
 
-        def work(step):
-            for done, card in enumerate(result.cards, 1):
-                if not card.filled:
-                    self.review.fill(card)
-                step("counting", done, len(result.cards))
-            self.review.recount(result)
-            return result
+        def work(_step):
+            # Through the engine's batch, not one card at a time. The loop
+            # this replaced made one Steam request after another — 641 ms of
+            # Frankfurt each, 54 s for the 85 authors of an ordinary week —
+            # and re-read the workshop folder for every one of them. The batch
+            # reads it once and lets the waiting overlap, which the client's
+            # own throttle still paces. It reports its progress through the
+            # hook the review was built with, which is this tab's status line.
+            return self.review.fill_all(result)
 
         self._run(work, self._filled, "Asking Steam what each author has published…")
 
@@ -748,6 +807,7 @@ class ReviewTab(QWidget):
         if card.deep:
             self.gallery.show_items(card.offered)
             self._update_subscribe_all()
+            self._check_owned(card)
             self._settle_status()
             return
         self.gallery.show_items([])
@@ -778,7 +838,57 @@ class ReviewTab(QWidget):
         self._describe(card)
         self.gallery.show_items(card.offered)
         self._update_subscribe_all()
+        self._check_owned(card)
         self._settle_status()
+
+    # -- have you had these before? ----------------------------------------
+
+    def _check_owned(self, card: AuthorCard) -> None:
+        """Mark this gallery's wallpapers that you have had before, on a thread.
+
+        Not during the count. Counting a week is four hundred authors and
+        nobody is looking at a gallery yet, so the set this needs — every
+        workshop id in the local libraries plus every id Wallpaper Engine's
+        folders remember, 20 470 of them here — is built the first time a
+        gallery is actually opened, and shared by every gallery after it.
+
+        On a thread because that first build parses a 2.35 MB `config.json`
+        and walks the library index, and the window must not stop for it. It
+        stays off the busy counter: the progress bar answers “is the tab
+        fetching”, and nobody asked for this or is waiting on it.
+        """
+        if card is None or card.owned_checked or self.review is None:
+            return
+        if card.id64 in self._owned_pending:
+            # Clicking an author twice while the first pass is in flight.
+            return
+        self._owned_pending.add(card.id64)
+        task = Task(lambda _step, c=card: (c, self.review.owned_before()), self)
+        task.done.connect(self._owned_ready)
+        task.failed.connect(lambda message, c=card: self._owned_failed(c, message))
+        task.finished.connect(lambda t=task: self._owned_tasks.discard(t))
+        self._owned_tasks.add(task)
+        task.start()
+
+    def _owned_ready(self, found) -> None:
+        """The answer landed: mark the gallery and say what it came to."""
+        card, owned = found
+        self._owned_pending.discard(card.id64)
+        if self.review is None:
+            return
+        self.review.mark_owned(card, owned)
+        self.authors.touch(card)
+        if self.current is card:
+            self.gallery.refresh_page()
+            self._describe(card)
+
+    def _owned_failed(self, card: AuthorCard, message: str) -> None:
+        """Say so once, quietly. The gallery is still usable without it — it
+        simply goes on saying nothing about what you used to own."""
+        self._owned_pending.discard(card.id64)
+        if self.current is card:
+            self._say(f"Could not work out what you have owned before: {message}",
+                      "warn")
 
     def _author_failed(self, card: AuthorCard, message: str) -> None:
         if self._loading is card:
@@ -799,8 +909,12 @@ class ReviewTab(QWidget):
             # everything before it has been looked at once already.
             bits.append(f"{card.badge} new since then" if card.visited
                         else f"{card.badge} not subscribed")
-            if card.returning:
-                bits.append(f"{card.returning} were yours once")
+            if card.owned_checked:
+                # Said even at zero, because "none of these were ever yours"
+                # is the answer the mark exists to give, and silence reads as
+                # "not worked out yet" — which it was, a second ago.
+                bits.append(f"{card.returning} were yours once"
+                            if card.returning else "none were yours before")
             bits.append(f"{card.total} published in total")
         if card.error:
             bits.append(card.error)

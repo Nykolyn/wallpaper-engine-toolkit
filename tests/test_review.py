@@ -133,6 +133,28 @@ check("the folder's own contents are read as they are written",
 check("and anything that is not a workshop id is left out of it", "bogus" not in queue)
 check("a folder that does not exist is empty, not an error",
       rv.folder_items(WE_CONFIG, "nope") == [])
+
+# The folder to review used to be `new` and nothing else. It is a scope now:
+# one folder, every folder, no folder, or the whole library — the last two
+# being the only way to reach a wallpaper that was never filed anywhere.
+folders = rv.we_folders(WE_CONFIG)
+check("every folder is read in one pass, not one parse per folder",
+      {k: len(v) for k, v in folders.items()} == {"all": 2, "new": 3})
+present = library.listable()
+check("a scope naming one folder is that folder",
+      rv.scope_candidates(rv.FOLDER + "new", folders, present)
+      == ["1001", "2001", "3001"])
+check("all folders is their union, with each wallpaper in it once",
+      rv.scope_candidates(rv.SCOPE_FOLDERS, folders, present)
+      == ["1001", "9999", "2001", "3001"])
+check("what is in no folder can only be found among what is here at all",
+      rv.scope_candidates(rv.SCOPE_LOOSE, folders, present) == ["1002"])
+check("and everything is both together",
+      set(rv.scope_candidates(rv.SCOPE_EVERYTHING, folders, present))
+      == {"1001", "9999", "2001", "3001", "1002"})
+check("every scope can say what it is in a sentence",
+      rv.scope_label(rv.FOLDER + "new").endswith("“new”")
+      and rv.scope_label(rv.SCOPE_LOOSE) == "whatever is in no folder")
 # Three things stand between "the folder holds this id" and "you can see it":
 # the wallpaper may have been unsubscribed, the folder left behind may hold
 # nothing but a shader cache, and a copy in myprojects is not a subscription.
@@ -242,6 +264,12 @@ check("and the difference is reported rather than hidden",
 check("asking for everything the folder remembers is still possible",
       review.scan(config_path=WE_CONFIG, only_present=False).queue
       == ["1001", "2001", "3001"])
+whole = review.scan(rv.SCOPE_EVERYTHING, config_path=WE_CONFIG)
+check("a scan of the whole library reaches a wallpaper no folder holds",
+      "1002" in whole.queue and "1002" not in result.queue)
+check("and the summary names what was looked at",
+      "whole library" in whole.summary())
+
 check("every author behind the queue gets a card", set(cards) == {ALICE})
 check("an author already in the database is marked known",
       cards[ALICE].state == rv.KNOWN)
@@ -278,10 +306,27 @@ check("everything from before it is not shown, however it was marked",
 check("which includes a queued wallpaper older than the visit",
       "1001" not in {w.id for w in card.items})
 check("so the badge and the gallery are the same number", card.badge == 2)
-check("a wallpaper owned once and deleted is still marked when it is new",
-      card.returning == 1 and [w.id for w in card.offered if w.once_had] == ["2002"])
 check("the gallery is newest first, the way a workshop page is",
       card.offered[0].id == "3001")
+
+# Whether you have had a wallpaper before is a separate pass. Counting a week
+# is four hundred authors and nobody is looking at a gallery yet, so the count
+# does not ask — and until something does, a card must not claim either answer.
+check("counting does not ask what you used to own",
+      not card.owned_checked and not any(w.once_had for w in card.items))
+check("and no card calls itself new to you before anything has asked",
+      not any(w.unseen for w in card.offered))
+
+review.mark_owned(card)
+check("the pass that does ask marks what was owned once and deleted",
+      card.owned_checked and card.returning == 2
+      and {w.id for w in card.offered if w.once_had} == {"3001", "2002"})
+# This is the one that was missing. A wallpaper subscribed to and dropped
+# without ever being copied leaves nothing in the libraries — but Wallpaper
+# Engine's folder still remembers its id, for ever. On the real machine that
+# is 14 915 wallpapers that were being offered back as if never seen.
+check("a folder remembering an id is enough, with no copy left anywhere",
+      "3001" in review.owned_before() and "3001" not in library.ever_had())
 
 review.fill(card, full=True)
 check("opening the card does not widen it past the visit date",
@@ -324,6 +369,9 @@ check("a counted author with nothing new keeps the visit date where it was",
 fresh_card = rv.AuthorCard(id64=BOB, profile=Profile(id64=BOB, name="Bob"),
                            queued=["5001"])
 review.fill(fresh_card, full=True)
+review.mark_owned(fresh_card)
+check("a wallpaper no folder remembers and no copy names is new to you",
+      [w.id for w in fresh_card.offered if w.unseen] == ["5001"])
 created = review.plan([fresh_card])
 check("a new author is created rather than updated",
       created[0].kind == "create" and created[0].fields["steamId"] == BOB)
@@ -560,8 +608,10 @@ check("progress is reported once per card",
       len([s for s in steps if s[0] == "wallpapers"]) == len(filled.cards))
 check("and the last report is the whole batch",
       max(s[1] for s in steps if s[0] == "wallpapers") == len(filled.cards))
-check("the library sets are read once for the batch, not once per card",
-      counted["subscribed"] == 1 and counted["ever"] == 1)
+check("the subscribed set is read once for the batch, not once per card",
+      counted["subscribed"] == 1)
+check("and counting never asks the slow question of what you used to own",
+      counted["ever"] == 0)
 check("the totals are worked out after the filling, not before",
       filled.counts.get("filled") == len(filled.cards))
 
@@ -571,8 +621,18 @@ counted["subscribed"] = counted["ever"] = 0
 one = [c for c in filled.cards if c.id64 == ALICE][0]
 one.filled = False
 batch.fill(one)
-check("one card on its own still reads the sets for itself",
-      one.filled and counted["subscribed"] == 1 and counted["ever"] == 1)
+check("one card on its own still reads the subscribed set for itself",
+      one.filled and counted["subscribed"] == 1 and counted["ever"] == 0)
+
+counted["ever"] = 0
+batch.mark_owned(one)
+batch.mark_owned(one)
+check("the set behind “was yours” is built once and shared by every gallery",
+      counted["ever"] == 1 and one.owned_checked)
+batch.forget_owned()
+batch.mark_owned(one)
+check("and built again on demand, for a folder filled since the scan",
+      counted["ever"] == 2)
 
 # The waiting has to actually overlap. Four cards that each take 200 ms are
 # 800 ms in a row; through the pool they are one wait, not four.

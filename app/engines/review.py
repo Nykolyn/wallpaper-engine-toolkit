@@ -19,8 +19,17 @@ whatever order the window wants them.
 now. That deliberately includes wallpapers that were subscribed once and
 deleted — those come back around, and the user asked for them — but they are
 marked, because half of a two-thousand-card list would otherwise be things
-already rejected once. The mark comes from `project.json` files in the local
-libraries; see :mod:`library`.
+already rejected once. Two records answer "did you have this": the
+`project.json` of every kept copy in the local libraries (see :mod:`library`),
+and every id Wallpaper Engine's own folders still remember, which is the far
+bigger of the two — 14 915 ids here that are no longer subscribed against 425
+the copies knew about. The answer costs a parse, so it is worked out once by
+:meth:`Review.owned_before` and applied per gallery by :meth:`Review.mark_owned`
+rather than during the count.
+
+**What gets reviewed.** A scope, not a hard-coded folder: one of Wallpaper
+Engine's browser folders, everything in any of them, everything in none of
+them, or the whole library. See :func:`scope_candidates`.
 
 **Where the visit date lands.** After a review an author's `dateVisited` moves
 to the creation time of the newest wallpaper the review covered — not to "now".
@@ -51,39 +60,110 @@ UNKNOWN = "unknown"         # Steam would not say who they are
 
 DEFAULT_FOLDER = "new"
 
+# What a review is asked to look at. A folder scope is the folder's title
+# behind :data:`FOLDER`; the three beginning with "@" are the ones no folder
+# can be called, because Wallpaper Engine will not name a folder after them.
+FOLDER = "folder:"
+SCOPE_FOLDERS = "@folders"          # everything in any folder
+SCOPE_LOOSE = "@loose"              # everything in none of them
+SCOPE_EVERYTHING = "@everything"    # both, which is the whole library
+DEFAULT_SCOPE = FOLDER + DEFAULT_FOLDER
+
 # How the author list can be ordered.
 SORT_DEFAULT = "default"      # authors already in the database first, then new ones
 SORT_NAME = "name"
 SORT_APPEARED = "appeared"    # when their wallpapers reached the folder
 
 
-def folder_items(config_path: str | Path | None = None,
-                 folder: str = DEFAULT_FOLDER) -> list[str]:
-    """The workshop ids in one of Wallpaper Engine's own folders.
+def we_folders(config_path: str | Path | None = None) -> dict[str, list[str]]:
+    """Every folder in Wallpaper Engine's browser, title to workshop ids.
 
-    This is the review queue: what was put aside during the week. Wallpaper
-    Engine only flushes `config.json` when it starts and when it exits, so a
-    wallpaper added minutes ago shows up after the next restart — which is why
-    the tab says when the file was last written rather than pretending to be
-    live.
+    Read fresh rather than remembered: the file is 2.35 MB and parses in 15 ms,
+    and a folder the user filled this morning has to appear in the list this
+    afternoon. Wallpaper Engine only flushes `config.json` when it starts and
+    when it exits, so a wallpaper added minutes ago shows up after the next
+    restart — which is why the tab says what the folder holds rather than
+    pretending to be live.
+
+    Subfolders are folded into their parent. Nothing here nests one today, but
+    `config.json` has the key and a folder inside a folder is still a folder
+    the wallpaper was put in.
     """
     path = Path(config_path) if config_path else None
     if path is None:
         found = find_we_config()
         path = Path(found) if found else None
     if path is None or not path.is_file():
-        return []
+        return {}
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
-        return []
-    for user, settings in data.items():
+        return {}
+    found_folders: dict[str, list[str]] = {}
+
+    def take(entry: dict) -> None:
+        title = str(entry.get("title") or "")
+        if title and title not in found_folders:
+            found_folders[title] = [str(i) for i in (entry.get("items") or {})
+                                    if str(i).isdigit()]
+        for child in (entry.get("subfolders") or []):
+            if isinstance(child, dict):
+                take(child)
+
+    for settings in data.values():
         if not isinstance(settings, dict):
             continue
         for entry in (settings.get("general", {}).get("browser", {}).get("folders") or []):
-            if isinstance(entry, dict) and entry.get("title") == folder:
-                return [str(i) for i in (entry.get("items") or {}) if str(i).isdigit()]
-    return []
+            if isinstance(entry, dict):
+                take(entry)
+    return found_folders
+
+
+def folder_items(config_path: str | Path | None = None,
+                 folder: str = DEFAULT_FOLDER) -> list[str]:
+    """The workshop ids in one of Wallpaper Engine's own folders."""
+    return we_folders(config_path).get(folder, [])
+
+
+def folder_of(scope: str) -> str | None:
+    """The folder a scope names, or None when it names more than one."""
+    return scope[len(FOLDER):] if scope.startswith(FOLDER) else None
+
+
+def scope_label(scope: str) -> str:
+    """What to call a scope. A noun phrase, so it reads after "Reading" too."""
+    if scope == SCOPE_FOLDERS:
+        return "all folders"
+    if scope == SCOPE_LOOSE:
+        return "whatever is in no folder"
+    if scope == SCOPE_EVERYTHING:
+        return "your whole library"
+    name = folder_of(scope)
+    return f"folder “{name}”" if name else str(scope)
+
+
+def scope_candidates(scope: str, folders: dict[str, list[str]],
+                     here: set[str]) -> list[str]:
+    """The ids a scope asks about, before anything is filtered out of them.
+
+    ``here`` is what Wallpaper Engine can actually show — the only way to know
+    that a wallpaper is in *no* folder is to know it is here at all, since a
+    folder remembers ids nothing is left of.
+    """
+    foldered: list[str] = []
+    seen: set[str] = set()
+    for title, items in folders.items():
+        if scope.startswith(FOLDER) and title != folder_of(scope):
+            continue
+        for item_id in items:
+            if item_id not in seen:
+                seen.add(item_id)
+                foldered.append(item_id)
+    if scope == SCOPE_LOOSE:
+        return sorted(here - seen)
+    if scope == SCOPE_EVERYTHING:
+        return foldered + sorted(here - seen)
+    return foldered
 
 
 @dataclass
@@ -95,6 +175,16 @@ class Wallpaper:
     once_had: bool = False
     in_queue: bool = False          # it is in the Wallpaper Engine folder
     new_since_visit: bool = True
+    # Whether anybody has yet asked whether this machine has had it before.
+    # Until they have, ``once_had`` is False because nothing is known, not
+    # because the answer is no — and a card must not claim "new" on the
+    # strength of a question it never asked.
+    owned_checked: bool = False
+
+    @property
+    def unseen(self) -> bool:
+        """Never subscribed, never owned, never copied — genuinely new to you."""
+        return self.owned_checked and not self.subscribed and not self.once_had
 
     @property
     def id(self) -> str:
@@ -128,6 +218,7 @@ class AuthorCard:
     deep: bool = False          # the gallery has been fetched
     appeared: datetime | None = None   # when their first queued wallpaper arrived
     complete: bool = True
+    owned_checked: bool = False        # the "was yours" pass has run over `items`
     error: str = ""
 
     @property
@@ -226,6 +317,7 @@ class ReviewResult:
     remembered: int = 0          # ids the folder holds, including long-gone ones
     unresolved: list[str] = field(default_factory=list)
     counts: dict = field(default_factory=dict)
+    scope: str = DEFAULT_SCOPE   # what was asked about
 
     def by_state(self, state: str) -> list[AuthorCard]:
         return [c for c in self.cards if c.state == state]
@@ -233,8 +325,11 @@ class ReviewResult:
     def summary(self) -> str:
         c = self.counts
         gone = c.get("remembered", 0) - c.get("queued", 0)
-        tail = f" ({gone} more the folder remembers, long gone)" if gone > 0 else ""
-        return (f"{c.get('queued', 0)} wallpapers in the folder{tail}, "
+        # Which folder, when there is only one; "remembered" alone when the
+        # scope spans several and no single folder is the one doing it.
+        whose = "the folder remembers" if folder_of(self.scope) else "remembered"
+        tail = f" ({gone} more {whose}, long gone)" if gone > 0 else ""
+        return (f"{scope_label(self.scope)}: {c.get('queued', 0)} wallpapers{tail}, "
                 f"{c.get('authors', 0)} authors: {c.get('new', 0)} new, "
                 f"{c.get('known', 0)} known, {c.get('duplicate', 0)} duplicated, "
                 f"{c.get('unknown', 0)} unidentifiable")
@@ -256,13 +351,26 @@ class Review:
         # side by side, and write the same card from two threads.
         self._filling: dict[str, threading.Lock] = {}
         self._filling_guard = threading.Lock()
+        # Worked out once, off the GUI thread, and shared by every gallery.
+        self._owned: set[str] | None = None
+        self._owned_lock = threading.Lock()
+        # Whatever config.json the last scan read, so the pass that asks what
+        # you used to own reads the same one.
+        self._config_path: str | Path | None = None
 
     # -- phase one: who ----------------------------------------------------
 
-    def scan(self, folder: str = DEFAULT_FOLDER,
+    def scan(self, scope: str = DEFAULT_SCOPE,
              config_path: str | Path | None = None,
              only_present: bool = True) -> ReviewResult:
-        """Identify every author behind the folder. Twelve seconds, no more.
+        """Identify every author behind the chosen wallpapers. Seconds, no more.
+
+        ``scope`` is one folder of Wallpaper Engine's, or one of the three
+        that cross folders: :data:`SCOPE_FOLDERS`, :data:`SCOPE_LOOSE` and
+        :data:`SCOPE_EVERYTHING`. It used to be the `new` folder and nothing
+        else, which is the weekly habit but not the only question worth
+        asking — this library has 12 353 ids in one folder, 3 374 in another
+        and 66 wallpapers in none at all, and those 66 were unreachable.
 
         ``only_present`` is what makes the count match what Wallpaper Engine
         shows: see :meth:`Library.listable`. On the folder this was built
@@ -270,15 +378,15 @@ class Review:
         Reviewing the other 2 136 would mean re-reviewing everything ever put
         aside and since deleted.
         """
-        remembered = folder_items(config_path, folder)
-        queue = remembered
-        if only_present:
-            here = self.library.listable()
-            queue = [i for i in remembered if i in here]
-        self._log(f"folder '{folder}': {len(queue)} wallpapers"
+        self._config_path = config_path
+        folders = we_folders(config_path)
+        here = self.library.listable()
+        remembered = scope_candidates(scope, folders, here)
+        queue = [i for i in remembered if i in here] if only_present else remembered
+        self._log(f"{scope_label(scope)}: {len(queue)} wallpapers"
                   + (f" ({len(remembered) - len(queue)} more the folder remembers "
                      "but nothing is left of)" if len(queue) != len(remembered) else ""))
-        result = ReviewResult(queue=queue, remembered=len(remembered))
+        result = ReviewResult(queue=queue, remembered=len(remembered), scope=scope)
         if not queue:
             return result
 
@@ -322,7 +430,7 @@ class Review:
 
     def fill(self, card: AuthorCard, full: bool = False,
              refresh: bool = False, subscribed: set[str] | None = None,
-             ever: set[str] | None = None) -> AuthorCard:
+             owned: set[str] | None = None) -> AuthorCard:
         """Work out what this author has that is not here, and mark it up.
 
         For an author already in the database only what was published after
@@ -335,20 +443,24 @@ class Review:
 
         A second caller for an author already being filled waits for the first
         and takes its answer, rather than asking Steam again.
+
+        **What this deliberately does not answer is whether you had it before.**
+        That is :meth:`mark_owned`, and it is separate because counting a week
+        is four hundred of these and nobody is looking at a gallery yet. Pass
+        ``owned`` to have it done here anyway.
         """
         with self._filling_guard:
             lock = self._filling.setdefault(card.id64, threading.Lock())
         with lock:
             if card.filled and card.deep and not refresh:
                 return card
-            return self._fill(card, refresh, subscribed, ever)
+            return self._fill(card, refresh, subscribed, owned)
 
     def _fill(self, card: AuthorCard, refresh: bool, subscribed: set[str] | None,
-              ever: set[str] | None) -> AuthorCard:
-        # Both are re-read from disk each time they are asked for, so a batch
-        # hands them in once rather than rebuilding them per card.
+              owned: set[str] | None) -> AuthorCard:
+        # Re-read from disk each time it is asked for, so a batch hands it in
+        # once rather than rebuilding it per card.
         subscribed = self.library.subscribed() if subscribed is None else subscribed
-        ever = self.library.ever_had() if ever is None else ever
         queued = set(card.queued)
         visited = card.visited if card.state in (KNOWN, DUPLICATE) else None
         since = visited
@@ -367,7 +479,6 @@ class Review:
         card.items = [
             Wallpaper(item=item,
                       subscribed=item.id in subscribed,
-                      once_had=item.id in ever and item.id not in subscribed,
                       in_queue=item.id in queued,
                       new_since_visit=cutoff is None or item.created > cutoff)
             for item in found.items
@@ -375,6 +486,59 @@ class Review:
         ]
         card.filled = True
         card.deep = True
+        card.owned_checked = False
+        if owned is not None:
+            self.mark_owned(card, owned, subscribed)
+        return card
+
+    # -- phase three: have you had it before? ------------------------------
+
+    def owned_before(self, config_path: str | Path | None = None) -> set[str]:
+        """Every workshop id this machine has had at some point. Cached.
+
+        Two sources, and the second was the missing one. The local libraries
+        hold a `project.json` per kept copy naming its `workshopid` — 4 412
+        here — but a wallpaper subscribed to and later unsubscribed without
+        ever being copied leaves nothing behind. **Wallpaper Engine's own
+        folders remember it.** An id put in a folder stays there for ever, and
+        the three folders on this machine remember 16 563 ids of which 14 915
+        are no longer subscribed; only 425 of those were in the copies index.
+        So without the folders, fourteen thousand wallpapers already seen and
+        dropped were being offered back unmarked.
+
+        Every folder is read whatever the review is scoped to: the question
+        "have I had this" is not about the folder being reviewed, and reading
+        them all costs the same 15 ms.
+        """
+        with self._owned_lock:
+            if self._owned is None:
+                where = config_path if config_path is not None else self._config_path
+                self._owned = (self.library.ever_had()
+                               | {i for ids in we_folders(where).values()
+                                  for i in ids})
+            return self._owned
+
+    def forget_owned(self) -> None:
+        """Drop the cache, so the next ask re-reads the folders and the index."""
+        with self._owned_lock:
+            self._owned = None
+
+    def mark_owned(self, card: AuthorCard, owned: set[str] | None = None,
+                   subscribed: set[str] | None = None) -> AuthorCard:
+        """Fill in "was yours" across a card's gallery.
+
+        Cheap once :meth:`owned_before` has been asked once — a set lookup per
+        wallpaper — and the slow part of it is the parse behind that set, which
+        is why the tab does this on a thread when a gallery is opened rather
+        than during the count.
+        """
+        owned = self.owned_before() if owned is None else owned
+        subscribed = self.library.subscribed() if subscribed is None else subscribed
+        for wallpaper in card.items:
+            wallpaper.once_had = (wallpaper.id in owned
+                                  and wallpaper.id not in subscribed)
+            wallpaper.owned_checked = True
+        card.owned_checked = True
         return card
 
     def fill_all(self, result: ReviewResult, refresh: bool = False,
@@ -389,22 +553,22 @@ class Review:
         where the per-host throttle still paces the requests — so Steam is
         asked no faster than before, the waiting just overlaps.
 
-        The two library sets every card needs are read once here rather than
-        once per card, which is small (0.6 and 0.8 ms) until a week brings 453
-        authors and it is not.
+        The library set every card needs is read once here rather than once per
+        card, which is small (0.6 ms) until a week brings 453 authors and it is
+        not. Whether a wallpaper was yours before is not asked at all — see
+        :meth:`mark_owned`.
         """
         wanted = [c for c in result.cards
                   if (only is None or c.id64 in set(only))
                   and not (c.deep if full else c.filled)]
         if wanted:
             subscribed = self.library.subscribed()
-            ever = self.library.ever_had()
             counter = itertools.count(1)
             lock = threading.Lock()
 
             def one(card: AuthorCard) -> None:
                 self.fill(card, full=full, refresh=refresh,
-                          subscribed=subscribed, ever=ever)
+                          subscribed=subscribed)
                 with lock:
                     done = next(counter)
                 # A Qt signal, which is why this is safe to call from a worker.
