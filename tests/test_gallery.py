@@ -28,7 +28,8 @@ from PySide6.QtCore import (  # noqa: E402
     QByteArray, QBuffer, QEvent, QIODevice, QPointF, QRect, Qt)
 from PySide6.QtGui import (  # noqa: E402
     QColor, QImage, QMouseEvent, QPainter, QPixmap)
-from PySide6.QtWidgets import QApplication, QStyleOptionViewItem              # noqa: E402
+from PySide6.QtWidgets import (                                              # noqa: E402
+    QApplication, QStyle, QStyleOptionViewItem)
 
 app = QApplication.instance() or QApplication([])
 
@@ -49,19 +50,23 @@ def check(label: str, condition: bool) -> None:
     print(("PASS " if condition else "FAIL ") + label)
 
 
-def wallpaper(item_id="1", title="A wallpaper", **flags) -> rv.Wallpaper:
+def wallpaper(item_id="1", title="A wallpaper", kind="Scene",
+              size=6 * 1024 ** 2, **flags) -> rv.Wallpaper:
     item = ItemDetails(id=item_id, ok=True, creator="76561198000000001",
                        title=title, created=1750000000, updated=1750000000,
-                       preview="https://example/p.jpg")
+                       preview="https://example/p.jpg", kind=kind, file_size=size)
     return rv.Wallpaper(item=item, **flags)
 
 
-def painted(delegate, index, width=gal.CARD_W, height=gal.CARD_H) -> QImage:
+def painted(delegate, index, width=gal.CARD_W, height=gal.CARD_H,
+            state=None) -> QImage:
     """Paint one item and hand back what landed on the canvas."""
     pixmap = QPixmap(width, height)
     pixmap.fill(QColor("#000000"))
     option = QStyleOptionViewItem()
     option.rect = QRect(0, 0, width, height)
+    if state is not None:
+        option.state = state
     painter = QPainter(pixmap)
     try:
         delegate.paint(painter, option, index)
@@ -114,11 +119,11 @@ check("every card is the same size, which is what lets the grid virtualise",
 
 states = {
     "plain": {},
-    "new since the visit": {"new_since_visit": True},
+    "new to you": {"owned_checked": True},
     "in the queue": {"in_queue": True},
-    "owned once": {"once_had": True},
+    "owned once": {"once_had": True, "owned_checked": True},
     "subscribed": {"subscribed": True},
-    "everything at once": {"new_since_visit": True, "in_queue": True,
+    "everything at once": {"owned_checked": True, "in_queue": True,
                            "once_had": True, "subscribed": True},
     "no title at all": {},
 }
@@ -128,6 +133,64 @@ for label, flags in states.items():
     one.set_items([card])
     image = painted(delegate, one.index(0, 0))
     check(f"a card paints when it is {label}", has_ink(image))
+
+for label, extra in {"a video of a gigabyte": {"kind": "Video", "size": 2 * 1024 ** 3},
+                     "a web wallpaper": {"kind": "Web"},
+                     "an application": {"kind": "Application"},
+                     "a preset": {"kind": "Preset"},
+                     "something Steam never tagged": {"kind": "", "size": 0}}.items():
+    one = gal.GalleryModel()
+    one.set_items([wallpaper(**extra)])
+    check(f"and when it is {label}", has_ink(painted(delegate, one.index(0, 0))))
+
+
+# ---- What a card is allowed to claim ---------------------------------------
+#
+# "new" used to be painted from `new_since_visit`, which is true of every card
+# in the gallery — so a wallpaper downloaded and deleted twice still called
+# itself new. It is the answer to "has this machine ever had it", and until
+# something has actually asked, a card says nothing.
+
+check("a card claims nothing about being new until ownership is checked",
+      not wallpaper().unseen)
+check("once checked, one never subscribed and never copied is new to you",
+      wallpaper(owned_checked=True).unseen)
+check("one you had before is not new, however long ago it was",
+      not wallpaper(owned_checked=True, once_had=True).unseen)
+check("and neither is one you are subscribed to this minute",
+      not wallpaper(owned_checked=True, subscribed=True).unseen)
+
+
+# ---- What it is, and what it costs -----------------------------------------
+
+check("a download under a gigabyte is stated plainly",
+      not wallpaper(size=1023 * 1024 ** 2).item.large)
+check("and one at a gigabyte or over is a warning",
+      wallpaper(size=1024 ** 3).item.large)
+check("every kind Wallpaper Engine publishes reads as its own colour",
+      len({theme.kind_color(k) for k in gal.KIND_MARKS}) == len(gal.KIND_MARKS))
+check("and an untagged wallpaper gets the neutral chip, not a gap",
+      theme.kind_color("") == theme.C["raised"])
+check("each kind has a glyph to be recognised by before the word is read",
+      set(gal.KIND_MARKS) == {"Scene", "Video", "Web", "Application", "Preset"})
+
+
+# ---- A selected card has to stay readable ----------------------------------
+#
+# Selection used to fill the whole card with the pressed accent colour while
+# the title stayed `text` and the size and date stayed `faint`: on solid blue,
+# the two facts the decision is made on were barely visible. It is a border
+# now, and the panel under the type does not move.
+
+chosen = gal.GalleryModel()
+chosen.set_items([wallpaper()])
+image = painted(delegate, chosen.index(0, 0), state=QStyle.State_Selected)
+under_text = image.pixelColor(200, gal.CARD_H - 12)
+check("a selected card keeps the panel its title is read on",
+      under_text.name().lower() == theme.C["raised"].lower())
+check("and is marked out by its border instead",
+      image.pixelColor(gal.CARD_W // 2, 5).name().lower()
+      == theme.C["accent"].lower())
 
 one = gal.GalleryModel()
 one.set_items([wallpaper()])
