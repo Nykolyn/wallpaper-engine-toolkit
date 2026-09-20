@@ -122,6 +122,9 @@ AUTHOR_CACHE = "author.2"
 # the tag list is genre, resolution or rating.
 WALLPAPER_KINDS = ("Scene", "Video", "Web", "Application", "Preset")
 
+# Where a download stops being incidental. See `ItemDetails.large`.
+LARGE_FILE = 1024 ** 3
+
 # Steam serves the plain-Python user agent a different, thinner page.
 HEADERS = {
     "User-Agent": ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
@@ -164,6 +167,18 @@ class ItemDetails:
     favorited: int = 0
     file_size: int = 0          # bytes, as Steam reports the download
     kind: str = ""              # Scene, Video, Web, Application — or "" if untagged
+
+    @property
+    def large(self) -> bool:
+        """Whether this is a download worth being warned about.
+
+        A gigabyte is the line because that is where the decision changes: a
+        6 MB scene is a click, and a 1.4 GB video is a minute of downloading
+        and a permanent gigabyte, on a library where a week can add forty of
+        them. Above it a card says so in the warning colour rather than in the
+        same grey as the date.
+        """
+        return (self.file_size or 0) >= LARGE_FILE
 
     @property
     def size_text(self) -> str:

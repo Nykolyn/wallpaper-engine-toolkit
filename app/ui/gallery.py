@@ -33,9 +33,11 @@ same way: only the page on screen keeps its previews in memory, because the
 bytes are on disk and come back in milliseconds.
 
 The marks on a card matter as much as the picture. A wallpaper here may be one
-that was owned once and deleted — 327 of one author's 1 155, in the library
-this was built against — and re-reviewing those from scratch every week is
-exactly the work the tab exists to remove.
+that was owned once and deleted — 14 915 of the ids this machine's folders
+remember are in that state — and re-reviewing those from scratch every week is
+exactly the work the tab exists to remove. That answer arrives after the cards
+do, on a thread, so a card says nothing about it until it is known rather than
+guessing "new".
 """
 from __future__ import annotations
 
@@ -63,7 +65,20 @@ THUMB_DIR = app_data_dir() / "thumbs"
 # grid. The image is fitted inside rather than cropped, so an odd-shaped
 # preview is letterboxed instead of cut.
 THUMB_W, THUMB_H = 400, 400
-CARD_W, CARD_H = THUMB_W + 16, THUMB_H + 60
+# Two lines of type under the picture: the title, and a row of marks holding
+# what the wallpaper is, what it weighs and when it was made.
+CARD_W, CARD_H = THUMB_W + 16, THUMB_H + 68
+
+# A glyph per kind, drawn before the word. Geometric shapes rather than emoji:
+# these are in Segoe UI Variable, they take the chip's own colour, and they
+# survive being 8 point.
+KIND_MARKS = {"Scene": "◆", "Video": "▶", "Web": "◎",
+              "Application": "▣", "Preset": "◇"}
+UNKNOWN_KIND = "○"
+
+# Chips. One height and one radius, so a row of them reads as a row.
+CHIP_H = 17
+CHIP_PAD = 11
 
 # Wallpapers to a page. Fetching a thousand previews to look at the newest few
 # is the wait this removes; it also caps how many decoders animation needs.
@@ -308,11 +323,36 @@ class GalleryModel(QAbstractListModel):
             where = self.index(row, 0)
             self.dataChanged.emit(where, where)
 
+    def refresh_all(self) -> None:
+        """Repaint the whole page — for something that changed every card.
+
+        The "was yours" pass is worked out on a thread and lands for all
+        thirty at once; thirty separate row signals for one answer is thirty
+        repaints of the same page.
+        """
+        if self._items:
+            self.dataChanged.emit(self.index(0, 0),
+                                  self.index(len(self._items) - 1, 0))
+
 
 # ---- Drawing one card -------------------------------------------------------
 
 class GalleryDelegate(QStyledItemDelegate):
-    """A preview, a title, a date, and the two or three things worth knowing."""
+    """A preview, a title, and the four or five things worth knowing.
+
+    **The card does not turn into the selection colour.** It used to: a
+    selected card was filled with `accent_pressed` and its title and facts
+    went on being drawn in the ordinary text and faint greys, which on a solid
+    blue field were barely there — the size and the date in particular, which
+    are the two facts a decision is made on. Selection is a border now and the
+    panel behind the type never moves far from what the type was chosen for.
+
+    **What a wallpaper is, and what it costs, are marks rather than prose.**
+    "Video  ·  1.4 GB  ·  2026-08-31" in one grey line is read last, after the
+    picture and the title, and by then the decision is usually made. The kind
+    carries its own colour, and a download of a gigabyte or more carries the
+    warning colour, so both land in the same glance as the picture.
+    """
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -323,6 +363,26 @@ class GalleryDelegate(QStyledItemDelegate):
 
     def sizeHint(self, option, index) -> QSize:
         return QSize(CARD_W, CARD_H)
+
+    # -- one chip ---------------------------------------------------------
+
+    def _chip(self, painter: QPainter, x: int, y: int, text: str,
+              fill: str | None, ink: str, height: int = CHIP_H) -> int:
+        """Draw one mark and return where the next one starts.
+
+        ``fill`` of None draws the text alone, which is what the date wants:
+        a row where everything is a filled chip has nothing left to emphasise.
+        """
+        width = painter.fontMetrics().horizontalAdvance(text) + (
+            CHIP_PAD if fill else 0)
+        rect = QRect(x, y, width, height)
+        if fill:
+            painter.setPen(Qt.NoPen)
+            painter.setBrush(QColor(fill))
+            painter.drawRoundedRect(rect, 3, 3)
+        painter.setPen(QColor(ink))
+        painter.drawText(rect, Qt.AlignCenter, text)
+        return x + width + 5
 
     def paint(self, painter: QPainter, option, index) -> None:
         wallpaper = index.data(WALLPAPER)
@@ -336,8 +396,8 @@ class GalleryDelegate(QStyledItemDelegate):
         selected = bool(option.state & QStyle.State_Selected)
 
         painter.setPen(Qt.NoPen)
-        painter.setBrush(QColor(theme.C["surface"] if not selected
-                                else theme.C["accent_pressed"]))
+        painter.setBrush(QColor(theme.C["raised"] if selected or hovered
+                                else theme.C["surface"]))
         painter.drawRoundedRect(card, 6, 6)
 
         image_rect = QRect(card.left() + 4, card.top() + 4, THUMB_W, THUMB_H)
@@ -359,33 +419,39 @@ class GalleryDelegate(QStyledItemDelegate):
             painter.setPen(QColor(theme.C["faint"]))
             painter.drawText(image_rect, Qt.AlignCenter, "…")
 
+        if wallpaper.subscribed:
+            # Dim it rather than remove it: a card vanishing under the cursor
+            # loses the place in a wall of four hundred. Under the marks, not
+            # over them — dimming the word "subscribed" along with the picture
+            # is dimming the reason the picture is dim.
+            painter.setBrush(QColor(0, 0, 0, 110))
+            painter.setPen(Qt.NoPen)
+            painter.drawRect(image_rect)
+
         # Marks, top-left over the image, so they read before the picture does.
+        # Each is a different colour because each answers a different question;
+        # "subscribed" and "new" were both green, which made the pair of them
+        # one green blur.
         marks: list[tuple[str, str]] = []
         if wallpaper.subscribed:
             marks.append(("subscribed", theme.C["ok"]))
         if wallpaper.once_had:
             marks.append(("was yours", theme.C["warn"]))
         if wallpaper.in_queue:
-            marks.append(("queued", theme.C["accent"]))
-        if wallpaper.new_since_visit:
-            marks.append(("new", theme.C["ok"]))
+            marks.append(("queued", theme.C["info"]))
+        if wallpaper.unseen:
+            # Only once the machine has actually been asked whether it has had
+            # this before. The mark used to be painted from `new_since_visit`,
+            # which is true of every card in the gallery — so "new" sat on
+            # wallpapers that had been downloaded and deleted twice.
+            marks.append(("new to you", theme.C["accent"]))
+        font = QFont(painter.font())
+        font.setPointSize(8)
+        painter.setFont(font)
         x = image_rect.left() + 4
         for text, colour in marks:
-            width = painter.fontMetrics().horizontalAdvance(text) + 10
-            chip = QRect(x, image_rect.top() + 6, width, 18)
-            painter.setPen(Qt.NoPen)
-            painter.setBrush(QColor(colour))
-            painter.drawRoundedRect(chip, 3, 3)
-            painter.setPen(QColor("#101216"))
-            painter.drawText(chip, Qt.AlignCenter, text)
-            x += width + 4
-
-        if wallpaper.subscribed:
-            # Dim it rather than remove it: a card vanishing under the cursor
-            # loses the place in a wall of four hundred.
-            painter.setBrush(QColor(0, 0, 0, 110))
-            painter.setPen(Qt.NoPen)
-            painter.drawRect(image_rect)
+            x = self._chip(painter, x, image_rect.top() + 6, text, colour, "#101216",
+                           18)
 
         if wallpaper.id in self.busy:
             badge = QRect(image_rect.right() - 96, image_rect.bottom() - 26, 92, 22)
@@ -405,7 +471,6 @@ class GalleryDelegate(QStyledItemDelegate):
 
         title = wallpaper.title or wallpaper.id
         painter.setPen(QColor(theme.C["text"]))
-        font = QFont(painter.font())
         font.setPointSize(10)
         painter.setFont(font)
         text_rect = QRect(card.left() + 6, image_rect.bottom() + 5,
@@ -414,19 +479,35 @@ class GalleryDelegate(QStyledItemDelegate):
                          painter.fontMetrics().elidedText(
                              title, Qt.ElideRight, text_rect.width()))
 
-        # What it is and what it costs to download, before when it was made:
-        # a 225 MB video and a 6 MB scene are different decisions.
-        painter.setPen(QColor(theme.C["faint"]))
+        # What it is, what it costs to download, and when it was made. The
+        # first two are the decision; the date is context, so it is the one
+        # thing on the row left as plain type.
+        font.setPointSize(8)
+        painter.setFont(font)
+        y = text_rect.bottom() + 4
+        x = card.left() + 6
+        item = wallpaper.item
+        kind = item.kind
+        if kind:
+            x = self._chip(painter, x, y, f"{KIND_MARKS.get(kind, UNKNOWN_KIND)} {kind}",
+                           theme.kind_color(kind), "#101216")
+        if item.size_text:
+            if item.large:
+                x = self._chip(painter, x, y, f"⚠ {item.size_text}",
+                               theme.C["warn"], "#101216")
+            else:
+                x = self._chip(painter, x, y, item.size_text, None, theme.C["muted"])
         when = wallpaper.created
-        facts = [wallpaper.item.kind, wallpaper.item.size_text,
-                 when.strftime("%Y-%m-%d") if when else ""]
-        painter.drawText(QRect(card.left() + 6, text_rect.bottom() + 2,
-                               card.width() - 12, 16),
-                         Qt.AlignLeft | Qt.AlignVCenter,
-                         "  ·  ".join(f for f in facts if f))
+        if when:
+            self._chip(painter, x, y, when.strftime("%Y-%m-%d"), None,
+                       theme.C["faint"])
 
-        if hovered or selected:
-            painter.setPen(QPen(QColor(theme.C["accent"]), 1))
+        if selected:
+            painter.setPen(QPen(QColor(theme.C["accent"]), 2))
+            painter.setBrush(Qt.NoBrush)
+            painter.drawRoundedRect(QRect(card).adjusted(1, 1, -1, -1), 6, 6)
+        elif hovered:
+            painter.setPen(QPen(QColor(theme.C["border_strong"]), 1))
             painter.setBrush(Qt.NoBrush)
             painter.drawRoundedRect(card, 6, 6)
         painter.restore()
@@ -544,6 +625,9 @@ class GalleryView(QListView):
 
     def refresh(self, item_id: str) -> None:
         self.model_.refresh_row(item_id)
+
+    def refresh_page(self) -> None:
+        self.model_.refresh_all()
 
     def current_page(self) -> list:
         """The wallpapers on the page that is on screen, in grid order."""

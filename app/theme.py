@@ -42,6 +42,17 @@ DARK = {
 
     "console": "#101319",       # log panel background
     "console_text": "#C3CAD9",
+
+    # One colour per kind of wallpaper. A scene and a video are different
+    # decisions — different cost to download, different behaviour on a
+    # monitor — and the word alone in grey type was read last on a card, after
+    # the picture and the title. Hues rather than shades, so the kind is
+    # legible from the colour before the word is read at all.
+    "scene": "#5BC8E8",
+    "video": "#C58BFF",
+    "web": "#3DD68C",
+    "application": "#F5A524",
+    "preset": "#98A1B3",
 }
 
 LIGHT = {
@@ -67,6 +78,12 @@ LIGHT = {
 
     "console": "#1B1F27",       # the log stays dark in both — it reads as output
     "console_text": "#C3CAD9",
+
+    "scene": "#1E8BAC",
+    "video": "#8B4BD0",
+    "web": "#129A62",
+    "application": "#B87503",
+    "preset": "#5A6375",
 }
 
 PALETTES = {"dark": DARK, "light": LIGHT}
@@ -88,6 +105,16 @@ def status_color(kind: str) -> str:
         "done": C["accent"],
         "muted": C["muted"],
     }.get(kind, C["text"])
+
+
+def kind_color(kind: str) -> str:
+    """Colour for a wallpaper's kind — Scene, Video, Web, Application, Preset.
+
+    Anything else falls back to the neutral chip colour. A card draws no chip
+    at all for an item Steam never tagged: an empty space says "unknown" as
+    well as the word would, and more quietly.
+    """
+    return C.get((kind or "").casefold(), C["raised"])
 
 
 def level_color(level: str) -> str:

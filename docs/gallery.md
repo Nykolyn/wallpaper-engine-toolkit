@@ -10,27 +10,59 @@ at pictures, not at a list of titles.
 
 ## What a card knows about a wallpaper
 
+Across the top of the picture, where they read before it does:
+
 | Mark | Meaning |
 |---|---|
-| **new** | Published since your last visit. This is what the badge on the author card counts. |
-| **queued** | It is one of the wallpapers you put in the `new` folder. |
-| **was yours** | You had it once and deleted it. |
+| **was yours** | This machine has had it before. |
+| **new to you** | It never has — you have never subscribed to it or kept a copy. |
+| **queued** | It is one of the wallpapers you put in a folder. |
 | **subscribed** | Taken. |
 
 **"was yours" is the one that saves the most work.** Wallpapers come back
 around, so they are shown rather than hidden — but re-reviewing them blind is
-exactly the work this tab removes. For one author, 327 of 1 155 were in this
-state.
+exactly the work this tab removes. For one author, 11 of 29 were in this state.
 
-The mark comes from `project.json` files across the Rotator's libraries, where a
-workshop wallpaper names itself with a `workshopid`. That walk is 33 882 folders
-and takes four minutes cold, so it is cached in `data/library.json` by folder
-name and modification time; afterwards a refresh reads only what changed.
+Two records answer it: the `project.json` of every copy kept across the
+Rotator's libraries, where a workshop wallpaper names itself with a
+`workshopid`, and **every id Wallpaper Engine's own folders remember**. The
+second is far the larger — a wallpaper dropped without ever being copied leaves
+nothing in the libraries, and 14 915 ids here are exactly that. The walk behind
+the first is 33 882 folders and four minutes cold, so it is cached in
+`data/library.json` by folder name and modification time.
+
+That answer arrives a moment after the cards do, on a thread. Until it does, a
+card claims neither mark: **"new" used to be painted from "published since your
+last visit"**, which is true of every card in the gallery, so a wallpaper
+downloaded and deleted twice still called itself new.
 
 **"subscribed" dims the card where it stands** rather than removing it. A tile
 disappearing under the cursor loses your place in a wall of four hundred. The
-badge on the author card falls by itself, because it counts what is still on
-offer.
+marks stay bright on top of the dimming — dimming the word "subscribed" along
+with the picture dims the reason the picture is dim. The badge on the author
+card falls by itself, because it counts what is still on offer.
+
+## What it is, and what it costs
+
+Under the title, where the decision is actually made:
+
+| Mark | Meaning |
+|---|---|
+| a coloured kind | **Scene**, **Video**, **Web**, **Application** or **Preset**, each its own hue and glyph |
+| a plain size | the download, as Steam reports it |
+| **an amber size** | a gigabyte or more |
+| a date | when it was published |
+
+A scene and a video are different decisions — different cost to download,
+different behaviour on a monitor — and a 6 MB scene and a 1.4 GB video are more
+different still. All three used to be one grey line of prose under the title,
+read last if at all. The kind carries its own colour and the gigabyte carries
+the warning colour, so both land in the same glance as the picture.
+
+**A selected card is marked by its border, not by its fill.** It used to turn
+solid blue while its title and its facts kept the greys they were chosen for,
+which left the size and the date all but invisible on the one card you were
+looking at.
 
 ## Subscribing
 
