@@ -722,8 +722,38 @@ check("by looking at the folder off the GUI thread", tab.library.threads == [Fal
 check("and only once while a look is already under way", len(tab.library.threads) == 1)
 check("the other stays on offer", not tab.gallery.showing()[0].subscribed)
 
-# Finished work does not stay behind as a child of the tab.
+# ---- Progress has to outlive the task that first reported it ---------------
+#
+# The `Review` is built once and kept for the tab's life; a finished `Task` is
+# deleted. So handing the engine `task.step.emit` of whichever task happened to
+# be running when the Review was built — the first scan's — left the engine
+# reporting through a deleted QObject. The second thing to report progress,
+# which is "Count what is new" one press after a scan, died on it: PySide
+# raised "Signal source has been deleted", the worker turned that into a
+# failure, and the tab printed it in red instead of counting anything.
+
 from PySide6.QtCore import QCoreApplication, QEvent                # noqa: E402
+
+reported: list[tuple] = []
+tab.progressed.connect(lambda *args: reported.append(args))
+
+spent = tab_mod.Task(lambda step: step("items", 1, 2), tab)
+tab._task = spent
+spent.finished.connect(tab._finished)
+spent.start()
+wait_for(lambda: tab._task is None)
+spent.wait(2000)
+QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+check("a task that has finished is deleted, as it should be", tab._task is None)
+
+tab._progress_relay("counting", 7, 9)
+app.processEvents()
+check("progress still reaches the tab after that task is gone",
+      ("counting", 7, 9) in reported)
+check("and lands on the status line rather than in red",
+      "7/9" in tab.status.text())
+
+# Finished work does not stay behind as a child of the tab.
 
 
 def tasks_alive():
