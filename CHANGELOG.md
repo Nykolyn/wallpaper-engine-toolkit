@@ -6,6 +6,54 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-09-20
+
+### Added
+
+- **Choose what to review.** The `new` folder was written into the code; it is
+  a box in the toolbar now, filled from Wallpaper Engine's own `config.json`
+  every time the tab opens, so a folder made this morning is in the list this
+  afternoon. Besides the folders by name there are three that cross them: **all
+  folders**, **not in any folder**, and **everything you have**. The middle one
+  exists because a folder is not the library — a wallpaper subscribed to last
+  night and not yet filed was unreachable before. The choice is remembered. See
+  [What gets reviewed](docs/review.md#what-gets-reviewed).
+- **A card says what a wallpaper is and what it costs.** Scene, Video, Web,
+  Application and Preset each have their own colour and glyph, and a download of
+  **a gigabyte or more is amber**. All three facts used to be one grey line of
+  prose under the title, read last if at all — and a 6 MB scene and a 1.4 GB
+  video are not the same decision. See
+  [What it is, and what it costs](docs/gallery.md#what-it-is-and-what-it-costs).
+
+### Changed
+
+- **A selected card is marked by its border, not by its fill.** It used to turn
+  solid blue while its title and its facts kept the greys they were chosen for,
+  which left the size and the date all but invisible on the one card you were
+  looking at. The marks over a subscribed card's picture also stay bright
+  through the dimming, and "new" and "subscribed" are no longer both green.
+- **Counting what is new is faster, and asks less.** The requests go out
+  through the Steam client's own pool instead of one after another — 17.9 s for
+  the 85 authors of an ordinary week — the workshop folder is read once for the
+  whole count rather than once per author, and what you used to own is not
+  asked at all. That question is worked out on a thread when you **open** an
+  author, where the answer is actually looked at: 0.02 s for the first gallery
+  and nothing for every one after it.
+
+### Fixed
+
+- **"new" no longer sits on wallpapers you have had before.** The mark was
+  painted from "published since your last visit", which is true of every card
+  in a gallery — so a wallpaper downloaded, kept and deleted twice still called
+  itself new. It now means what it says: this machine has never had it. The
+  record that was missing is **Wallpaper Engine's own folders**, which remember
+  an id for ever. A wallpaper dropped without ever being copied leaves nothing
+  in the local libraries, and 14 915 ids on the machine this was built against
+  are exactly that — against 425 the copies index knew about. Of one author's
+  29 offered wallpapers, 11 turn out to be ones already seen and dropped. Until
+  the question has been asked, a card claims neither answer. See
+  [Whether you have had a wallpaper before](docs/review.md#whether-you-have-had-a-wallpaper-before-is-asked-separately).
+
 ## [1.1.0] - 2026-09-19
 
 ### Added
@@ -125,6 +173,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   was right for one library and wrong for every other. Nothing is tagged now
   unless you ask for it.
 
-[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/releases/tag/v1.0.0

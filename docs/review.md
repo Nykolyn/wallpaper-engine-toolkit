@@ -23,6 +23,8 @@ This tab is that, done for you.
 - When you want to know which authors are worth following.
 - When you want to catch up on one author's back catalogue without scrolling
   past what you already have.
+- When you want to go through more than one folder, or the whole library at
+  once. See [What gets reviewed](#what-gets-reviewed).
 
 ## What you need first
 
@@ -43,14 +45,36 @@ about which of the two is wrong.
 ## How to use it
 
 1. Put wallpapers in Wallpaper Engine's `new` folder during the week.
-2. Open the tab. The left list fills with one card per author: their name,
-   whether the database has heard of them, and a badge counting what they have
-   published since your last visit that you are **not** subscribed to.
+2. Open the tab, pick what to **look at**, and press **Scan**. The left list
+   fills with one card per author: their name, whether the database has heard
+   of them, and a badge counting what they have published since your last
+   visit that you are **not** subscribed to.
 3. Click a card to open [their gallery](gallery.md) — everything of theirs not
    currently subscribed, newest first, as previews.
 4. Subscribe to what you want.
 5. Press **Update the database**. Authors that were new are created; the rest
    have their visit date moved on.
+
+### What gets reviewed
+
+The **Look at** box holds Wallpaper Engine's own folders, read out of its
+`config.json` every time the tab opens, so a folder you made this morning is
+in the list this afternoon. Under them are three that cross folders:
+
+| Choice | What it reviews |
+|---|---|
+| a folder by name | what that folder holds — `new`, the weekly habit |
+| **All folders** | everything in any of them, each wallpaper once |
+| **Not in any folder** | what you have that was never filed anywhere |
+| **Everything you have** | both together — the whole library |
+
+The last two exist because a folder is not the library. On the machine this
+was built against the three folders remember 16 629 ids between them; a
+wallpaper subscribed to last night and not yet filed is in none of them, and
+before this it could not be reached at all.
+
+Whatever you choose, only wallpapers Wallpaper Engine can actually show are
+reviewed — see [below](#what-is-in-the-folder-is-not-what-the-folder-remembers).
 
 ### What is in the folder is not what the folder remembers
 
@@ -63,6 +87,29 @@ Wallpaper Engine shows the 39, because those are the ones it has files for, and
 so does this tab. The difference is stated rather than hidden. Reading the
 folder literally would mean re-reviewing every wallpaper ever put aside and
 since deleted, turning a week's 26 authors into 453.
+
+### Whether you have had a wallpaper before is asked separately
+
+A card in a gallery says **was yours** when this machine has had that wallpaper
+at some point, and **new to you** when it never has. Two records answer that,
+and one of them used to be missing:
+
+| Record | What it knows | Ids here |
+|---|---|---|
+| `project.json` in the local libraries | every workshop wallpaper you kept a copy of | 4 412 |
+| Wallpaper Engine's own folders | every id ever put in one, for ever | 16 629 |
+
+The second is the larger by far. A wallpaper subscribed to and later dropped
+without ever being copied leaves nothing in the libraries — but its id stays in
+the folder. **14 915** ids on this machine are in that state, and only 425 of
+them were in the copies index, so before this they came back around looking as
+though they had never been seen.
+
+The answer costs a parse of a 2.35 MB `config.json`, so it is worked out **when
+you open an author**, on a thread, and shared by every gallery afterwards —
+0.02 s for the first, nothing at all for the rest. Pressing **Count what is
+new** does not ask it: that is four hundred authors and nobody is looking at a
+gallery yet. Until it has been asked, a card claims neither answer.
 
 ### The visit date moves to the newest wallpaper the review covered
 
@@ -81,6 +128,11 @@ fetched in one query — 616 keys in 0.7 s.
 **Counting what each has published since is a request apiece.** Opening one
 author's whole back catalogue is a dozen. So the list appears first and fills in
 behind itself, and a gallery is fetched only when its card is clicked.
+
+Those requests go out through the Steam client's own pool rather than one after
+another — measured at **17.9 s for the 85 authors** of an ordinary week. The
+workshop folder is read once for the whole count instead of once per author,
+and what you used to own is not asked at all.
 
 ### Why it needs a Steam Web API key
 
@@ -168,6 +220,7 @@ Connecting went from failing after 20.4 s to succeeding in 1.6 s.
 |---|---|
 | `data/secrets.json` | the API key and the connection string, DPAPI-encrypted |
 | `data/library.json` | workshop ids found in the local libraries, so the four-minute walk is paid once |
+| Wallpaper Engine's `config.json` | read, never written: its folders are both the review queue and the record of what you have had |
 | `data/thumbs/` | preview images |
 | `data/steam_cache.sqlite` | what Steam has already been asked |
 | `data/authors_backup/` | plans and per-change backups before the database is written |
