@@ -6,6 +6,25 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [2.1.1] - 2026-09-22
+
+### Removed
+
+- **`WallpaperEngineToolkit.spec`.** Nothing read it — `build.cmd` passes its
+  arguments to PyInstaller directly — and PyInstaller rewrote it in the project
+  root on every build, which left the checkout showing a change after each
+  one. It was also the one way to build around `build.cmd`'s protection of
+  `dist\...\data`: `pyinstaller WallpaperEngineToolkit.spec` builds straight
+  into `dist\` and empties it first. See
+  [Why there is no spec file](docs/building.md#why-there-is-no-spec-file).
+
+### Changed
+
+- `build.cmd` has PyInstaller write its spec into `build\` (`--specpath`), and
+  hands it absolute paths, so a build leaves the source tree untouched. Checked
+  with a full build: the icon, the version resource and the bundled ffmpeg all
+  land where they did.
+
 ## [2.1.0] - 2026-09-21
 
 ### Removed
@@ -298,7 +317,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   was right for one library and wrong for every other. Nothing is tagged now
   unless you ask for it.
 
-[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v2.1.0...HEAD
+[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v2.1.1...HEAD
+[2.1.1]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v2.1.0...v2.1.1
 [2.1.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v2.0.1...v2.1.0
 [2.0.1]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v2.0.0...v2.0.1
 [2.0.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v1.2.1...v2.0.0

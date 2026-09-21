@@ -143,8 +143,20 @@ to check the small ones by eye.
 `build.cmd` passes the icon to PyInstaller **twice**: `--icon` for what Explorer
 shows, and `--add-data` so `QIcon` can paint the title bar at runtime.
 
-## The spec file
+## Why there is no spec file
 
-`WallpaperEngineToolkit.spec` is checked in. It collects submodules for `app`
-and collects `imageio_ffmpeg` whole — that last one carries a binary, which is what the [Creator](creator.md) falls back to
-when there is no ffmpeg on `PATH`.
+`build.cmd` is the one way to build, and the repository has no `.spec` file on
+purpose. PyInstaller writes one on every run — a copy of the arguments in
+`build.cmd` — and `--specpath` puts it in `build\` with the rest of the build's
+scratch, so a build leaves the source tree as it found it.
+
+A spec file beside the source invites `pyinstaller WallpaperEngineToolkit.spec`,
+which builds straight into `dist\` and empties `dist\WallpaperEngineToolkit`
+first, `data\` included — the way a build once took `secrets.json` with it. It
+would not even get that far cleanly: the version resource it names,
+`build\version_info.txt`, is written by `build.cmd` alone.
+
+The paths `build.cmd` hands PyInstaller are absolute, so they mean the same
+thing wherever the spec file lands. What they collect: every submodule of `app`,
+and `imageio_ffmpeg` whole — it carries the ffmpeg binary the
+[Creator](creator.md) falls back to when there is none on `PATH`.
