@@ -75,7 +75,6 @@ COMMUNITY = "https://steamcommunity.com"
 DETAILS_URL = f"{API}/ISteamRemoteStorage/GetPublishedFileDetails/v1/"
 USER_FILES_URL = f"{API}/IPublishedFileService/GetUserFiles/v1/"
 SUMMARIES_URL = f"{API}/ISteamUser/GetPlayerSummaries/v2/"
-VANITY_URL = f"{API}/ISteamUser/ResolveVanityURL/v1/"
 
 # GetPublishedFileDetails accepts far more than the nine ids the old scraper
 # used; 200 is verified working and keeps a 2 000-item scan to a dozen requests.
@@ -197,10 +196,9 @@ class ItemDetails:
         """When it was published, as an *aware* local datetime.
 
         Aware on purpose. This value ends up in the authors database as a visit
-        date, and Mongo stores datetimes in UTC while `fromtimestamp` returns
-        local time — a naive one would be written three hours out on this
-        machine, which is enough to hide a morning's wallpapers or show
-        yesterday's twice.
+        date, stored in UTC, while `fromtimestamp` returns local time — a
+        naive one read the wrong way is three hours out on this machine, which
+        is enough to hide a morning's wallpapers or show yesterday's twice.
         """
         return datetime.fromtimestamp(self.created).astimezone() if self.created else None
 
@@ -841,64 +839,6 @@ class SteamClient:
         for key in found.keys:
             entries[key.lower()] = found.to_json()
         self._cache.put("profile", entries)
-
-    def resolve_vanity(self, vanity: str, refresh: bool = False) -> str | None:
-        """A vanity name to a steamID64, or None if nobody answers to it."""
-        name = str(vanity).strip()
-        if not name:
-            return None
-        if is_steam_id64(name):
-            return name
-        if self._cache and not refresh:
-            cached = self._cache.get("vanity", name.lower(), PROFILE_TTL)
-            if cached is not None:
-                self._count("cache_hits")
-                return cached.get("id64")
-
-        found: str | None = None
-        answered = False
-        if self.has_key:
-            try:
-                response = self._api(VANITY_URL, {"vanityurl": name})
-            except SteamAuthError:
-                raise
-            except SteamError:
-                response = {}
-            if response:
-                answered = True
-                if response.get("success") == 1 and response.get("steamid"):
-                    found = str(response["steamid"])
-        if not answered:
-            found = self.profile(name).id64
-
-        if self._cache:
-            self._cache.put("vanity", {name.lower(): {"id64": found}})
-        return found
-
-    def resolve_vanities(self, names: Iterable[str], refresh: bool = False,
-                         on_progress: Callable[[int, int], None] | None = None,
-                         ) -> dict[str, str | None]:
-        """Many vanity names at once.
-
-        There is no batch form of this call — one name, one request — so this
-        is where a migration spends most of its time. It is still the cheaper
-        half of the job: with a key each name is a small Web API call rather
-        than a community page.
-        """
-        wanted = list(dict.fromkeys(str(n).strip() for n in names if str(n).strip()))
-        done = 0
-        progress_lock = threading.Lock()
-
-        def one(name: str) -> tuple[str, str | None]:
-            nonlocal done
-            found = self.resolve_vanity(name, refresh=refresh)
-            with progress_lock:
-                done += 1
-                if on_progress and (done % 100 == 0 or done == len(wanted)):
-                    on_progress(done, len(wanted))
-            return name, found
-
-        return dict(self._parallel(one, wanted))
 
     # -- an author's wallpapers --------------------------------------------
 

@@ -281,7 +281,7 @@ check("wallpapers Steam would not describe are counted, not dropped silently",
 
 new_author = rv.AuthorCard(id64=BOB, profile=Profile(id64=BOB, name="Bob"))
 check("an author nobody has added is marked new", new_author.state == rv.NEW)
-check("a card with two records is a duplicate the migration could not fold",
+check("a card with two records is a duplicate",
       rv.AuthorCard(id64=ALICE, profile=Profile(id64=ALICE),
                     records=[known, known]).state == rv.DUPLICATE)
 check("and one Steam will not name is neither",

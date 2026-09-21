@@ -22,7 +22,7 @@ Start with [Getting started](getting-started.md) if this is a fresh install.
 | [Getting started](getting-started.md) | Installing, first run, what needs setting up before which tab works. |
 | [Configuration](configuration.md) | Every setting, every file written, where each one lives, and what to back up. |
 | [Gallery](gallery.md) | The wall of previews the Review tab opens: what the badges mean, and subscribing. |
-| [Authors database](authors-database.md) | The file behind Review — what is in it, its backups, restoring one, and coming from MongoDB. |
+| [Authors database](authors-database.md) | The file behind Review — what is in it, its backups, and restoring one. |
 | [Building](building.md) | Producing a standalone `.exe`. |
 | [Development](development.md) | Architecture, the test suite, the theme and the motion rules. |
 | [Troubleshooting](troubleshooting.md) | What each failure looks like and which file answers it. |

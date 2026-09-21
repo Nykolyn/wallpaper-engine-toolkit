@@ -1,10 +1,8 @@
 """authors_store.py — the authors database, as one file beside the app.
 
 Review's whole premise is remembering, per author, when you last looked at
-their work. That used to live in a MongoDB collection someone had to own, reach
-and keep credentials for: an Atlas account, a cluster, a user, an IP allow-list
-and a connection string before the tab did anything, and a VPN workaround after.
-It lives here now — `data/authors.sqlite`, created the first time it is needed.
+their work. That lives here — `data/authors.sqlite`, created the first time it
+is needed, with nothing to install, host or sign in to.
 
 **Why SQLite rather than a JSON file.** Both are one file and neither needs
 setting up. SQLite is the one that already knows how to survive a crash in the
@@ -23,9 +21,9 @@ it, and the Steam cache beside it already uses it.
     added    when they were first found          (UTC, "2026-09-21T10:15:30Z")
     visited  how far through their work you are  (UTC; empty = never)
 
-Times are stored as text with the zone written on them. The Mongo store kept
-UTC and dropped the marker, and reading that as local time was a silent
-three-hour error in the one date that decides what is shown.
+Times are stored as text with the zone written on them. UTC without the marker
+is one misreading away from a silent three-hour error in the one date that
+decides what is shown.
 
 **Nothing is written without a trail.** A write is planned first
 (:class:`Change`, shown to the user as a line of English), carried out in one
@@ -133,8 +131,7 @@ class Author:
     def numeric(self) -> bool:
         """Whether this record is filed under a steamID64 rather than a name.
 
-        Not "does it look like a number": a vanity URL can be all digits, and
-        the old collection held over a thousand that were.
+        Not "does it look like a number": a vanity URL can be all digits.
         """
         return is_steam_id64(self.steam_id)
 
@@ -248,10 +245,6 @@ class AuthorsStore:
             raise
         self._conn = conn
         return self
-
-    # The Mongo store had to be reached; this one only has to be opened. The
-    # old name is kept so a caller does not need to know which it holds.
-    connect = open
 
     @property
     def connected(self) -> bool:
@@ -397,9 +390,9 @@ class AuthorsStore:
         """Carry out planned changes: all of them, or — on any failure — none.
 
         Every update and delete must reach exactly the row it was planned
-        against. A write that matches nothing is not an error to a database,
-        and silence is how a Mongo migration once reported nineteen thousand
-        updates and changed nothing; here it stops the transaction.
+        against. A write that matches nothing is not an error to a database —
+        it is a successful write of nothing, which is how a batch can report
+        thousands of updates and change none. Here it stops the transaction.
         """
         changes = [c for c in changes if c is not None]
         if not changes:
@@ -482,8 +475,8 @@ class AuthorsStore:
     def replace_all(self, rows: Sequence[dict], reason: str) -> dict:
         """Make the table exactly ``rows``, in one transaction.
 
-        What a restore and the first import are. The state being replaced is
-        snapshotted first, whatever it is, so this is undoable by itself.
+        What a restore is. The state being replaced is snapshotted first,
+        whatever it is, so this is undoable by itself.
         """
         cleaned = [_row_of(r) for r in rows]
         keys = [r["key"].lower() for r in cleaned]
@@ -719,82 +712,6 @@ def _free_name(folder: Path, taken: datetime, count: int) -> Path:
     if existing and existing[0].taken >= when:
         when = existing[0].taken + timedelta(seconds=1)
     return folder / f"authors-{when:%Y%m%d-%H%M%S}-{count}.json.gz"
-
-
-# ---- Bringing in the old Mongo collection ----------------------------------
-
-def from_mongo_documents(documents: Iterable[dict]) -> tuple[list[dict], dict]:
-    """The old collection's documents as rows of this table, and what it took.
-
-    Only four fields come across: `steamId`, `name`, `dateAdded`,
-    `dateVisited`. Everything else in those documents was either the old web
-    app's bookkeeping (`_id`, `__v`, `creator` — one account for every record)
-    or a feature this app does not have (`favorite`, `reviewedFavorites`,
-    `newWallpapers`, `referenceLink`).
-
-    Dates in a Mongo dump are UTC with the zone dropped, and are read as such.
-    Two records whose keys differ only in case are one Steam profile, and this
-    table cannot hold both — they are folded together the same way a merge
-    folds duplicates, and listed in the report.
-    """
-    grouped: dict[str, list[dict]] = {}
-    skipped = 0
-    total = 0
-    for doc in documents:
-        total += 1
-        key = str(doc.get("steamId") or "").strip()
-        if not key:
-            skipped += 1
-            continue
-        grouped.setdefault(key.lower(), []).append({
-            "key": key,
-            "name": str(doc.get("name") or ""),
-            "added": _from_mongo(doc.get("dateAdded")),
-            "visited": _from_mongo(doc.get("dateVisited")),
-        })
-
-    rows: list[dict] = []
-    folded: list[list[str]] = []
-    for group in grouped.values():
-        if len(group) == 1:
-            one = group[0]
-        else:
-            latest = max(group, key=lambda r: r["visited"] or _DAWN)
-            one = {"key": latest["key"], "name": latest["name"],
-                   "added": min((r["added"] for r in group if r["added"]), default=None),
-                   "visited": max((r["visited"] for r in group if r["visited"]),
-                                  default=None)}
-            folded.append([f"{r['name']} ({r['key']})" for r in group])
-        rows.append({"key": one["key"], "name": one["name"],
-                     "added": to_text(one["added"]), "visited": to_text(one["visited"])})
-    rows.sort(key=lambda r: r["key"].lower())
-    report = {
-        "documents": total,
-        "rows": len(rows),
-        "skipped_without_key": skipped,
-        "folded": folded,
-        "by_account_number": sum(1 for r in rows if is_steam_id64(r["key"])),
-        "by_vanity_name": sum(1 for r in rows if not is_steam_id64(r["key"])),
-        "never_visited": sum(1 for r in rows if not r["visited"]),
-    }
-    return rows, report
-
-
-_DAWN = datetime.min.replace(tzinfo=timezone.utc)
-
-
-def _from_mongo(value) -> datetime | None:
-    """A date from Mongo or from a dump of it: UTC, with or without a marker."""
-    if value is None or value == "":
-        return None
-    if isinstance(value, str):
-        try:
-            value = datetime.fromisoformat(value.replace("Z", "+00:00"))
-        except ValueError as err:
-            raise DbError(f"not a date: {value!r}") from err
-    if not isinstance(value, datetime):
-        raise DbError(f"not a date: {value!r}")
-    return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
 
 
 # ---- Times -----------------------------------------------------------------

@@ -114,7 +114,7 @@ robocopy dist\_previous-2.0.0 dist\WallpaperEngineToolkit /MIR /XD "%CD%\dist\Wa
 
 and start it again. The `/XD` is what keeps `/MIR` from deleting `data\`, which
 the copy does not have. Rolling the exe back does not roll data back: a version
-older than 2.0.0 reads its authors from MongoDB, not from `authors.sqlite`.
+older than 2.0.0 does not read `authors.sqlite` at all.
 
 ## After renaming the executable
 

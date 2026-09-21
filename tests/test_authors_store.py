@@ -86,8 +86,8 @@ check("one record answering to two keys is one record, not a duplicate",
 check("a second author under the same key in another case is refused",
       raises(st.DbError, lambda: db.apply([db.plan_create("Clash", "VANITYONE")])))
 
-# Naive means local, as it does everywhere else in the suite. The Mongo store
-# read the stored value the other way round once — three hours, silently.
+# Naive means local, as it does everywhere else in the suite. Read the other
+# way round, a stored time is three hours out — silently.
 alice = db.lookup([ALICE])[0]
 local_noon = datetime(2026, 9, 10, 12, 0, 0)
 change = db.plan_update(alice, visited=local_noon)
@@ -280,52 +280,29 @@ check("a database with no backup at all gets one when it is opened",
       first.ensure_snapshot() is not None and len(first.snapshots()) == 1)
 check("and only then", first.ensure_snapshot() is None)
 
-# ---- Bringing in the Mongo collection --------------------------------------
+# ---- Replacing the whole table ---------------------------------------------
 
-documents = [
-    {"_id": "000000000000000000000000", "steamId": ALICE, "name": "Alice",
-     "dateAdded": "2019-06-26T00:00:00", "dateVisited": "2023-08-23T17:49:11.471000",
-     "favorite": True, "reviewedFavorites": False, "newWallpapers": 3,
-     "referenceLink": "https://example.net/x", "creator": "owner", "__v": 0},
-    {"steamId": "O0P", "name": "Early", "dateAdded": "2020-01-01T00:00:00",
-     "dateVisited": "2021-01-01T00:00:00"},
-    {"steamId": "o0p", "name": "Later", "dateAdded": "2022-01-01T00:00:00",
-     "dateVisited": "2024-01-01T00:00:00"},
-    {"steamId": "NeverSeen", "name": "Quiet", "dateAdded": "2020-01-01T00:00:00",
-     "dateVisited": None},
-    {"steamId": "", "name": "Keyless"},
+rows = [
+    {"key": ALICE, "name": "Alice", "added": "2019-06-26T00:00:00Z",
+     "visited": "2023-08-23T17:49:11Z"},
+    {"key": "O0P", "name": "Vanity", "added": "2020-01-01T00:00:00Z",
+     "visited": "2024-01-01T00:00:00Z"},
+    {"key": "NeverSeen", "name": "Quiet", "added": "2020-01-01T00:00:00Z",
+     "visited": None},
 ]
-rows, found = st.from_mongo_documents(documents)
-check("only the four columns come across",
-      all(set(r) == {"key", "name", "added", "visited"} for r in rows))
-alice_row = next(r for r in rows if r["key"] == ALICE)
-check("a Mongo date is UTC with the marker dropped, and is read as such",
-      alice_row["visited"] == "2023-08-23T17:49:11Z"
-      and alice_row["added"] == "2019-06-26T00:00:00Z")
-folded = [r for r in rows if r["key"].lower() == "o0p"]
-check("two records that differ only in case are folded into one",
-      len(folded) == 1 and found["folded"] == [["Early (O0P)", "Later (o0p)"]])
-check("keeping the earlier discovery, the later visit and its name",
-      folded[0]["added"] == "2020-01-01T00:00:00Z"
-      and folded[0]["visited"] == "2024-01-01T00:00:00Z" and folded[0]["name"] == "Later")
-check("an author never visited stays never visited",
-      next(r for r in rows if r["key"] == "NeverSeen")["visited"] is None)
-check("and a record with no key is counted, not kept",
-      found["skipped_without_key"] == 1 and found["documents"] == 5 and len(rows) == 3)
-check("the report says how many are filed by account number",
-      found["by_account_number"] == 1 and found["by_vanity_name"] == 2)
-
-imported = fresh("imported")
-report = imported.replace_all(rows, reason="imported")
-check("the rows go in whole", report["written"] == 3 and imported.count() == 3
+replaced = fresh("replaced")
+report = replaced.replace_all(rows, reason="test")
+check("a whole table goes in at once", report["written"] == 3 and replaced.count() == 3
       and report["previous"] is None and report["backup"] is not None)
-check("and read back as the review will see them",
-      imported.lookup(["O0P"])[0].visited == utc(2024, 1, 1))
-check("a second import is refused when two rows share a key",
-      raises(st.DbError, lambda: imported.replace_all(rows + [dict(rows[0])], "x")))
-check("leaving what was there untouched", imported.count() == 3)
+check("and reads back as the review will see it",
+      replaced.lookup(["o0p"])[0].visited == utc(2024, 1, 1)
+      and replaced.lookup(["NeverSeen"])[0].visited is None)
+check("two rows under one key, in any case, are refused",
+      raises(st.DbError, lambda: replaced.replace_all(
+          rows + [dict(rows[1], key="o0p")], "x")))
+check("leaving what was there untouched", replaced.count() == 3)
 
-for store in (db, mirrored, unreachable, first, imported):
+for store in (db, mirrored, unreachable, first, replaced):
     store.close()
 
 print(f"\n{sum(results)}/{len(results)} passed")

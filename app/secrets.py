@@ -6,10 +6,6 @@ The Review tab can use a credential that must not live in the source tree, in
 instead, in `data/secrets.json`, encrypted with **DPAPI** — Windows' own
 per-user data protection.
 
-Before 2.0.0 the authors database was a MongoDB collection and its connection
-string was kept here too. Nothing in the app reads it any more; only
-`tools/import_authors_from_mongo.py` does, and both go in a later release.
-
 DPAPI is the right size of answer for this. The key is derived from the logged-in
 Windows account, so the file is unreadable by another user and useless if it is
 copied off the machine, and nothing has to be typed at start-up or stored to
@@ -38,7 +34,6 @@ SECRETS_PATH = app_data_dir() / "secrets.json"
 
 # Keys used by the toolkit.
 STEAM_API_KEY = "steam_api_key"
-AUTHORS_DB_URI = "authors_db_uri"      # read only by the Mongo import tool
 
 _PLAIN = "plain:"
 _DPAPI = "dpapi:"
