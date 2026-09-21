@@ -26,7 +26,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import app.engines.library as lib_mod              # noqa: E402
 import app.engines.review as rv                    # noqa: E402
 import app.engines.steam_ugc as ugc_mod            # noqa: E402
-from app.engines.authors_db import Author, AuthorsDb   # noqa: E402
+from app.engines.authors_store import Author, AuthorsStore   # noqa: E402
 from app.engines.steam_api import AuthorItems, ItemDetails, Profile  # noqa: E402
 
 TMP = Path(tempfile.mkdtemp(prefix="wallpaper_review_test_"))
@@ -182,6 +182,7 @@ class FakeSteam:
         self.profiles_by_key = profiles
         self.author_calls: list[tuple[str, object]] = []
         self.delay = 0.0
+        self.has_key = True
         self._lock = threading.Lock()
 
     def details(self, ids, on_progress=None):
@@ -231,9 +232,9 @@ steam = FakeSteam(
               BOB: Profile(id64=BOB, name="Bob")})
 
 
-class FakeDb(AuthorsDb):
+class FakeDb(AuthorsStore):
     def __init__(self, records):
-        super().__init__(uri="mongodb://x/y", database="y", creator="owner")
+        super().__init__(path=TMP / "never-opened.sqlite")
         self.records = records
 
     def lookup_many(self, wanted):
@@ -242,7 +243,7 @@ class FakeDb(AuthorsDb):
                 for key, keys in wanted.items()}
 
 
-known = Author(id=1, name="Alice (old name)", steam_id=ALICE,
+known = Author(name="Alice (old name)", steam_id=ALICE,
                added=utc(2024, 1, 1),
                visited=datetime.now(timezone.utc) - timedelta(days=30))
 db = FakeDb([known])
@@ -293,6 +294,15 @@ check("and one Steam will not name is neither",
 card = cards[ALICE]
 check("a scan asks Steam for names afresh, never from the cache",
       steam.last_profile_refresh is True)
+
+# Without a key every name is a community page of its own, 0.4 s apart — three
+# minutes for an ordinary week. The cached name, at most two weeks old, is
+# the better trade there.
+steam.has_key = False
+review.scan(config_path=WE_CONFIG)
+check("without a key, names come from the cache rather than a page each",
+      steam.last_profile_refresh is False)
+steam.has_key = True
 check("and knows when the author's wallpapers reached the folder",
       card.appeared is not None)
 
@@ -339,10 +349,10 @@ changes = review.plan([card])
 check("a reviewed author gets one update", len(changes) == 1
       and changes[0].kind == "update")
 check("the visit date moves to the newest wallpaper the review covered",
-      abs((changes[0].fields["dateVisited"]
+      abs((changes[0].fields["visited"]
            - datetime.fromtimestamp(ALICE_WORK[0].created, timezone.utc)).total_seconds()) < 2)
-check("and a reference link is filled in for a record that had none",
-      "referenceLink" in changes[0].fields)
+check("and nothing is written but the visit date and the name",
+      set(changes[0].fields) == {"visited", "name"})
 
 # The database keeps whatever an author was called the day they were added.
 # 76561198000000014 is "Baka" there, "Retired Baka" on Steam, and was listed
@@ -358,13 +368,13 @@ rename_only = review.plan([unopened])
 check("an author nobody counted still gets their name brought up to date",
       len(rename_only) == 1 and rename_only[0].fields == {"name": "Alice"})
 check("but keeps the visit date they had, because nothing was reviewed",
-      "dateVisited" not in rename_only[0].fields)
+      "visited" not in rename_only[0].fields)
 
 quiet = rv.AuthorCard(id64=ALICE, profile=Profile(id64=ALICE, name="Alice (old name)"),
                       records=[known], filled=True)
 unchanged = review.plan([quiet])
 check("a counted author with nothing new keeps the visit date where it was",
-      all("dateVisited" not in c.fields for c in unchanged))
+      all("visited" not in c.fields for c in unchanged))
 
 fresh_card = rv.AuthorCard(id64=BOB, profile=Profile(id64=BOB, name="Bob"),
                            queued=["5001"])
@@ -374,11 +384,25 @@ check("a wallpaper no folder remembers and no copy names is new to you",
       [w.id for w in fresh_card.offered if w.unseen] == ["5001"])
 created = review.plan([fresh_card])
 check("a new author is created rather than updated",
-      created[0].kind == "create" and created[0].fields["steamId"] == BOB)
+      created[0].kind == "create" and created[0].fields["key"] == BOB)
 check("under the name Steam gives them today",
       created[0].fields["name"] == "Bob")
 check("with everything of theirs counted as unseen",
       fresh_card.badge == 1)
+
+# Pressing Update twice used to plan the same creation twice: the card stayed
+# "new" after its author had been written, and the second write was refused.
+written = rv.ReviewResult(cards=[fresh_card, card])
+review.absorb(written, created)
+check("once written, a created author is known to the card",
+      fresh_card.state == rv.KNOWN and fresh_card.visited is not None)
+check("and a second press of Update has nothing left to do for them",
+      review.plan([fresh_card]) == [])
+
+cut_short = rv.AuthorCard(id64=BOB, profile=Profile(id64=BOB, name="Bob"),
+                          filled=True, complete=False)
+check("a list read without a key is reported as incomplete",
+      rv.ReviewResult(cards=[cut_short, card]).incomplete == [cut_short])
 
 check("an author Steam cannot name is not written to the database at all",
       review.plan([rv.AuthorCard(id64="1", profile=None)]) == [])
@@ -415,7 +439,7 @@ check("and on a later visit it is simply gone from the gallery",
 def author_card(id64, name, state, queued=1, appeared_days=None, db_name=None):
     records = []
     if state in (rv.KNOWN, rv.DUPLICATE):
-        record = Author(id=id64, name=db_name or name, steam_id=id64)
+        record = Author(name=db_name or name, steam_id=id64)
         records = [record] if state == rv.KNOWN else [record, record]
     profile = (Profile(id64=None, exists=False) if state == rv.UNKNOWN
                else Profile(id64=id64, name=name))

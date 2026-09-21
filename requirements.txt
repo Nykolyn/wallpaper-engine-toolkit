@@ -6,9 +6,9 @@
 PySide6>=6.5          # unified Qt GUI (all tabs)
 Pillow>=10.0          # Creator tab: preview thumbnails (optional — degrades gracefully)
 imageio-ffmpeg>=0.4   # Auto Creator tab: bundled ffmpeg for generating preview.gif
-pymongo>=4.6          # Review tab: the authors database
-dnspython>=2.4        # ...which is reached over mongodb+srv, and that needs SRV lookups
+pymongo>=4.6          # only tools/import_authors_from_mongo.py - the one-time move off MongoDB;
+dnspython>=2.4        # ...neither is in the built app, and both go when that tool does
 pyinstaller>=6.0      # building the standalone .exe
 
-# The Review tab talks to Steam over the standard library alone (urllib +
-# sqlite3 for its cache), so nothing here is needed for that half of it.
+# The Review tab needs nothing from this list: it talks to Steam with urllib and
+# keeps its authors database and its Steam cache in sqlite3, all standard library.

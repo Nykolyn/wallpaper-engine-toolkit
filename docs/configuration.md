@@ -12,7 +12,8 @@ a whole installation is one folder you can copy or delete.
 ```
 data/
 ├── suite.json              Copier, Creator, Review and Tracker settings
-├── secrets.json            Steam API key + database URI, DPAPI-encrypted
+├── secrets.json            the Steam API key, DPAPI-encrypted
+├── authors.sqlite          the Review tab's authors database
 ├── tracker.json            the live cycle per monitor, plus 40 finished ones
 ├── wallpaper_timer.json    the countdown, saved every 15 seconds
 ├── tracker.log             every tray launch, and any crash
@@ -20,7 +21,7 @@ data/
 ├── steam_cache.sqlite      what Steam has already been asked
 ├── selfcheck.txt           the last --selfcheck report
 ├── thumbs/                 cached preview images
-├── authors_backup/         database plans and per-change backups
+├── authors_backup/         a snapshot of the authors after every change, and journal.jsonl
 └── playlist-refresh/       Wallpaper Engine's two files before the last rotation rewrote them
 
 app/engines/data/
@@ -81,10 +82,11 @@ cache if Steam moves underneath a running app.
 
 ## Secrets
 
-Two values must not live in the source tree, in `suite.json`, or in a log line:
-the **Steam Web API key** and the **database connection string**. They go in
-`data/secrets.json`, encrypted with **DPAPI** — Windows' own per-user data
-protection.
+One value must not live in the source tree, in `suite.json`, or in a log line:
+the **Steam Web API key**. It goes in `data/secrets.json`, encrypted with
+**DPAPI** — Windows' own per-user data protection. (Before 2.0.0 the MongoDB
+connection string lived there too; the import tool still reads it from there,
+and nothing else does.)
 
 DPAPI is the right size of answer here. The key is derived from the logged-in
 Windows account, so the file is unreadable by another user and useless if copied
@@ -105,8 +107,6 @@ All optional.
 
 | Variable | Used by | Meaning |
 |---|---|---|
-| `WET_DB_CLUSTER` | [Review](review.md) | cluster host, when a `.env` has no `DB_CLUSTER` |
-| `WET_SERVER_ENV` | [Review](review.md) | pre-fills the `.env` picker |
 | `WET_TEST_CLUSTER` | tests | cluster for `test_mongo_srv.py --live` |
 
 ## What to back up
@@ -115,15 +115,15 @@ All optional.
 |---|---|
 | `data/tracker.json` | the only record of what has been shown |
 | `app/engines/data/history.json` | dates every cycle, and cannot be rebuilt |
-| `data/authors_backup/` | the only local copy of what the database looked like |
+| `data/authors.sqlite` and `data/authors_backup/` | every author you have visited, and when — years of review, and nowhere else. The backups are made for you; **Second copy in** under **Authors database…** puts them on another disk as well. See [Backups](authors-database.md#backups). |
 | `data/suite.json`, `app/engines/data/config.json` | your settings; small, easily lost |
 
 **Not** worth backing up: `thumbs/` and `steam_cache.sqlite` are caches that
 rebuild themselves, and `library.json` rebuilds in about four minutes.
 
 `secrets.json` is **not** portable — DPAPI ties it to one Windows account, so a
-restored copy on another machine decrypts to nothing. Keep the API key and the
-connection string wherever you keep your other credentials.
+restored copy on another machine decrypts to nothing. Keep the API key
+wherever you keep your other credentials.
 
 ## What is written outside this folder
 

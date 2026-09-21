@@ -57,11 +57,10 @@ def _autostart(action: str) -> int:
 def _selfcheck() -> int:
     """Say whether this build has everything the tabs need, and exit.
 
-    A windowed build has no console, and the two libraries the Review tab
-    reaches the authors database through — pymongo and dnspython — are imported
-    lazily, which is exactly the shape of dependency PyInstaller misses. The
-    failure then looks like the tab quietly not working, hours after the build.
-    This makes it a line in a file instead.
+    A windowed build has no console, and a module that imports lazily is
+    exactly the shape of dependency PyInstaller misses. The failure then looks
+    like a tab quietly not working, hours after the build. This makes it a line
+    in a file instead.
     """
     from app.settings import app_data_dir
 
@@ -71,14 +70,13 @@ def _selfcheck() -> int:
              f"frozen: {bool(getattr(sys, 'frozen', False))}"]
     ok = True
     for module, why in (("PySide6.QtWidgets", "the window"),
-                        ("pymongo", "the authors database"),
-                        ("bson", "database ids"),
-                        ("dns.resolver", "mongodb+srv lookups, the fallback path"),
-                        ("app.engines.mongo_srv", "mongodb+srv through Windows"),
+                        ("sqlite3", "the authors database and the Steam cache"),
+                        ("app.engines.authors_store", "the authors database"),
+                        ("app.ui.authors_dialog", "its backups and restoring one"),
                         ("app.engines.review", "the review itself"),
                         ("app.ui.review_tab", "the Review tab"),
                         ("app.engines.steam_ugc", "subscribing from the gallery"),
-                        ("app.secrets", "the stored key and connection string"),
+                        ("app.secrets", "the stored Steam key"),
                         ("PySide6.QtNetwork", "one window, raised from the tray"),
                         ("app.window_instance", "starting the window on its own"),
                         ("app.engines.playlist_refresh",
@@ -89,20 +87,6 @@ def _selfcheck() -> int:
         except Exception as err:  # noqa: BLE001 — the message is the point
             ok = False
             lines.append(f"MISSING {module}  ({why}): {err}")
-
-    # Importing the resolver is not the same as being able to use it. On a
-    # machine whose nameservers answer Windows but not a library talking to
-    # them directly, this line is the difference between the Review tab
-    # connecting in a second and timing out for twenty.
-    try:
-        from app.engines import mongo_srv
-        working = mongo_srv.usable()
-        lines.append(("ok      " if working else "MISSING ")
-                     + "the Windows resolver (dnsapi.dll)")
-        ok = ok and working
-    except Exception as err:  # noqa: BLE001 — the message is the point
-        ok = False
-        lines.append(f"MISSING the Windows resolver: {err}")
 
     # The gallery fetches its previews itself, with urllib on a worker thread,
     # and swallows whatever goes wrong because a missing preview is not worth a

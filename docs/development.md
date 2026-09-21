@@ -34,9 +34,10 @@ app/
 │   ├── steam_api.py      the Steam Web API
 │   ├── steam_ugc.py      Steamworks, for subscribing
 │   ├── library.py        what is subscribed now, and what was owned once
-│   ├── authors_db.py     the authors collection
-│   ├── mongo_srv.py      mongodb+srv through the Windows resolver
-│   ├── migration.py      re-keying that collection
+│   ├── authors_store.py  the authors database: SQLite, snapshots, the journal
+│   ├── authors_db.py     the old MongoDB collection  ┐ only the import tool
+│   ├── mongo_srv.py      mongodb+srv through Windows ├ uses these; they go
+│   ├── migration.py      re-keying that collection   ┘ in the next release
 │   ├── review.py         the weekly walk itself
 │   └── rotator/
 │       ├── config.py     verbatim  wallpaper_rotator/app/config.py
@@ -46,7 +47,9 @@ app/
     ├── copier_tab.py, creator_tab.py
     ├── rotator_tab.py, cleanup_dialog.py
     ├── tracker_tab.py
-    ├── review_tab.py, gallery.py, credentials.py
+    ├── review_tab.py, gallery.py
+    ├── credentials.py    the optional Steam key
+    ├── authors_dialog.py the authors database, its backups, restoring one
     └── widgets.py        verbatim  wallpaper_rotator/app/ui/widgets.py
 ```
 
@@ -79,7 +82,8 @@ for %f in (tests\test_*.py) do .venv\Scripts\python.exe %f
 | `test_autostart.py` | the command line, the task XML, and the rename migration |
 | `test_animations.py` | motion, by sampling real widgets over real time |
 | `test_steam_api.py` | the Web API client and its cache |
-| `test_authors_db.py` | planning, applying, backing up and restoring |
+| `test_authors_store.py` | the authors database: transactions, snapshots, pruning, the second folder, restoring, damaged files, the Mongo import |
+| `test_authors_db.py` | the old Mongo collection, for the import tool |
 | `test_migration.py` | the identifier re-keying |
 | `test_mongo_srv.py` | SRV/TXT resolution and URI rewriting |
 | `test_review.py` | the weekly walk |

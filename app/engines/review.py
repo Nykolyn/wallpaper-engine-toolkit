@@ -47,7 +47,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Iterable, Sequence
 
-from .authors_db import Author, AuthorsDb, Change
+from .authors_store import Author, AuthorsStore, Change
 from .library import Library
 from .steam_api import AuthorItems, ItemDetails, Profile, SteamClient
 from .tracker import find_we_config
@@ -322,6 +322,12 @@ class ReviewResult:
     def by_state(self, state: str) -> list[AuthorCard]:
         return [c for c in self.cards if c.state == state]
 
+    @property
+    def incomplete(self) -> list[AuthorCard]:
+        """Counted authors whose lists Steam cut short — read without a key,
+        so mature wallpapers are not in them."""
+        return [c for c in self.cards if c.filled and not c.complete]
+
     def summary(self) -> str:
         c = self.counts
         gone = c.get("remembered", 0) - c.get("queued", 0)
@@ -338,7 +344,7 @@ class ReviewResult:
 class Review:
     """Turns a folder of wallpapers into a list of authors worth visiting."""
 
-    def __init__(self, db: AuthorsDb, steam: SteamClient, library: Library,
+    def __init__(self, db: AuthorsStore, steam: SteamClient, library: Library,
                  on_log: Callable[[str], None] | None = None,
                  on_progress: Callable[[str, int, int], None] | None = None):
         self.db = db
@@ -402,12 +408,15 @@ class Review:
         self._log(f"{len(by_author)} authors, {len(result.unresolved)} wallpapers "
                   "Steam would not describe")
 
-        # Names are fetched fresh every scan. A cached one is how an author the
-        # user knows as "Baka" was listed as "Banned Cleavage" — a name neither
-        # the database nor Steam still used — and could not be found. A
-        # hundred profiles are one request, so freshness costs nothing.
+        # Names are fetched fresh every scan when that is cheap. A cached one
+        # is how an author the user knows as "Baka" was listed as "Banned
+        # Cleavage" — a name neither the database nor Steam still used — and
+        # could not be found. With a key a hundred profiles are one request.
+        # Without one each is a page of its own, 0.4 s apart: three minutes
+        # for an ordinary week, every scan. So a keyless scan takes names from
+        # the cache, which is at most two weeks old, and fetches only the new.
         profiles = self.steam.profiles(
-            list(by_author), refresh=True,
+            list(by_author), refresh=self.steam.has_key,
             on_progress=lambda d, n: self._progress("authors", d, n))
         found_records = self.db.lookup_many(
             {key: (profiles[key].keys if key in profiles else [key])
@@ -614,23 +623,45 @@ class Review:
             if card.state == NEW:
                 if card.filled:
                     changes.append(self.db.plan_create(
-                        name=card.name, steam_id=card.id64, visited=when,
-                        reference_link=_first_link(card),
-                        new_wallpapers=0))
+                        name=card.name, steam_id=card.id64, visited=when))
                 continue
             record = card.record
             if record is None:
                 continue
             if card.filled:
                 change = self.db.plan_update(
-                    record, visited=when, new_wallpapers=0, name=current,
-                    reference_link=record.reference_link or _first_link(card),
-                    reason="reviewed")
+                    record, visited=when, name=current, reason="reviewed")
             else:
                 change = self.db.plan_update(record, name=current, reason="renamed")
             if change:
                 changes.append(change)
         return changes
+
+    def absorb(self, result: ReviewResult, changes: Iterable[Change]) -> None:
+        """Make the cards say what was just written, without a rescan.
+
+        A renamed author loses the grey "was …", a visited one its old date,
+        and a created one stops being new. That last one mattered: a card left
+        "new" after its author was created planned the same creation again on
+        the next press of Update, which the database then refused.
+        """
+        by_id = {c.id64: c for c in result.cards}
+        for change in changes:
+            if change.kind == "create":
+                card = by_id.get(str(change.fields.get("key")))
+                if card is not None:
+                    card.records = [Author(
+                        steam_id=str(change.fields["key"]),
+                        name=change.fields.get("name") or "",
+                        added=change.fields.get("added"),
+                        visited=change.fields.get("visited"))]
+            elif change.kind == "update" and change.author is not None:
+                for column, attribute in (("name", "name"), ("added", "added"),
+                                          ("visited", "visited"),
+                                          ("key", "steam_id")):
+                    if column in change.fields:
+                        setattr(change.author, attribute, change.fields[column])
+        result.counts = self._count(result)
 
     # -- odds and ends -----------------------------------------------------
 
@@ -712,17 +743,3 @@ def matches(card: AuthorCard, query: str) -> bool:
     if folded in ids:
         return True
     return any(folded in name.casefold() for name in card.names)
-
-
-def _first_link(card: AuthorCard) -> str | None:
-    """A wallpaper of this author's, for the database's reference link.
-
-    The old app used this field to find an author again after a rename, and the
-    migration leant on it heavily. Keeping it filled costs nothing here — one
-    of their wallpapers is already in hand.
-    """
-    for wallpaper in card.items or []:
-        return wallpaper.item.url
-    if card.queued:
-        return f"https://steamcommunity.com/sharedfiles/filedetails/?id={card.queued[0]}"
-    return None

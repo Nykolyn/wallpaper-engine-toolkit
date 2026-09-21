@@ -39,7 +39,7 @@ theme.apply(app)
 import app.ui.gallery as gal                                # noqa: E402
 import app.ui.review_tab as tab_mod                         # noqa: E402
 import app.engines.review as rv                             # noqa: E402
-from app.engines.authors_db import Author                   # noqa: E402
+from app.engines.authors_store import Author                # noqa: E402
 from app.engines.steam_api import ItemDetails, Profile      # noqa: E402
 
 results: list[bool] = []
@@ -207,7 +207,7 @@ check("painting a row that is not there does nothing rather than raising",
 # ---- Painting an author row -------------------------------------------------
 
 author_delegate = tab_mod.AuthorDelegate()
-known = Author(id=1, name="Alice", steam_id="76561198000000001",
+known = Author(name="Alice", steam_id="76561198000000001",
                added=datetime(2024, 1, 1, tzinfo=timezone.utc),
                visited=datetime(2026, 1, 1, tzinfo=timezone.utc))
 

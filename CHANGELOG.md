@@ -6,6 +6,77 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-09-21
+
+### Changed
+
+- **The authors database is a file now, not a MongoDB server.** The Review tab
+  keeps its authors in `data/authors.sqlite`, made the first time it is needed.
+  There is nothing to set up: no Atlas account, no cluster, no connection
+  string, no VPN workaround — press **Scan** on a fresh install and it works.
+  Opening it takes 5 ms where reaching the server took 1.3 s, and looking up a
+  week's 616 authors takes 11 ms. See
+  [Authors database](docs/authors-database.md).
+- **Only what the review uses is kept**: the key (steamID64, or the vanity name
+  for the few authors nothing could identify), the name, when they were found
+  and when you last visited. `favorite`, `reviewedFavorites`, `newWallpapers`,
+  `referenceLink`, `creator`, `_id` and `__v` belonged to the old web app and
+  are gone. Times are stored with their zone written on them, which retires the
+  three-hour trap of Mongo's zoneless UTC.
+- **A write is all or nothing.** Every change the review plans goes in one
+  transaction; if any part of it fails — an author filed under a key someone
+  else already has, a record that is no longer there — none of it is written.
+- **The Steam Web API key is optional.** Without one the tab works and says,
+  plainly, what it cannot see: a banner under the toolbar (with **Add a key…**,
+  and **Hide**), *list incomplete* on every author counted without a key, and a
+  warning — with **Cancel** as the default — before a visit date is written from
+  such a list, because that moves the date past the mature wallpapers Steam
+  left out. Keyless scans take author names from the cache rather than fetching
+  a page per author, which would be three minutes a week. See
+  [What a Steam Web API key is for](docs/review.md#what-a-steam-web-api-key-is-for).
+- **The toolbar's "Steam and database…" is two buttons**: **Steam key…** and
+  **Authors database…**.
+- **`build.cmd` never lets PyInstaller near `dist\...\data`.** It builds into
+  `build\stage` and mirrors the result into `dist\` with the live `data`
+  folder excluded from both the copy and the purge, so a failed build cannot
+  delete anything in it. It also refuses to start while the toolkit is running.
+  See [Building](docs/building.md#what-the-build-script-does-around-pyinstaller).
+- `pymongo` and `dnspython` are no longer in the built app. They stay in
+  `requirements.txt` for one release, for the import tool below.
+
+### Added
+
+- **Backups after every change.** A snapshot of the whole database — gzipped
+  JSON, about 1 MB, readable without this app — is written, read back and
+  counted after each write, and a line in `journal.jsonl` records every row
+  the change touched, as it was and as it became. Snapshots are pruned to the
+  last ten, one a day for a week, one a week for a month and one a month for a
+  year. See [Backups](docs/authors-database.md#backups).
+- **A second copy somewhere else.** **Authors database…** can name a second
+  folder — another drive, or one a cloud client syncs — and every snapshot is
+  copied there too. Off until chosen; an unreachable folder never stops a write,
+  and the tab says the copy was not made.
+- **Restoring a backup** from the same dialog, with both counts shown before
+  anything is replaced and the current state snapshotted first. A damaged
+  database file is detected when it is opened, set aside rather than deleted,
+  and the tab offers the backups straight away.
+- `tools/import_authors_from_mongo.py` — the one-time move from the MongoDB
+  collection: a fresh dump, kept beside the backups; converted; written in one
+  transaction; and checked row by row against the dump. The collection is only
+  read. See [Coming from the MongoDB version](docs/authors-database.md#coming-from-the-mongodb-version).
+
+### Fixed
+
+- **Pressing Update twice tried to create the same authors again.** A card
+  stayed "new" after its author had been written, so the next plan created them
+  a second time. Written changes are now applied to the cards themselves.
+
+### Removed
+
+- The MongoDB connection string field, its **Test** button and the **Take the
+  connection string from a .env file…** button, with the `WET_DB_CLUSTER` and
+  `WET_SERVER_ENV` variables they read.
+
 ## [1.2.1] - 2026-09-20
 
 ### Fixed
@@ -185,7 +256,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   was right for one library and wrong for every other. Nothing is tagged now
   unless you ask for it.
 
-[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v1.2.1...HEAD
+[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v2.0.0...HEAD
+[2.0.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v1.2.1...v2.0.0
 [1.2.1]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v1.0.0...v1.1.0

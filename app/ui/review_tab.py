@@ -26,6 +26,7 @@ import queue
 import subprocess
 import webbrowser
 from datetime import datetime
+from pathlib import Path
 
 from PySide6.QtCore import (
     QModelIndex, QRect, QSize, Qt, QThread, QTimer, Signal)
@@ -37,17 +38,19 @@ from PySide6.QtWidgets import (
 
 from .. import animations, theme
 from ..engines import review as rv
-from ..engines.authors_db import AuthorsDb, DbError
+from ..engines.authors_store import AuthorsStore, StoreDamaged
 from ..engines.library import Library
 from ..engines.review import AuthorCard, Review, ReviewResult
-from ..engines.steam_api import SteamClient, workshop_url
+from ..engines.steam_api import SteamAuthError, SteamClient, workshop_url
 from ..engines.steam_ugc import SteamUgc, UgcError
 from ..settings import Settings
 from .. import secrets
-from .credentials import CredentialsDialog
+from .authors_dialog import AuthorsDialog, mirror_folder, open_store
+from .credentials import WITHOUT_KEY, CredentialsDialog, has_key
 from .gallery import GalleryView
 
 SECTION = "review"
+KEYLESS_HIDDEN = "keyless_banner_hidden"
 
 # How a wallpaper gets subscribed to.
 BY_STEAM = "steam"        # ISteamUGC, from this window
@@ -359,7 +362,7 @@ class ReviewTab(QWidget):
         super().__init__(parent)
         self.progressed.connect(self._step)
         self.settings = settings
-        self.db: AuthorsDb | None = None
+        self.db: AuthorsStore | None = None
         self.steam: SteamClient | None = None
         self.library: Library | None = None
         self.review: Review | None = None
@@ -376,6 +379,7 @@ class ReviewTab(QWidget):
         self._status_kind = "muted"
         self._styled_kind = None                # the colour the label has now
         self._summary = ""                      # what the status returns to
+        self._damaged = False                   # the last open found a bad file
 
         outer = QVBoxLayout(self)
 
@@ -412,14 +416,48 @@ class ReviewTab(QWidget):
         bar.addWidget(self.mode)
 
         bar.addStretch()
-        self.settings_btn = QPushButton("Steam and database…")
-        self.settings_btn.clicked.connect(self.edit_credentials)
-        bar.addWidget(self.settings_btn)
+        self.key_btn = QPushButton("Steam key…")
+        self.key_btn.setToolTip("The Steam Web API key — optional, but without it "
+                                "author lists leave out mature wallpapers.")
+        self.key_btn.clicked.connect(self.edit_credentials)
+        bar.addWidget(self.key_btn)
+        self.authors_btn = QPushButton("Authors database…")
+        self.authors_btn.setToolTip("Where the authors are kept, the backups, "
+                                    "and restoring one.")
+        self.authors_btn.clicked.connect(self.edit_authors)
+        bar.addWidget(self.authors_btn)
         self.update_btn = QPushButton("Update the database")
         self.update_btn.setEnabled(False)
         self.update_btn.clicked.connect(self.apply_review)
         bar.addWidget(self.update_btn)
         outer.addLayout(bar)
+
+        # Going without a Steam key is allowed, and said once, up front, in
+        # words — not discovered weeks later as authors who "never publish
+        # anything". Hiding the banner keeps the warnings where they matter:
+        # on each author counted without a key, and before anything is written.
+        self.keyless = QWidget()
+        self.keyless.setObjectName("keyless")
+        self.keyless.setStyleSheet(
+            f"#keyless {{ background: {theme.C['surface']}; "
+            f"border: 1px solid {theme.C['warn']}; border-radius: 5px; }}")
+        keyless_row = QHBoxLayout(self.keyless)
+        keyless_row.setContentsMargins(10, 6, 8, 6)
+        keyless_text = QLabel("⚠  No Steam Web API key.  " + WITHOUT_KEY)
+        keyless_text.setWordWrap(True)
+        keyless_text.setStyleSheet(theme.label_style("warn"))
+        keyless_row.addWidget(keyless_text, 1)
+        add_key = QPushButton("Add a key…")
+        add_key.clicked.connect(self.edit_credentials)
+        keyless_row.addWidget(add_key)
+        hide_keyless = QPushButton("Hide")
+        hide_keyless.setToolTip(
+            "Stop showing this. Authors counted without a key still say so, and "
+            "so does the confirmation before anything is written.")
+        hide_keyless.clicked.connect(self._hide_keyless)
+        keyless_row.addWidget(hide_keyless)
+        outer.addWidget(self.keyless)
+        self._show_keyless()
 
         # The bar and the status line keep their space whether or not they
         # have anything to show. Appearing and disappearing used to push the
@@ -666,20 +704,56 @@ class ReviewTab(QWidget):
         return self.mode.currentData() == BY_STEAM
 
     def edit_credentials(self) -> None:
-        """Set the Steam key and the database, and drop any stale connection."""
+        """Set or remove the Steam key, and drop the client that used the old one."""
         if CredentialsDialog(self).exec() != CredentialsDialog.Accepted:
             return
-        # Whatever was connected was connected with the old values.
         if self.steam is not None:
             self.steam.close()
+        self.steam = self.review = None
+        if has_key():
+            # A key added after the banner was hidden: if it is removed again
+            # one day, the banner comes back and says so.
+            self.settings.set(SECTION, KEYLESS_HIDDEN, False)
+            self.settings.save()
+        self._show_keyless()
+        self._say("Saved. Press “Scan” to use it.")
+
+    def _show_keyless(self) -> None:
+        self.keyless.setVisible(
+            not has_key() and not self.settings.get(SECTION, KEYLESS_HIDDEN, False))
+
+    def _hide_keyless(self) -> None:
+        self.settings.set(SECTION, KEYLESS_HIDDEN, True)
+        self.settings.save()
+        self._show_keyless()
+
+    def edit_authors(self) -> None:
+        """The authors database and its backups."""
+        dialog = AuthorsDialog(self.settings, self)
+        dialog.exec()
+        if self.db is not None:
+            self.db.mirror = mirror_folder(self.settings)
+        if dialog.restored:
+            self._forget_review("The authors database was restored from a backup. "
+                                "Press “Scan” to read it again.")
+        elif self._damaged:
+            self._damaged = False
+            self._say("Press “Scan” to open the authors database again.")
+
+    def _forget_review(self, message: str) -> None:
+        """Drop everything read from the database: it is not what is there now."""
         if self.db is not None:
             self.db.close()
-        self.db = self.steam = self.review = None
-        self._say("Saved. Press “Scan” to use the new settings.")
-
-    def _configured(self) -> bool:
-        return bool(secrets.get(secrets.AUTHORS_DB_URI)
-                    and secrets.get(secrets.STEAM_API_KEY))
+        self.db = self.review = self.result = self.current = None
+        self._loading = None
+        self.gallery.show_items([])
+        self.heading.setText("")
+        self.subheading.setText("")
+        self._refresh_list()
+        self.fill_btn.setEnabled(False)
+        self.update_btn.setEnabled(False)
+        self._summary = message
+        self._say(message, "ok")
 
     # -- running work -----------------------------------------------------
 
@@ -734,33 +808,50 @@ class ReviewTab(QWidget):
 
     def _failed(self, message: str) -> None:
         self._say(message, "danger")
+        if self._damaged:
+            answer = QMessageBox.critical(
+                self, "The authors database is damaged",
+                f"{message}\n\nNothing will be written to it. Open the backups "
+                "and restore the newest one? The damaged file is set aside, "
+                "not deleted.",
+                QMessageBox.Open | QMessageBox.Cancel, QMessageBox.Open)
+            if answer == QMessageBox.Open:
+                self.edit_authors()
 
     # -- phase one --------------------------------------------------------
 
     def start_scan(self) -> None:
-        if not self._configured():
-            self._say("Steam and the authors database need setting up first.", "warn")
-            self.edit_credentials()
-            if not self._configured():
-                return
+        # Nothing to set up first: the database is a file made on first use,
+        # and the Steam key is optional — the banner says what going without
+        # one costs.
+        self._damaged = False
 
         def work(step):
+            if self.db is None:
+                step("opening the authors database", 0, 0)
+                try:
+                    self.db = open_store(self.settings)
+                except StoreDamaged:
+                    self._damaged = True
+                    raise
+                # A database with no backup at all — the first run after an
+                # import, or backups deleted by hand — gets one before anything.
+                self.db.ensure_snapshot()
             if self.review is None:
-                step("connecting", 0, 0)
-                uri = secrets.get(secrets.AUTHORS_DB_URI)
-                if not uri:
-                    raise DbError("No authors database is configured. "
-                                  "Store its connection string first.")
-                self.db = AuthorsDb(uri).connect()
                 self.steam = SteamClient(
-                    api_key=secrets.get(secrets.STEAM_API_KEY))
+                    api_key=secrets.get(secrets.STEAM_API_KEY) or None)
                 self.library = Library()
                 if not self.library.scanned:
                     step("reading the local libraries", 0, 0)
                     self.library.refresh()
                 self.review = Review(self.db, self.steam, self.library,
                                      on_progress=self._progress_relay)
-            return self.review.scan(scope)
+            try:
+                return self.review.scan(scope)
+            except SteamAuthError as err:
+                raise RuntimeError(
+                    f"Steam refused the Web API key ({err}). Change or remove it "
+                    "under “Steam key…” — the review also works without one.") from err
 
         scope = self.scope.currentData() or rv.DEFAULT_SCOPE
         self._save_scope()
@@ -779,6 +870,13 @@ class ReviewTab(QWidget):
         self.fill_btn.setEnabled(True)
         self.update_btn.setEnabled(True)
         self._summary = result.summary() + ".  Press “Count what is new”, or click an author."
+        if self.steam is not None and not self.steam.has_key:
+            self._summary += "  No Steam key: mature wallpapers are not counted."
+        if self.db is not None and self.db.warnings:
+            warnings = "; ".join(self.db.warnings)
+            self.db.warnings.clear()
+            self._say(f"{self._summary}  But {warnings}.", "warn")
+            return
         self._say(self._summary)
 
     def start_fill(self) -> None:
@@ -810,6 +908,12 @@ class ReviewTab(QWidget):
         if returning:
             line += f", {returning} of them yours once"
         self._summary = line + ".  Click an author, or move through them with the arrow keys."
+        blind = len(result.incomplete)
+        if blind:
+            self._summary = (f"{line}.  {blind} authors were counted without a "
+                             "Steam key — their mature wallpapers are not in it.")
+            self._say(self._summary, "warn")
+            return
         self._say(self._summary)
 
     # -- phase two --------------------------------------------------------
@@ -941,6 +1045,9 @@ class ReviewTab(QWidget):
                 bits.append(f"{card.returning} were yours once"
                             if card.returning else "none were yours before")
             bits.append(f"{card.total} published in total")
+        if card.filled and not card.complete:
+            bits.append("list incomplete: read without a Steam key, mature "
+                        "wallpapers left out")
         if card.error:
             bits.append(card.error)
         self.subheading.setText("  ·  ".join(bits))
@@ -1092,37 +1199,71 @@ class ReviewTab(QWidget):
             return
         created = sum(1 for c in changes if c.kind == "create")
         renamed = sum(1 for c in changes if c.kind == "update" and "name" in c.fields)
-        visited = sum(1 for c in changes if c.kind == "update" and "dateVisited" in c.fields)
+        visited = sum(1 for c in changes if c.kind == "update" and "visited" in c.fields)
         preview = "\n".join(c.describe() for c in changes[:14])
         if len(changes) > 14:
             preview += f"\n… and {len(changes) - 14} more"
-        answer = QMessageBox.question(
-            self, "Update the authors database",
-            f"{created} authors to create, {visited} visit dates to move, "
-            f"{renamed} names to bring up to date.\n\n{preview}",
-            QMessageBox.Ok | QMessageBox.Cancel)
+        text = (f"{created} authors to create, {visited} visit dates to move, "
+                f"{renamed} names to bring up to date.\n\n{preview}")
+
+        # A visit date moved from a list Steam cut short moves past wallpapers
+        # nobody was shown. That is the one consequence of going without a key
+        # that adding one later does not undo, so it is said here, where it
+        # happens, and the safe button is the default.
+        blind = self._written_blind(changes)
+        if blind:
+            text += (f"\n\n⚠  {blind} of these come from lists read without a "
+                     "Steam key. Steam leaves mature wallpapers out of those, and "
+                     "moving the visit date past them means they will not be "
+                     "offered later — not even after a key is added.")
+            answer = QMessageBox.warning(
+                self, "Update the authors database", text,
+                QMessageBox.Ok | QMessageBox.Cancel, QMessageBox.Cancel)
+        else:
+            answer = QMessageBox.question(
+                self, "Update the authors database", text,
+                QMessageBox.Ok | QMessageBox.Cancel)
         if answer != QMessageBox.Ok:
             return
 
         def work(step):
             report = self.db.apply(changes, on_progress=lambda d, n: step("writing", d, n))
             report["changes"] = changes
+            report["warnings"] = list(self.db.warnings)
+            self.db.warnings.clear()
             return report
 
         self._run(work, self._applied, "Writing to the authors database…")
 
+    def _written_blind(self, changes) -> int:
+        """How many of these would set a visit date from an incomplete list."""
+        if self.result is None:
+            return 0
+        blind = {c.id64 for c in self.result.incomplete}
+        if not blind:
+            return 0
+        owner = {id(r): c.id64 for c in self.result.cards for r in c.records}
+        count = 0
+        for change in changes:
+            if change.kind == "create":
+                count += change.fields.get("key") in blind
+            elif change.kind == "update" and "visited" in change.fields:
+                count += owner.get(id(change.author)) in blind
+        return count
+
     def _applied(self, report: dict) -> None:
-        # What was written is now what the cards should say, without a rescan:
-        # a renamed author loses the grey "was …", a visited one its old date.
-        for change in report.get("changes", []):
-            if change.kind != "update" or change.author is None:
-                continue
-            if "name" in change.fields:
-                change.author.name = change.fields["name"]
-            if "dateVisited" in change.fields:
-                change.author.visited = change.fields["dateVisited"]
+        # What was written is now what the cards should say, without a rescan.
+        self.review.absorb(self.result, report.get("changes", []))
         self._refresh_list()
         if self.current is not None:
             self._describe(self.current)
-        self._say(f"{report['created']} created, {report['updated']} updated. "
-                  f"Backup: {report.get('backup') or 'none needed'}", "ok")
+        line = f"{report['created']} created, {report['updated']} updated."
+        backup = report.get("backup")
+        if backup:
+            line += f"  Backed up as {Path(backup).name}"
+            line += " here and in the second folder." if self.db and self.db.mirror else "."
+        warnings = report.get("warnings") or []
+        if warnings:
+            self._say(line + "  But " + "; ".join(warnings), "warn")
+        else:
+            self._say(line, "ok")

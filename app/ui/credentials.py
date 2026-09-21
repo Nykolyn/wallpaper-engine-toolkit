@@ -1,60 +1,55 @@
-"""Where the Steam key and the database live, set from inside the app.
+"""The Steam Web API key — optional, and honest about what it is for.
 
-Both were put in place by hand while the Review tab was being built, which was
-fine for building it and no good for using it. Everything the toolkit needs to
-reach Steam and the authors database is set here instead, checked here, and
-stored by :mod:`app.secrets` — DPAPI-encrypted, so the file is unreadable to
-another Windows account and useless if it is copied off the machine.
+The Review tab works without a key. Steam then treats the toolkit as a
+signed-out visitor, and that costs two things worth knowing before choosing:
 
-The two **Test** buttons matter more than they look. A wrong Steam key and an
-unreachable database fail identically from the Review tab's point of view —
-"nothing happened" — and each takes a slow round trip to find out. Testing them
-here, one at a time, with the answer in a sentence, turns a mystery into a
-sentence about which of the two is wrong.
+* **Mature and questionable wallpapers are invisible** in an author's list —
+  43% of the library this was built on. A review without a key recommends
+  "nothing new" for exactly the authors it matters most for, and a visit date
+  written from such a list moves past wallpapers that were never shown.
+* **Each author's name is a page of its own**, so names come from a cache that
+  is at most two weeks old instead of being fetched fresh every scan.
+
+So the dialog says both, links to where a key comes from, and lets the key be
+tested before it is saved: a wrong key and a missing one fail differently, and
+a sentence saying which is worth more than a scan that quietly finds less.
+
+The key is stored by :mod:`app.secrets` — DPAPI-encrypted, so the file is
+unreadable to another Windows account and useless if copied off the machine.
 """
 from __future__ import annotations
 
-import os
-from pathlib import Path
-
 from PySide6.QtCore import QThread, Qt, Signal
 from PySide6.QtWidgets import (
-    QCheckBox, QDialog, QDialogButtonBox, QFileDialog, QFormLayout, QHBoxLayout,
-    QLabel, QLineEdit, QPushButton, QVBoxLayout, QWidget)
+    QCheckBox, QDialog, QDialogButtonBox, QHBoxLayout, QLabel, QLineEdit,
+    QPushButton, QVBoxLayout, QWidget)
 
 from .. import secrets, theme
-from ..settings import Settings
-from ..engines.authors_db import AuthorsDb, DbError, uri_from_env_file
 from ..engines.steam_api import SteamClient
 from ..engines.steam_ugc import SteamUgc
 
-# A web service that already talks to the same database keeps its credentials
-# in a `.env`, and reading them beats retyping them. Where that file lives is
-# particular to whoever is running this, so it is never guessed: set
-# ``WET_SERVER_ENV`` to pre-fill the dialog, and after one pick the chosen
-# path is remembered anyway.
-SERVER_ENV_VAR = "WET_SERVER_ENV"
+KEY_PAGE = "https://steamcommunity.com/dev/apikey"
 
 # Testing the key needs an author to ask about, and the answer is only
 # convincing if that author has published something. This is a public
 # workshop account picked for being prolific — nothing about it is
 # particular to whoever is running this, and it is read, never written.
 PROBE_AUTHOR = "76561198344659208"
-_LAST_ENV_SETTING = ("review", "server_env_path")
+
+# What the tab and this dialog both say when there is no key. One wording, so
+# the banner and the dialog cannot drift apart.
+WITHOUT_KEY = (
+    "Without a key Steam treats the toolkit as a signed-out visitor: mature and "
+    "questionable wallpapers are left out of every author's list — 43% of the "
+    "library this was built on — and author names can be up to two weeks old.")
 
 
-def _env_dialog_start() -> str:
-    """Where the .env picker should open, or "" to let Qt decide."""
-    settings = Settings.load()
-    remembered = settings.get(*_LAST_ENV_SETTING, "")
-    for candidate in (remembered, os.environ.get(SERVER_ENV_VAR, "")):
-        if candidate and Path(candidate).exists():
-            return candidate
-    return ""
+def has_key() -> bool:
+    return secrets.has(secrets.STEAM_API_KEY)
 
 
 class _Check(QThread):
-    """One test, off the GUI thread — both of them can take twenty seconds."""
+    """One test, off the GUI thread — it can take several seconds."""
 
     done = Signal(str, bool)
 
@@ -109,43 +104,39 @@ class SecretField(QWidget):
 
 
 class CredentialsDialog(QDialog):
-    """Steam key, database connection string, and whether either of them works."""
+    """The Steam key: optional, testable, and clear about the difference."""
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Steam and the authors database")
+        self.setWindowTitle("Steam Web API key")
         self.setMinimumWidth(620)
         self._checks: list[_Check] = []
 
         layout = QVBoxLayout(self)
-        form = QFormLayout()
-        form.setLabelAlignment(Qt.AlignLeft)
+        title = QLabel("Steam Web API key  —  optional")
+        title.setStyleSheet(theme.label_style("text", size=13, weight=600))
+        layout.addWidget(title)
 
-        self.key = SecretField("32 hex characters from steamcommunity.com/dev/apikey")
+        self.key = SecretField("32 hex characters")
         self.key.value = secrets.get(secrets.STEAM_API_KEY)
         self.key.test.clicked.connect(self.test_key)
-        form.addRow("Steam Web API key", self.key)
+        self.key.edit.textChanged.connect(self._describe_choice)
+        layout.addWidget(self.key)
 
-        self.uri = SecretField("mongodb+srv://user:password@host/database")
-        self.uri.value = secrets.get(secrets.AUTHORS_DB_URI)
-        self.uri.test.clicked.connect(self.test_db)
-        form.addRow("Authors database", self.uri)
-        layout.addLayout(form)
+        where = QLabel(
+            f'A key is free: sign in at <a href="{KEY_PAGE}">{KEY_PAGE}</a>, enter '
+            "any domain name, and copy the key it shows.")
+        where.setOpenExternalLinks(True)
+        where.setWordWrap(True)
+        where.setTextInteractionFlags(Qt.TextBrowserInteraction)
+        where.setStyleSheet(theme.label_style("muted"))
+        layout.addWidget(where)
 
-        note = QLabel(
-            "The key is what makes an author's list complete: signed out, Steam "
-            "hides mature wallpapers, and on this library that is 43% of them. "
-            "Both values are stored encrypted for this Windows account.")
-        note.setWordWrap(True)
-        note.setStyleSheet(theme.label_style("faint"))
-        layout.addWidget(note)
-
-        row = QHBoxLayout()
-        borrow = QPushButton("Take the connection string from a .env file…")
-        borrow.clicked.connect(self.import_env)
-        row.addWidget(borrow)
-        row.addStretch()
-        layout.addLayout(row)
+        # What the choice means, in the colour of the choice: amber while there
+        # is no key, quiet once there is.
+        self.meaning = QLabel("")
+        self.meaning.setWordWrap(True)
+        layout.addWidget(self.meaning)
 
         self.ugc = QLabel("")
         self.ugc.setWordWrap(True)
@@ -159,18 +150,32 @@ class CredentialsDialog(QDialog):
         layout.addWidget(buttons)
 
         self._say_stored()
+        self._describe_choice()
 
     # -- what is already there --------------------------------------------
 
     def _say_stored(self) -> None:
-        for field, name in ((self.key, secrets.STEAM_API_KEY),
-                            (self.uri, secrets.AUTHORS_DB_URI)):
-            if not secrets.has(name):
-                field.say("not set")
-            elif secrets.is_protected(name):
-                field.say(f"stored, encrypted  ({secrets.masked(name)})")
-            else:
-                field.say("stored in the clear — DPAPI was unavailable", False)
+        name = secrets.STEAM_API_KEY
+        if not secrets.has(name):
+            self.key.say("not set — the Review tab works without one, with less")
+        elif secrets.is_protected(name):
+            self.key.say(f"stored, encrypted  ({secrets.masked(name)})")
+        else:
+            self.key.say("stored in the clear — DPAPI was unavailable", False)
+
+    def _describe_choice(self, *_args) -> None:
+        if self.key.value:
+            self.meaning.setStyleSheet(theme.label_style("faint"))
+            self.meaning.setText(
+                "With a key, author lists are complete — mature wallpapers "
+                "included — and names are fetched fresh on every scan, a "
+                "hundred authors to a request.")
+        else:
+            self.meaning.setStyleSheet(theme.label_style("warn"))
+            self.meaning.setText(
+                "⚠  " + WITHOUT_KEY + " A visit date written from such a list "
+                "moves past the wallpapers that were left out, so they are not "
+                "offered later either — not even after a key is added.")
 
     def _describe_ugc(self) -> None:
         found = SteamUgc()
@@ -185,24 +190,13 @@ class CredentialsDialog(QDialog):
 
     # -- testing -----------------------------------------------------------
 
-    def _start(self, field: SecretField, work) -> None:
-        field.say("checking…")
-        field.test.setEnabled(False)
-        check = _Check(work, self)
-
-        def finished(message: str, good: bool) -> None:
-            field.say(message, good)
-            field.test.setEnabled(True)
-
-        check.done.connect(finished)
-        self._checks.append(check)
-        check.start()
-
     def test_key(self) -> None:
         value = self.key.value
         if not value:
-            self.key.say("nothing to test", False)
+            self.key.say("nothing to test — leave it empty to go without a key", None)
             return
+        self.key.say("checking…")
+        self.key.test.setEnabled(False)
 
         def work() -> str:
             client = SteamClient(api_key=value, cache_path=None)
@@ -211,44 +205,20 @@ class CredentialsDialog(QDialog):
             return (f"Steam accepts the key — it answered with "
                     f"{author.total} wallpapers for a test author")
 
-        self._start(self.key, work)
+        check = _Check(work, self)
 
-    def test_db(self) -> None:
-        value = self.uri.value
-        if not value:
-            self.uri.say("nothing to test", False)
-            return
+        def finished(message: str, good: bool) -> None:
+            self.key.say(message, good)
+            self.key.test.setEnabled(True)
 
-        def work() -> str:
-            with AuthorsDb(value) as db:
-                return f"connected — {db.count()} authors in {db.database}"
-
-        self._start(self.uri, work)
-
-    # -- borrowing from the old server -------------------------------------
-
-    def import_env(self) -> None:
-        chosen, _ = QFileDialog.getOpenFileName(
-            self, "A service's .env", _env_dialog_start(),
-            "Environment files (*.env .env);;All files (*)")
-        if not chosen:
-            return
-        try:
-            self.uri.value = uri_from_env_file(chosen)
-            self.uri.say("read from the file — press Test to be sure")
-        except (DbError, OSError) as err:
-            self.uri.say(str(err), False)
-            return
-        # Only a file that parsed is worth returning to next time.
-        settings = Settings.load()
-        settings.set(*_LAST_ENV_SETTING, chosen)
-        settings.save()
+        check.done.connect(finished)
+        self._checks.append(check)
+        check.start()
 
     # -- saving ------------------------------------------------------------
 
     def save(self) -> None:
         secrets.put(secrets.STEAM_API_KEY, self.key.value)
-        secrets.put(secrets.AUTHORS_DB_URI, self.uri.value)
         self.accept()
 
     def closeEvent(self, event) -> None:

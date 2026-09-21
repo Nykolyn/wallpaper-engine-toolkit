@@ -28,19 +28,17 @@ This tab is that, done for you.
 
 ## What you need first
 
-Two credentials, set in the tab's own dialog and stored DPAPI-encrypted:
+Nothing. Press **Scan**.
 
-1. A **Steam Web API key** — free from
-   [steamcommunity.com/dev/apikey](https://steamcommunity.com/dev/apikey).
-   See [why it is not optional](#why-it-needs-a-steam-web-api-key).
-2. A **MongoDB connection string** for the authors database. See
-   [Authors database](authors-database.md).
-
-Both have a **Test** button, and those matter more than they look: a wrong key
-and an unreachable database fail identically from the tab's point of view —
-"nothing happened" — and each takes a slow round trip to find out. Testing them
-one at a time, with the answer in a sentence, turns a mystery into a sentence
-about which of the two is wrong.
+- The **authors database** is a file, `data/authors.sqlite`, made the first
+  time the tab needs it and backed up after every change. See
+  [Authors database](authors-database.md).
+- A **Steam Web API key** is optional, and worth having. Without one the tab
+  works, with less — see [what the key is for](#what-a-steam-web-api-key-is-for).
+  It is free from
+  [steamcommunity.com/dev/apikey](https://steamcommunity.com/dev/apikey) and
+  goes in **Steam key…**, which has a **Test** button and stores the key
+  DPAPI-encrypted.
 
 ## How to use it
 
@@ -53,7 +51,8 @@ about which of the two is wrong.
    currently subscribed, newest first, as previews.
 4. Subscribe to what you want.
 5. Press **Update the database**. Authors that were new are created; the rest
-   have their visit date moved on.
+   have their visit date moved on. The change is listed before it is written,
+   written in one go — all of it or none — and backed up straight after.
 
 ### What gets reviewed
 
@@ -122,8 +121,8 @@ nothing is skipped.
 ### Two phases, because they cost differently
 
 **Naming the authors takes seconds.** The wallpapers are described in batches of
-200, a hundred profiles come back per request, and every database record is
-fetched in one query — 616 keys in 0.7 s.
+200, a hundred profiles come back per request, and the authors database is a
+local file — 616 authors looked up by both of their keys in 11 ms.
 
 **Counting what each has published since is a request apiece.** Opening one
 author's whole back catalogue is a dozen. So the list appears first and fills in
@@ -134,11 +133,12 @@ another — measured at **17.9 s for the 85 authors** of an ordinary week. The
 workshop folder is read once for the whole count instead of once per author,
 and what you used to own is not asked at all.
 
-### Why it needs a Steam Web API key
+### What a Steam Web API key is for
 
-The obvious way to list an author's work is their public workshop page, and it
-is a trap. Measured against one real library, a signed-out listing does not show
-an author's work — it shows a fraction of it:
+Without a key the toolkit sees Steam the way a signed-out visitor does. The
+obvious way to list an author's work is their public workshop page, and it is a
+trap. Measured against one real library, a signed-out listing does not show an
+author's work — it shows a fraction of it:
 
 | author | public listing | owned here | of those, unlisted |
 |---|---|---|---|
@@ -150,10 +150,31 @@ Mature and questionable content is invisible to a signed-out client, and it was
 **43%** of that library. The Web API has no such gate, so with a key everything
 is read through it and the lists are whole.
 
+The key is still optional, because the tab is useful without it — but going
+without is said, not discovered:
+
+- A **banner** under the toolbar says what is missing, with **Add a key…** next
+  to it. **Hide** puts it away; the two warnings below stay.
+- An author counted without a key says so under their name: *list incomplete:
+  read without a Steam key*.
+- **Update the database** warns, and defaults to **Cancel**, when a visit date
+  would be written from such a list. That is the one consequence adding a key
+  later does not undo: the date moves past the mature wallpapers that were left
+  out, and they are not offered again.
+
+Names are the other difference. With a key a hundred profiles are one request,
+so every scan fetches them fresh. Without one each is a page of its own, 0.4 s
+apart — three minutes for an ordinary week — so a keyless scan takes names from
+the cache, which is at most two weeks old, and fetches only the ones it lacks.
+
+A key Steam refuses stops the scan with a sentence saying so, rather than
+quietly counting less.
+
 ### Where the time goes, measured rather than guessed
 
-Identifying the authors is 3.1 s for a folder of 80 wallpapers, of which 1.3 s
-is opening the database.
+Identifying the authors is under two seconds for a folder of 80 wallpapers.
+Opening the database used to be 1.3 s of that, a round trip to a server; the
+local file opens in 5 ms.
 
 Counting what each has published since is the phase with the waiting in it, and
 it is latency and nothing else: one request per author, 641 ms median, all of it
@@ -186,47 +207,21 @@ an item is never updated before it was created. So paging can stop at the first
 page whose contents were all last touched before the visit date: for an author
 with 1 204 wallpapers, one request instead of thirteen.
 
-### Reaching MongoDB through a VPN
-
-A `mongodb+srv://` string is not a host. It tells the driver to look up an SRV
-record for the cluster's servers and a TXT record for its default options, and
-pymongo does that with **dnspython**, which reads the configured nameservers and
-queries them itself over UDP.
-
-Behind a VPN that fails. The nameservers a VPN installs answer the Windows DNS
-Client but not a program asking them directly, so every lookup burns its full
-20-second timeout and the tab reports a database it cannot reach while the
-database is reachable the whole time. `Resolve-DnsName` and
-`socket.getaddrinfo` answer the same names in 0.06 s.
-
-So `app/engines/mongo_srv.py` does the lookup with `DnsQuery_W` from
-`dnsapi.dll` — the resolver Windows uses itself — and folds the result into an
-ordinary `mongodb://` string with the servers written into it, which pymongo
-then resolves with `getaddrinfo`: the same path the Steam client and everything
-else already take.
-
-Credentials are copied verbatim (they are percent-encoded and must not be
-touched), an option written by hand beats the same option from TXT, TLS is
-stated explicitly because `+srv` implies it and `mongodb://` does not, and a
-server outside the cluster's own domain is refused. If any of that cannot be
-done — another platform, no SRV record — the original string is handed over
-untouched and pymongo does it its own way.
-
-Connecting went from failing after 20.4 s to succeeding in 1.6 s.
-
 ## Files
 
 | File | What it holds |
 |---|---|
-| `data/secrets.json` | the API key and the connection string, DPAPI-encrypted |
+| `data/authors.sqlite` | the authors database: one row per author, with the visit date |
+| `data/secrets.json` | the Steam API key, DPAPI-encrypted |
 | `data/library.json` | workshop ids found in the local libraries, so the four-minute walk is paid once |
 | Wallpaper Engine's `config.json` | read, never written: its folders are both the review queue and the record of what you have had |
 | `data/thumbs/` | preview images |
 | `data/steam_cache.sqlite` | what Steam has already been asked |
-| `data/authors_backup/` | plans and per-change backups before the database is written |
+| `data/authors_backup/` | a snapshot after every change, and `journal.jsonl` of every change — see [Backups](authors-database.md#backups) |
 
 ## See also
 
 - [Gallery](gallery.md) — the wall of previews, what each badge means, and
   subscribing.
-- [Authors database](authors-database.md) — the collection itself.
+- [Authors database](authors-database.md) — the file, its backups, and
+  restoring one.

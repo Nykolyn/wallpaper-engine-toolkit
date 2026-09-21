@@ -18,18 +18,31 @@ WallpaperEngineToolkit.exe --selfcheck  what this build can actually import
 
 ## What the build script does around PyInstaller
 
-PyInstaller wipes `dist\WallpaperEngineToolkit` before writing, and that folder
-is where a built installation keeps its `data/` — its settings, its tracker
-history, its encrypted secrets. So `build.cmd` copies `data/` out to a temporary
-folder first and restores it afterwards. **A rebuild does not cost you your
-history.**
+`dist\WallpaperEngineToolkit\data` is where a built installation keeps
+everything it has learned — the authors database and its backups, the tracker's
+history, the encrypted Steam key. PyInstaller empties its output folder before
+writing, so **it never writes there**:
+
+1. It builds into `build\stage\WallpaperEngineToolkit`.
+2. Only if that succeeded, `robocopy /MIR` copies the result into
+   `dist\WallpaperEngineToolkit`, with that one `data` folder excluded — from
+   the copy *and* from the purge, so nothing under it is deleted or
+   overwritten. A package's own `data` directory inside `_internal` is still
+   copied; the exclusion names the full path.
+
+A failed build leaves `dist\` as the previous build, whole. The script refuses
+to start while the toolkit is running, because a running copy holds its exe
+open and the copy could not replace it.
+
+(It used to stash `data\` in `%TEMP%` and copy it back. A build that died half
+way through PyInstaller's wipe deleted `secrets.json` that way — which is what
+this replaced.)
 
 ## Checking a build
 
-A windowed build has no console, and the two libraries the [Review](review.md)
-tab reaches the database through — `pymongo` and `dnspython` — are imported
-lazily. That is exactly the shape of dependency PyInstaller misses, and the
-failure looks like the tab quietly not working, hours after the build.
+A windowed build has no console, and a module imported lazily is exactly the
+shape of dependency PyInstaller misses — the failure looks like a tab quietly
+not working, hours after the build.
 
 So run the selfcheck once after building:
 
@@ -43,15 +56,13 @@ looks like this:
 ```
 frozen: True
 ok      PySide6.QtWidgets  (the window)
-ok      pymongo  (the authors database)
-ok      bson  (database ids)
-ok      dns.resolver  (mongodb+srv lookups, the fallback path)
-ok      app.engines.mongo_srv  (mongodb+srv through Windows)
+ok      sqlite3  (the authors database and the Steam cache)
+ok      app.engines.authors_store  (the authors database)
+ok      app.ui.authors_dialog  (its backups and restoring one)
 ok      app.engines.review  (the review itself)
 ok      app.ui.review_tab  (the Review tab)
 ok      app.engines.steam_ugc  (subscribing from the gallery)
-ok      app.secrets  (the stored key and connection string)
-ok      the Windows resolver (dnsapi.dll)
+ok      app.secrets  (the stored Steam key)
 ok      preview downloads
 ```
 
@@ -86,7 +97,6 @@ shows, and `--add-data` so `QIcon` can paint the title bar at runtime.
 
 ## The spec file
 
-`WallpaperEngineToolkit.spec` is checked in. It collects submodules for `app`,
-`pymongo`, `bson` and `dns`, and collects `imageio_ffmpeg` whole — that last one
-carries a binary, which is what the [Creator](creator.md) falls back to
+`WallpaperEngineToolkit.spec` is checked in. It collects submodules for `app`
+and collects `imageio_ffmpeg` whole — that last one carries a binary, which is what the [Creator](creator.md) falls back to
 when there is no ffmpeg on `PATH`.
