@@ -55,7 +55,7 @@ from .tracker import find_we_config
 # What a card says about the author behind it.
 NEW = "new"                 # nobody has added them to the database yet
 KNOWN = "known"             # exactly one record
-DUPLICATE = "duplicate"     # more than one, which the migration could not fold
+DUPLICATE = "duplicate"     # more than one: an account number and a vanity name
 UNKNOWN = "unknown"         # Steam would not say who they are
 
 DEFAULT_FOLDER = "new"

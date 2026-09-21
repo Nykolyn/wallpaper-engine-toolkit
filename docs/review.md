@@ -172,9 +172,8 @@ quietly counting less.
 
 ### Where the time goes, measured rather than guessed
 
-Identifying the authors is under two seconds for a folder of 80 wallpapers.
-Opening the database used to be 1.3 s of that, a round trip to a server; the
-local file opens in 5 ms.
+Identifying the authors is under two seconds for a folder of 80 wallpapers,
+and opening the authors database is 5 ms of it.
 
 Counting what each has published since is the phase with the waiting in it, and
 it is latency and nothing else: one request per author, 641 ms median, all of it

@@ -158,4 +158,4 @@ before the last rotation rewrote them, are in `data/playlist-refresh/`.
   anyway.
 - A playlist the rotation did not rebuild outlives its files: Wallpaper Engine
   goes on listing folders that are now back in the reserve. That is expected,
-  and the Tracker [accounts for it](tracker.md#what-the-probe-cannot-see).
+  and the Tracker [accounts for it](tracker.md#what-neither-can-see).

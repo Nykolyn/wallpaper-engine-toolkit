@@ -92,7 +92,7 @@ tried and measured worse. Those measurements are in the comments and in
 - Why only eight previews animate at once —
   [Gallery](docs/gallery.md#it-animates-but-not-thirty-at-once)
 - Why a vanity name is not an identity —
-  [Authors database](docs/authors-database.md#the-identifier-problem)
+  [Authors database](docs/authors-database.md#why-an-author-can-have-two-keys)
 
 **[Architecture and tests →](docs/development.md)**
 

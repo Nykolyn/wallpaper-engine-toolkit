@@ -35,9 +35,6 @@ app/
 │   ├── steam_ugc.py      Steamworks, for subscribing
 │   ├── library.py        what is subscribed now, and what was owned once
 │   ├── authors_store.py  the authors database: SQLite, snapshots, the journal
-│   ├── authors_db.py     the old MongoDB collection  ┐ only the import tool
-│   ├── mongo_srv.py      mongodb+srv through Windows ├ uses these; they go
-│   ├── migration.py      re-keying that collection   ┘ in the next release
 │   ├── review.py         the weekly walk itself
 │   └── rotator/
 │       ├── config.py     verbatim  wallpaper_rotator/app/config.py
@@ -82,10 +79,7 @@ for %f in (tests\test_*.py) do .venv\Scripts\python.exe %f
 | `test_autostart.py` | the command line, the task XML, and the rename migration |
 | `test_animations.py` | motion, by sampling real widgets over real time |
 | `test_steam_api.py` | the Web API client and its cache |
-| `test_authors_store.py` | the authors database: transactions, snapshots, pruning, the second folder, restoring, damaged files, the Mongo import |
-| `test_authors_db.py` | the old Mongo collection, for the import tool |
-| `test_migration.py` | the identifier re-keying |
-| `test_mongo_srv.py` | SRV/TXT resolution and URI rewriting |
+| `test_authors_store.py` | the authors database: transactions, snapshots, pruning, the second folder, restoring, damaged files |
 | `test_review.py` | the weekly walk |
 | `test_gallery.py` | every delegate, painted in every state; memory and animation bounds |
 | `test_hang_watch.py` | a stuck GUI thread leaves its stacks in the hang log |
@@ -101,16 +95,10 @@ machine's real state:
 
 ```
 .venv\Scripts\python.exe tests\test_steam_api.py --live
-.venv\Scripts\python.exe tests\test_authors_db.py --live
-.venv\Scripts\python.exe tests\test_authors_db.py --live-write
 .venv\Scripts\python.exe tests\test_review.py --live
 .venv\Scripts\python.exe tests\test_wallpaper_timer.py --live
-set WET_TEST_CLUSTER=mycluster.ab12c.mongodb.net
-.venv\Scripts\python.exe tests\test_mongo_srv.py --live
 ```
 
-`test_mongo_srv.py --live` skips itself unless `WET_TEST_CLUSTER` names a
-cluster — no one's infrastructure is written into this repository.
 `test_wallpaper_timer.py --live` skips itself if Wallpaper Engine is not
 installed.
 

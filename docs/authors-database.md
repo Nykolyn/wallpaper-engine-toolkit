@@ -38,9 +38,8 @@ One table, `authors`, with only what the Review uses:
 | `added` | when they were first found, in UTC: `2026-09-21T10:15:30Z` |
 | `visited` | how far through their work you are, in UTC; empty means never |
 
-Times carry their zone. The MongoDB collection this replaced kept UTC and
-dropped the marker, and reading that as local time was a silent three-hour error
-in the one date that decides what is shown.
+Times carry their zone. UTC without the marker is one misreading away from a
+silent three-hour error in the one date that decides what is shown.
 
 A vanity name is case-blind on Steam and may only contain ASCII letters,
 digits, `_` and `-`, which is exactly what SQLite's `NOCASE` folds — so `O0P`
@@ -98,54 +97,18 @@ If the database file is ever damaged, the tab says so when it opens it and
 offers the backups straight away. The damaged file is set aside as
 `authors.sqlite.damaged1`, never deleted.
 
-## Coming from the MongoDB version
+## Why an author can have two keys
 
-Before 2.0.0 this was a MongoDB collection, reached with a connection string.
-`tools/import_authors_from_mongo.py` carries it over once:
+Steam offers two forms of profile URL: an **account number**
+(`/profiles/7656119…`) and a **vanity name** (`/id/someone`). The account number
+is the identity — it never changes. A vanity name can be changed, and the old
+one is then *released* for somebody else to claim.
 
-```
-.venv\Scripts\python.exe tools\import_authors_from_mongo.py --target dist\WallpaperEngineToolkit\data
-```
+So authors are filed under their account number. The exceptions are authors
+added long ago under a vanity name that nothing can tie to an account any more
+— 821 of 38 989 in the database this was built against. They stay filed under
+that name.
 
-It takes a fresh dump of the collection (or reads one given with `--dump`),
-keeps it beside the backups, converts it, writes it in one transaction, and
-checks every row it wrote against the dump before saying it is done. The Mongo
-collection is only ever read. An existing database with authors in it is
-replaced only with `--replace`, and is snapshotted first.
-
-Four fields come across — `steamId`, `name`, `dateAdded`, `dateVisited`. The
-rest were the old web app's bookkeeping (`_id`, `__v`, `creator`, the same for
-every record) or features this app never had (`favorite`, `reviewedFavorites`,
-`newWallpapers`, `referenceLink`). Two records whose keys differ only in case
-are one Steam profile; they are folded together, keeping the earlier discovery
-and the later visit, and listed in the output.
-
-The tool and the MongoDB code behind it (`authors_db.py`, `mongo_srv.py`,
-`migration.py`, and the `pymongo` and `dnspython` requirements) are kept for one
-release and then removed. None of it is used by the app any more.
-
-## The identifier problem
-
-Steam offers two forms of profile URL and, over five years, both were pasted in:
-an **account number** for 18 535 records and a **vanity name** for the other
-20 512.
-
-A vanity name is not an identity. It can be changed, and the old one is then
-*released* for somebody else to claim — which had already happened in this
-collection. Two records keyed on the same string were two different people; one
-person appeared twice under two keys.
-
-`app/engines/migration.py` re-keyed the collection to account numbers, while it
-was still in MongoDB:
-
-- **19 573** records rewritten
-- **150** duplicates merged away
-- **822** that nothing could identify left alone
-
-Two independent sources were used and **neither trusted alone** — the author of
-a wallpaper the record points at, and the vanity name itself. They agreed on
-**98.9%** of the records where both answered; the rest were left for a human.
-
-That is why a lookup still asks for both of an author's keys: the few records
-nothing could identify are still filed under a vanity name, and a card that
-finds two records says **duplicated** rather than picking one.
+That is why a lookup asks for both of an author's keys, the account number and
+the vanity name Steam reports today, and why a card that finds two records says
+**duplicated** rather than picking one.

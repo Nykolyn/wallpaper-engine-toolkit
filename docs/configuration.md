@@ -84,9 +84,7 @@ cache if Steam moves underneath a running app.
 
 One value must not live in the source tree, in `suite.json`, or in a log line:
 the **Steam Web API key**. It goes in `data/secrets.json`, encrypted with
-**DPAPI** — Windows' own per-user data protection. (Before 2.0.0 the MongoDB
-connection string lived there too; the import tool still reads it from there,
-and nothing else does.)
+**DPAPI** — Windows' own per-user data protection.
 
 DPAPI is the right size of answer here. The key is derived from the logged-in
 Windows account, so the file is unreadable by another user and useless if copied
@@ -100,14 +98,6 @@ There are no dependencies; `CryptProtectData` is called through `ctypes`. Where
 DPAPI is unavailable the value is stored in the clear, **marked as such**, and
 the dialog says "stored in the clear" rather than implying a safety it does not
 have.
-
-## Environment variables
-
-All optional.
-
-| Variable | Used by | Meaning |
-|---|---|---|
-| `WET_TEST_CLUSTER` | tests | cluster for `test_mongo_srv.py --live` |
 
 ## What to back up
 

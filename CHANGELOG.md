@@ -6,6 +6,30 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-09-21
+
+### Removed
+
+- **Everything MongoDB.** The authors have lived in `data/authors.sqlite` since
+  2.0.0 and the move is done, so what carried it is gone:
+  `tools/import_authors_from_mongo.py`, `app/engines/authors_db.py`,
+  `mongo_srv.py` (resolving `mongodb+srv` through Windows), `migration.py` (the
+  identifier re-keying), their three test files, and `pymongo` and `dnspython`
+  from `requirements.txt`. The app stopped using any of it in 2.0.0; this is the
+  code catching up. Coming from a version before 2.0.0 means going through
+  [2.0.1](https://github.com/Nykolyn/wallpaper-engine-toolkit/releases/tag/v2.0.1)
+  first — its import tool is the way across.
+- `SteamClient.resolve_vanity` and `resolve_vanities`, which only the re-keying
+  called.
+- The `WET_TEST_CLUSTER` variable, and with it the "Environment variables"
+  section of [Configuration](docs/configuration.md), which held nothing else.
+
+### Fixed
+
+- The link from [Rotator](docs/rotator.md) to the Tracker's
+  [What neither can see](docs/tracker.md#what-neither-can-see) pointed at the
+  section's old name and went nowhere.
+
 ## [2.0.1] - 2026-09-21
 
 ### Added
@@ -81,7 +105,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `tools/import_authors_from_mongo.py` — the one-time move from the MongoDB
   collection: a fresh dump, kept beside the backups; converted; written in one
   transaction; and checked row by row against the dump. The collection is only
-  read. See [Coming from the MongoDB version](docs/authors-database.md#coming-from-the-mongodb-version).
+  read. See [Coming from the MongoDB version](https://github.com/Nykolyn/wallpaper-engine-toolkit/blob/v2.0.0/docs/authors-database.md#coming-from-the-mongodb-version).
 
 ### Fixed
 
@@ -274,7 +298,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   was right for one library and wrong for every other. Nothing is tagged now
   unless you ask for it.
 
-[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v2.0.1...HEAD
+[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v2.1.0...HEAD
+[2.1.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v2.0.1...v2.1.0
 [2.0.1]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v2.0.0...v2.0.1
 [2.0.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v1.2.1...v2.0.0
 [1.2.1]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v1.2.0...v1.2.1
