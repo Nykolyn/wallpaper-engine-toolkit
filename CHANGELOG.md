@@ -6,6 +6,24 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [2.0.1] - 2026-09-21
+
+### Added
+
+- **How to update an installed copy**, in
+  [Building](docs/building.md#updating-an-installed-copy): stop the tracker,
+  keep the build being replaced, build, selfcheck, start the tracker — and how
+  to go back. Written from the 1.2.1 → 2.0.0 update of a live install, where
+  all 365 files in `data\` came through the build untouched.
+
+### Fixed
+
+- The selfcheck example in [Building](docs/building.md#checking-a-build) now
+  matches what a 2.0.0 build prints, version line and all, and says why a 404
+  from the preview host is a pass.
+- `app/secrets.py` no longer describes the MongoDB connection string as
+  something the app uses; only the import tool reads it now.
+
 ## [2.0.0] - 2026-09-21
 
 ### Changed
@@ -256,7 +274,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   was right for one library and wrong for every other. Nothing is tagged now
   unless you ask for it.
 
-[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v2.0.0...HEAD
+[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v2.0.1...HEAD
+[2.0.1]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v2.0.0...v2.0.1
 [2.0.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v1.2.1...v2.0.0
 [1.2.1]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v1.1.0...v1.2.0
