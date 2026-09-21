@@ -59,17 +59,25 @@ if errorlevel 1 (
 :: SUCCESS, because it only asked whether an exe existed, not whether this run
 :: had made one. Both halves of that are fixed: comments live up here, and the
 :: exit code is what decides.
+::
+:: PyInstaller writes a .spec file on every run - a copy of the arguments
+:: below. --specpath puts it in build\ with the rest of the scratch, so a build
+:: leaves the source tree as it found it. There is deliberately no spec file in
+:: the repository: "pyinstaller <spec>" builds straight into dist\ and empties
+:: dist\%APP% first, data\ included. The paths are absolute so they mean the
+:: same thing wherever the spec file lands.
 %PYI% ^
   --noconfirm ^
   --windowed ^
   --name "%APP%" ^
+  --specpath "%~dp0build" ^
   --distpath "%STAGE%" ^
-  --icon "assets\icon.ico" ^
-  --version-file "build\version_info.txt" ^
-  --add-data "assets\icon.ico;assets" ^
+  --icon "%~dp0assets\icon.ico" ^
+  --version-file "%~dp0build\version_info.txt" ^
+  --add-data "%~dp0assets\icon.ico;assets" ^
   --collect-submodules app ^
   --collect-all imageio_ffmpeg ^
-  run_app.py
+  "%~dp0run_app.py"
 set "RC=%ERRORLEVEL%"
 
 echo.
