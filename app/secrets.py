@@ -1,9 +1,14 @@
-"""Local secret storage — a Steam Web API key, a database URI.
+"""Local secret storage — the Steam Web API key.
 
-Two of the toolkit's features need a credential that must not live in the source
-tree, in `suite.json`, or in a log line: the Steam Web API key and the authors
-database connection string. They are kept here instead, in `data/secrets.json`,
-encrypted with **DPAPI** — Windows' own per-user data protection.
+The Review tab can use a credential that must not live in the source tree, in
+`suite.json`, or in a log line: the Steam Web API key (optional — see
+:mod:`app.ui.credentials` for what going without one costs). It is kept here
+instead, in `data/secrets.json`, encrypted with **DPAPI** — Windows' own
+per-user data protection.
+
+Before 2.0.0 the authors database was a MongoDB collection and its connection
+string was kept here too. Nothing in the app reads it any more; only
+`tools/import_authors_from_mongo.py` does, and both go in a later release.
 
 DPAPI is the right size of answer for this. The key is derived from the logged-in
 Windows account, so the file is unreadable by another user and useless if it is
@@ -33,7 +38,7 @@ SECRETS_PATH = app_data_dir() / "secrets.json"
 
 # Keys used by the toolkit.
 STEAM_API_KEY = "steam_api_key"
-AUTHORS_DB_URI = "authors_db_uri"
+AUTHORS_DB_URI = "authors_db_uri"      # read only by the Mongo import tool
 
 _PLAIN = "plain:"
 _DPAPI = "dpapi:"

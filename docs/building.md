@@ -54,6 +54,7 @@ It writes the report to `data\selfcheck.txt` as well as printing it. A good one
 looks like this:
 
 ```
+version: 2.0.0
 frozen: True
 ok      PySide6.QtWidgets  (the window)
 ok      sqlite3  (the authors database and the Steam cache)
@@ -63,10 +64,57 @@ ok      app.engines.review  (the review itself)
 ok      app.ui.review_tab  (the Review tab)
 ok      app.engines.steam_ugc  (subscribing from the gallery)
 ok      app.secrets  (the stored Steam key)
-ok      preview downloads
+ok      PySide6.QtNetwork  (one window, raised from the tray)
+ok      app.window_instance  (starting the window on its own)
+ok      app.engines.playlist_refresh  (rebuilding Wallpaper Engine's playlist after a rotation)
+ok      preview downloads (HTTP 404 from the host)
 ```
 
-`frozen: True` confirms you are testing the build and not the source tree.
+`version:` is the build you meant to make, and `frozen: True` confirms you are
+testing the build and not the source tree. A 404 from the preview host is a
+pass: any answer at all means the connection works.
+
+## Updating an installed copy
+
+The tray tracker runs from the build in `dist\`, and a running copy holds its
+exe open — so `build.cmd` refuses to start while one is running. The whole
+update, from the project folder in `cmd`:
+
+```
+schtasks /end /tn WallpaperEngineToolkitTracker
+robocopy dist\WallpaperEngineToolkit dist\_previous-2.0.0 /E /XD "%CD%\dist\WallpaperEngineToolkit\data"
+build.cmd
+dist\WallpaperEngineToolkit\WallpaperEngineToolkit.exe --selfcheck
+schtasks /run /tn WallpaperEngineToolkitTracker
+```
+
+1. **Stop the tracker** — the task, or **Quit** on its tray icon — and close the
+   window if it is open. Ending the task lets it shut down properly:
+   `data\tracker.log` says `stopped with code 0`.
+2. **Keep the build you are replacing**, named for its version and without its
+   `data`, so going back is a copy rather than a rebuild. `build.cmd` never
+   touches `_previous-*` folders. (robocopy's exit codes below 8 all mean
+   success; 1 is "files were copied".)
+3. **Build.** `data\` is not touched — see
+   [above](#what-the-build-script-does-around-pyinstaller).
+4. **Selfcheck** the new exe, as above.
+5. **Start the tracker again.** `data\tracker.log` gains a `running; tray icon
+   visible: True` line.
+
+Measured going from 1.2.1 to 2.0.0: 52 s for the build, and all 365 files in
+`data\` identical afterwards except `tracker.log`, which had gained the
+tracker's own "stopped" line.
+
+**Going back** is the same with the copy the other way round — stop the
+tracker, then
+
+```
+robocopy dist\_previous-2.0.0 dist\WallpaperEngineToolkit /MIR /XD "%CD%\dist\WallpaperEngineToolkit\data"
+```
+
+and start it again. The `/XD` is what keeps `/MIR` from deleting `data\`, which
+the copy does not have. Rolling the exe back does not roll data back: a version
+older than 2.0.0 reads its authors from MongoDB, not from `authors.sqlite`.
 
 ## After renaming the executable
 
