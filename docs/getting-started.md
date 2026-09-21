@@ -2,9 +2,9 @@
 
 ## Requirements
 
-- **Windows.** Several features call Windows directly: DPAPI for stored
-  secrets, `DnsQuery_W` for MongoDB SRV lookups, Task Scheduler for autostart,
-  and the process-memory read behind the Tracker's countdown. The pure engines
+- **Windows.** Several features call Windows directly: DPAPI for the stored
+  Steam key, Task Scheduler for autostart, and the process-memory read behind
+  the Tracker's countdown. The pure engines
   run anywhere; the app as a whole does not.
 - **Python 3.11 or newer**, or the [standalone build](building.md).
 - **Wallpaper Engine**, installed through Steam. It does not need to be running
@@ -62,26 +62,25 @@ that is wrong, in a tab whose next action is moving files.
 
 ## What needs setting up, and for which tab
 
-Most tabs work immediately. Two do not:
+Every tab works immediately. Two have something worth knowing:
 
-| Tab | Needs | Where |
+| Tab | What | Where |
 |---|---|---|
 | Creator | ffmpeg — taken from `PATH`, otherwise the bundled `imageio-ffmpeg` | automatic |
-| Review | a **Steam Web API key** | the tab's own credentials dialog |
-| Review | a **MongoDB connection string** for the authors database | the same dialog |
-
-Both Review credentials are stored DPAPI-encrypted in `data/secrets.json` —
-readable only by the Windows account that wrote them, and useless if the file
-is copied off the machine. See [Configuration](configuration.md#secrets).
+| Review | a **Steam Web API key** — optional, but without it author lists leave out mature wallpapers | **Steam key…** in the tab |
 
 A Steam Web API key is free from
-[steamcommunity.com/dev/apikey](https://steamcommunity.com/dev/apikey). The
-Review tab needs one because a signed-out workshop listing is not the whole
-listing — see [why](review.md#why-it-needs-a-steam-web-api-key).
+[steamcommunity.com/dev/apikey](https://steamcommunity.com/dev/apikey). Without
+one the Review tab says so in a banner, marks every author it counted without
+it, and warns before writing a visit date from such a list — see
+[what the key is for](review.md#what-a-steam-web-api-key-is-for). It is stored
+DPAPI-encrypted in `data/secrets.json` — readable only by the Windows account
+that wrote it, and useless if the file is copied off the machine. See
+[Configuration](configuration.md#secrets).
 
-The authors database is a MongoDB collection you supply. Review is the only tab
-that uses it; every other tab works without it. See
-[Authors database](authors-database.md).
+The Review tab's authors database is a file, `data/authors.sqlite`, made the
+first time it is needed and backed up after every change. Nothing to install or
+host. See [Authors database](authors-database.md).
 
 ## Check the install
 

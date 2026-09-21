@@ -2,17 +2,30 @@
 :: Build a standalone WallpaperEngineToolkit.exe with PyInstaller.
 cd /d "%~dp0"
 
-:: PyInstaller wipes dist\WallpaperEngineToolkit before writing, and that is exactly
-:: where a deployed copy keeps its live state: the Rotator's config.json and
-:: history.json, suite.json, tracker.json. Stash the folder and put it back.
-set "KEEP=%TEMP%\WallpaperEngineToolkit_data_backup"
-if exist "dist\WallpaperEngineToolkit\data" (
-    echo Preserving dist\WallpaperEngineToolkit\data ...
-    if exist "%KEEP%" rmdir /s /q "%KEEP%"
-    xcopy "dist\WallpaperEngineToolkit\data" "%KEEP%\" /e /i /q /y >nul
+:: dist\WallpaperEngineToolkit\data is where a deployed copy keeps its live
+:: state: the authors database and its backups, the DPAPI-encrypted Steam key,
+:: the library index, the tracker's history. PyInstaller empties its output
+:: folder before writing, so it never writes there any more. It builds into
+:: build\stage, and robocopy mirrors the result into dist\ with that one data
+:: folder excluded - excluded from the copy AND from the purge, so nothing under
+:: it can be deleted or overwritten by a build, failed or not. (The old way
+:: stashed data\ in %TEMP% and put it back; a build that died half way through
+:: the wipe took secrets.json with it.)
+set "STAGE=build\stage"
+set "APP=WallpaperEngineToolkit"
+set "LIVE=%~dp0dist\%APP%"
+
+:: A running copy holds its exe open, and robocopy cannot replace it.
+tasklist /FI "IMAGENAME eq %APP%.exe" 2>nul | find /I "%APP%.exe" >nul
+if not errorlevel 1 (
+    echo %APP%.exe is running - the tray tracker, or a window.
+    echo Quit it from the tray icon, or: schtasks /end /tn WallpaperEngineToolkitTracker
+    echo Then run this again. Nothing was built.
+    pause
+    exit /b 1
 )
 
-echo Building WallpaperEngineToolkit.exe ...
+echo Building %APP%.exe ...
 if exist ".venv\Scripts\pyinstaller.exe" (
     set "PYI=.venv\Scripts\pyinstaller.exe"
 ) else (
@@ -39,11 +52,6 @@ if errorlevel 1 (
 :: --icon sets what Explorer and the taskbar show; --add-data ships the same
 :: file so QIcon can paint the title bar and the Alt-Tab entry at runtime.
 ::
-:: pymongo reaches the authors database and resolves mongodb+srv through
-:: dnspython, both of which import lazily - PyInstaller cannot see either by
-:: reading the source, so they are collected by name, or the built exe starts
-:: fine and fails the moment the Review tab is opened.
-::
 :: Nothing may be commented out INSIDE the command below: a caret continues the
 :: line, and "::" on a continued line is handed to PyInstaller as an argument
 :: rather than skipped. That went unnoticed for four days - every build died on
@@ -54,32 +62,42 @@ if errorlevel 1 (
 %PYI% ^
   --noconfirm ^
   --windowed ^
-  --name "WallpaperEngineToolkit" ^
+  --name "%APP%" ^
+  --distpath "%STAGE%" ^
   --icon "assets\icon.ico" ^
   --version-file "build\version_info.txt" ^
   --add-data "assets\icon.ico;assets" ^
   --collect-submodules app ^
   --collect-all imageio_ffmpeg ^
-  --collect-submodules pymongo ^
-  --collect-submodules bson ^
-  --collect-submodules dns ^
   run_app.py
 set "RC=%ERRORLEVEL%"
-
-if exist "%KEEP%" (
-    echo Restoring dist\WallpaperEngineToolkit\data ...
-    xcopy "%KEEP%" "dist\WallpaperEngineToolkit\data\" /e /i /q /y >nul
-    rmdir /s /q "%KEEP%"
-)
 
 echo.
 if not "%RC%"=="0" (
     echo BUILD FAILED - PyInstaller exited with %RC%. See the output above.
-    echo Whatever is in dist\ is the PREVIOUS build; this run did not replace it.
-) else if exist "dist\WallpaperEngineToolkit\WallpaperEngineToolkit.exe" (
-    echo SUCCESS: dist\WallpaperEngineToolkit\WallpaperEngineToolkit.exe
-    echo          ...\WallpaperEngineToolkit.exe --tracker  starts the tray tracker
-) else (
-    echo BUILD FAILED - PyInstaller reported success but produced no exe.
+    echo dist\%APP% was not touched; it is still the previous build.
+    pause
+    exit /b 1
 )
+if not exist "%STAGE%\%APP%\%APP%.exe" (
+    echo BUILD FAILED - PyInstaller reported success but produced no exe.
+    echo dist\%APP% was not touched; it is still the previous build.
+    pause
+    exit /b 1
+)
+
+:: /XD takes the full path of the live data folder, so only that one folder is
+:: spared - a package's own "data" directory inside _internal is still copied.
+:: robocopy's exit codes below 8 all mean success.
+echo Copying the build into dist\%APP% (data\ is left alone) ...
+robocopy "%STAGE%\%APP%" "%LIVE%" /MIR /XD "%LIVE%\data" /R:2 /W:2 /NFL /NDL /NJH /NJS /NP
+if errorlevel 8 (
+    echo BUILD FAILED - the copy into dist\%APP% did not finish. The new build is
+    echo complete in %STAGE%\%APP%; data\ was not touched.
+    pause
+    exit /b 1
+)
+
+echo SUCCESS: dist\%APP%\%APP%.exe
+echo          ...\%APP%.exe --tracker  starts the tray tracker
 pause

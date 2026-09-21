@@ -6,9 +6,6 @@ datas = [('assets/icon.ico', 'assets')]
 binaries = []
 hiddenimports = []
 hiddenimports += collect_submodules('app')
-hiddenimports += collect_submodules('pymongo')
-hiddenimports += collect_submodules('bson')
-hiddenimports += collect_submodules('dns')
 tmp_ret = collect_all('imageio_ffmpeg')
 datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 

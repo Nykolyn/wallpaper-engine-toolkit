@@ -146,13 +146,12 @@ first's.
 
 | Never | Why |
 |---|---|
-| `data/` | Your Steam API key and database URI (DPAPI-encrypted, still private), your tracker history, 150 MB of cached thumbnails. |
+| `data/` | Your Steam API key (DPAPI-encrypted, still private), your authors database and its backups, your tracker history, 150 MB of cached thumbnails. |
 | `app/engines/data/` | The Rotator's config and history — real folder paths from your machine. |
 | `dist/`, `build/`, `.venv/` | Build output and the virtualenv. |
 
-**No credential, hostname or personal path belongs in source.** The MongoDB
-cluster comes from `DB_CLUSTER` or `WET_DB_CLUSTER`; folder defaults are
-detected from Steam's own registry entry; and the live tests skip themselves
+**No credential, hostname or personal path belongs in source.** Folder
+defaults are detected from Steam's own registry entry; and the live tests skip themselves
 unless an environment variable names what to talk to. If a change needs a new
 one of these, add an environment variable — do not type the value into a file.
 
