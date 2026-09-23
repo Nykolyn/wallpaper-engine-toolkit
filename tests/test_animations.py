@@ -5,8 +5,9 @@ Run it directly (needs Qt, but no Wallpaper Engine and no windows on screen):
     .venv\\Scripts\\python.exe tests\\test_animations.py
 
 Animations are the kind of thing that breaks silently — a property renamed, a
-recursion guard lost, an effect left attached — and none of it shows up in a
-screenshot. So each check samples the real widget over real time.
+recursion guard lost, an effect left attached, a loop that keeps a timer running
+for a page nobody is looking at — and none of it shows up in a screenshot. So
+each check samples the real widget over real time.
 """
 from __future__ import annotations
 
@@ -23,6 +24,10 @@ app = QApplication(sys.argv)
 from app import animations, theme                     # noqa: E402
 
 theme.apply(app)
+
+# The machine running this may have Windows' animations off; the checks below
+# are about the motion itself, so it is switched on for them.
+animations.ENABLED = True
 
 results: list[bool] = []
 
@@ -49,6 +54,22 @@ def sample(widget, ms: int, every: int = 20) -> list[int]:
     return seen
 
 
+# ---- the tokens
+
+check("the three durations are the design's 90 / 140 / 220 ms",
+      (animations.FAST, animations.BASE, animations.SLOW) == (90, 140, 220))
+check("a count's flash lasts four slow beats", animations.FLASH == 4 * animations.SLOW)
+curve = animations.ease()
+check("ease.standard starts at 0 and lands on 1",
+      curve.valueForProgress(0.0) == 0.0 and abs(curve.valueForProgress(1.0) - 1.0) < 1e-6)
+check("and is quick off the mark: most of the way there by the halfway point",
+      curve.valueForProgress(0.5) > 0.8)
+samples = [curve.valueForProgress(i / 20) for i in range(21)]
+check("without overshooting or going back",
+      all(b >= a - 1e-6 for a, b in zip(samples, samples[1:])) and max(samples) <= 1.0 + 1e-6)
+check("Windows' animation switch can be read", isinstance(animations.reduced_motion(), bool))
+
+
 host = QWidget()
 host.resize(400, 200)
 host.show()
@@ -64,7 +85,7 @@ bar.show()
 wait(40)
 
 bar.setValue(100)
-path = sample(bar, animations.NORMAL + 140)
+path = sample(bar, animations.SLOW + 140)
 check("a forward jump is interpolated, not applied at once",
       any(0 < v < 100 for v in path))
 check("the values only ever move forward",
@@ -76,7 +97,7 @@ bar.setValue(0)
 check("a reset to zero is immediate", bar.value() == 0)
 
 bar.setValue(60)
-wait(animations.NORMAL + 140)
+wait(animations.SLOW + 140)
 bar.setValue(61)
 check("a one-step change does not bother animating", bar.value() == 61)
 
@@ -122,13 +143,13 @@ check("a flash colours the label", "color:" in label.styleSheet())
 wait(500)
 settled = label.styleSheet()
 check("and it fades back to the resting text colour",
-      theme.C["text"].lower() in settled.lower())
+      theme.css("text.body").lower() in settled.lower())
 
 
 # ---- tabs fade their pages in
 
-was_fast = animations.FAST
-animations.FAST = SLOW_FADE          # same reason: a window wide enough to see
+was_base = animations.BASE
+animations.BASE = SLOW_FADE          # same reason: a window wide enough to see
 try:
     tabs = animations.FadingTabWidget()
     first, second = QWidget(), QWidget()
@@ -144,7 +165,88 @@ try:
     wait(SLOW_FADE * 2)
     check("and that effect is cleaned up too", second.graphicsEffect() is None)
 finally:
-    animations.FAST = was_fast
+    animations.BASE = was_base
+
+
+# ---- loops share one clock, and only run while seen
+
+class Watcher(QWidget):
+    """Counts its repaints, the way a spinner would be asked to redraw."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.paints = 0
+        self.resize(20, 20)
+
+    def paintEvent(self, event):         # noqa: N802 - Qt's name
+        self.paints += 1
+
+
+spin = animations.loop("spin")
+check("one driver per kind of loop", animations.loop("spin") is spin)
+try:
+    animations.loop("wobble")
+    check("an unknown loop is refused", False)
+except KeyError:
+    check("an unknown loop is refused", True)
+check("a driver with nobody watching has no timer running", not spin.running)
+
+page = QWidget(host)
+page.resize(100, 100)
+page.show()
+seen = Watcher(page)
+seen.show()
+wait(30)
+spin.subscribe(seen)
+check("a visible subscriber starts it", spin.running)
+before = seen.paints
+wait(250)
+check("and is repainted while it runs", seen.paints - before >= 5)
+angles = []
+for _ in range(12):
+    angles.append(spin.value())
+    wait(40)
+check("a spinner turns through the whole circle, and only that",
+      all(0 <= a < 360 for a in angles) and len({round(a) for a in angles}) > 6)
+
+page.hide()
+check("hiding the page it is on stops the clock", not spin.running)
+before = seen.paints
+wait(150)
+check("and nothing hidden is repainted", seen.paints == before)
+page.show()
+wait(30)
+check("showing it again starts it", spin.running)
+spin.subscribe(seen)
+spin.unsubscribe(seen)
+check("unsubscribing the last watcher stops it", not spin.running)
+
+pulse, shimmer, sweep = (animations.loop(k) for k in ("pulse", "shimmer", "indeterminate"))
+values = {"pulse": [], "shimmer": [], "indeterminate": []}
+for _ in range(45):
+    values["pulse"].append(pulse.value())
+    values["shimmer"].append(shimmer.value())
+    values["indeterminate"].append(sweep.value())
+    wait(40)
+check("the live dot breathes between .35 and full",
+      min(values["pulse"]) >= 0.35 - 1e-6 and max(values["pulse"]) <= 1.0 + 1e-6
+      and max(values["pulse"]) - min(values["pulse"]) > 0.4)
+check("a skeleton shimmers between .4 and .85",
+      min(values["shimmer"]) >= 0.4 - 1e-6 and max(values["shimmer"]) <= 0.85 + 1e-6
+      and max(values["shimmer"]) - min(values["shimmer"]) > 0.25)
+check("the indeterminate sweep travels its whole track",
+      min(values["indeterminate"]) < 0.2 and max(values["indeterminate"]) > 0.8)
+check("skeleton rows can be staggered against each other",
+      abs(shimmer.value() - shimmer.value(delay=400)) > 0.01
+      or abs(shimmer.value(delay=200) - shimmer.value(delay=600)) > 0.01)
+
+gone = Watcher(page)
+gone.show()
+sweep.subscribe(gone)
+check("a sweep runs for its watcher", sweep.running)
+gone.deleteLater()
+wait(80)
+check("and stops once that watcher is deleted", not sweep.running)
 
 
 # ---- motion can be switched off wholesale
@@ -162,6 +264,15 @@ try:
     quiet.show()
     animations.fade_in(quiet)
     check("with motion off nothing is faded", quiet.graphicsEffect() is None)
+
+    still = Watcher(host)
+    still.show()
+    wait(30)
+    pulse.subscribe(still)
+    check("with motion off a loop does not run for a visible watcher", not pulse.running)
+    check("and stands on its resting frame: a live dot fully lit",
+          pulse.phase() == 0.0 and pulse.value() == 1.0)
+    pulse.unsubscribe(still)
 finally:
     animations.ENABLED = True
 

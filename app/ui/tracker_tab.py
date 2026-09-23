@@ -140,7 +140,7 @@ class MonitorCard(QGroupBox):
                      "  (Wallpaper Engine is not running — last known)" if p.from_engine else
                      "  (nothing open — last known)")
             self.now.setText(f"<b>Now:</b> {p.current_title}  "
-                             f"<span style='color:{theme.C['faint']}'>— for "
+                             f"<span style='color:{theme.css('text.lo')}'>— for "
                              f"{elapsed_since(p.current_since)}{stale}</span>")
             self.now.setToolTip(p.current)
         else:

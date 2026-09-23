@@ -2,9 +2,10 @@
 from __future__ import annotations
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QMainWindow
+from PySide6.QtGui import QPainter
+from PySide6.QtWidgets import QMainWindow, QVBoxLayout, QWidget
 
-from . import __version__
+from . import __version__, theme
 from .animations import FadingTabWidget
 from .settings import Settings
 from .ui.copier_tab import CopierTab
@@ -12,6 +13,28 @@ from .ui.creator_tab import CreatorTab
 from .ui.rotator_tab import RotatorTab
 from .ui.review_tab import ReviewTab
 from .ui.tracker_tab import TrackerTab
+
+
+class Backdrop(QWidget):
+    """The window's ground: `bg.app`, painted once behind everything.
+
+    Every widget above it is transparent, so the translucent panels of the
+    design pick the gradient up through themselves. It repaints under any child
+    that repaints, so the brush is built once per size, not once per paint.
+    """
+
+    def __init__(self, parent: QWidget | None = None):
+        super().__init__(parent)
+        self._brush = None
+
+    def resizeEvent(self, event) -> None:       # noqa: N802 - Qt's name
+        self._brush = theme.app_background(self.rect())
+        super().resizeEvent(event)
+
+    def paintEvent(self, event) -> None:        # noqa: N802 - Qt's name
+        if self._brush is None:
+            self._brush = theme.app_background(self.rect())
+        QPainter(self).fillRect(event.rect(), self._brush)
 
 
 class MainWindow(QMainWindow):
@@ -22,9 +45,13 @@ class MainWindow(QMainWindow):
         self.setWindowTitle(f"Wallpaper Engine Toolkit {__version__}")
         self.resize(1040, 780)
 
+        backdrop = Backdrop()
+        frame = QVBoxLayout(backdrop)
+        frame.setContentsMargins(theme.SP_12, theme.SP_4, theme.SP_12, theme.SP_12)
         self.tabs = FadingTabWidget()
         self.tabs.setDocumentMode(True)
-        self.setCentralWidget(self.tabs)
+        frame.addWidget(self.tabs)
+        self.setCentralWidget(backdrop)
 
         # Shared Settings instance for the two settings-in-UI tabs; the Rotator
         # manages its own verbatim Config/History.

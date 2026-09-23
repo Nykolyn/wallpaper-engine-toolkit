@@ -80,13 +80,28 @@ def _selfcheck() -> int:
                         ("PySide6.QtNetwork", "one window, raised from the tray"),
                         ("app.window_instance", "starting the window on its own"),
                         ("app.engines.playlist_refresh",
-                         "rebuilding Wallpaper Engine's playlist after a rotation")):
+                         "rebuilding Wallpaper Engine's playlist after a rotation"),
+                        ("PySide6.QtSvg", "icons")):
         try:
             __import__(module)
             lines.append(f"ok      {module}  ({why})")
         except Exception as err:  # noqa: BLE001 — the message is the point
             ok = False
             lines.append(f"MISSING {module}  ({why}): {err}")
+
+    # The stylesheet draws check marks and spin arrows from SVG files, through
+    # Qt's svg image plugin. A build without it still starts — it just shows
+    # check boxes that never tick, which is exactly what nobody reports.
+    try:
+        from PySide6.QtGui import QImageReader
+        if b"svg" in [bytes(f) for f in QImageReader.supportedImageFormats()]:
+            lines.append("ok      svg images  (check marks and arrows)")
+        else:
+            ok = False
+            lines.append("MISSING svg images  (check marks and arrows): no svg image plugin")
+    except Exception as err:  # noqa: BLE001 — the message is the point
+        ok = False
+        lines.append(f"BROKEN  svg images: {type(err).__name__}: {err}")
 
     # The gallery fetches its previews itself, with urllib on a worker thread,
     # and swallows whatever goes wrong because a missing preview is not worth a

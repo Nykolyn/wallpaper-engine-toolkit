@@ -79,8 +79,8 @@ def _seconds_since(stamp: str) -> float:
 
 def _ring_colors() -> tuple[QColor, QColor, QColor]:
     """Track, running fill and paused fill for the ring, from the theme."""
-    return (QColor(theme.C["border_strong"]), QColor(theme.C["accent"]),
-            QColor(theme.C["muted"]))
+    return (theme.composite("border.strong", "bg.solid"), theme.color("accent"),
+            theme.color("text.lo"))
 
 
 def tray_icon(number: int | None, ring: float | None, paused: bool = False,
@@ -118,7 +118,7 @@ def tray_icon(number: int | None, ring: float | None, paused: bool = False,
         font.setPixelSize(26 if number < 100 else 22)
         font.setBold(True)
         painter.setFont(font)
-        painter.setPen(QColor(theme.C["ok"] if finished else theme.C["text"]))
+        painter.setPen(theme.color("ok" if finished else "text.body"))
         painter.drawText(pix.rect(), Qt.AlignCenter, str(number))
     painter.end()
 

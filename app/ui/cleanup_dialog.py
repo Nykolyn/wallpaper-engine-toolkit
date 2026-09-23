@@ -12,7 +12,6 @@ import subprocess
 from pathlib import Path
 
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QTreeWidget,
     QTreeWidgetItem, QAbstractItemView, QDialogButtonBox,
@@ -118,7 +117,7 @@ class CleanupDialog(QDialog):
             self._tint(item)
 
     def _tint(self, item: QTreeWidgetItem) -> None:
-        colour = QColor(theme.C["warn"])
+        colour = theme.color("warn")
         for column in range(self.tree.columnCount()):
             item.setForeground(column, colour)
 

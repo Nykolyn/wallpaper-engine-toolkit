@@ -396,8 +396,8 @@ class GalleryDelegate(QStyledItemDelegate):
         selected = bool(option.state & QStyle.State_Selected)
 
         painter.setPen(Qt.NoPen)
-        painter.setBrush(QColor(theme.C["raised"] if selected or hovered
-                                else theme.C["surface"]))
+        painter.setBrush(theme.color("surface.raised" if selected or hovered
+                                else "surface.wash"))
         painter.drawRoundedRect(card, 6, 6)
 
         image_rect = QRect(card.left() + 4, card.top() + 4, THUMB_W, THUMB_H)
@@ -408,15 +408,15 @@ class GalleryDelegate(QStyledItemDelegate):
         if pixmap is not None and not pixmap.isNull():
             # The whole picture, centred; anything that is not square gets bars
             # in the page colour rather than losing its edges.
-            painter.setBrush(QColor(theme.C["bg"]))
+            painter.setBrush(theme.color("surface.well"))
             painter.drawRect(image_rect)
             painter.drawPixmap(
                 image_rect.left() + (THUMB_W - pixmap.width()) // 2,
                 image_rect.top() + (THUMB_H - pixmap.height()) // 2, pixmap)
         else:
-            painter.setBrush(QColor(theme.C["raised"]))
+            painter.setBrush(theme.color("surface.raised"))
             painter.drawRect(image_rect)
-            painter.setPen(QColor(theme.C["faint"]))
+            painter.setPen(theme.color("text.lo"))
             painter.drawText(image_rect, Qt.AlignCenter, "…")
 
         if wallpaper.subscribed:
@@ -434,31 +434,31 @@ class GalleryDelegate(QStyledItemDelegate):
         # one green blur.
         marks: list[tuple[str, str]] = []
         if wallpaper.subscribed:
-            marks.append(("subscribed", theme.C["ok"]))
+            marks.append(("subscribed", theme.css("ok")))
         if wallpaper.once_had:
-            marks.append(("was yours", theme.C["warn"]))
+            marks.append(("was yours", theme.css("warn")))
         if wallpaper.in_queue:
-            marks.append(("queued", theme.C["info"]))
+            marks.append(("queued", theme.css("info")))
         if wallpaper.unseen:
             # Only once the machine has actually been asked whether it has had
             # this before. The mark used to be painted from `new_since_visit`,
             # which is true of every card in the gallery — so "new" sat on
             # wallpapers that had been downloaded and deleted twice.
-            marks.append(("new to you", theme.C["accent"]))
+            marks.append(("new to you", theme.css("accent")))
         font = QFont(painter.font())
         font.setPointSize(8)
         painter.setFont(font)
         x = image_rect.left() + 4
         for text, colour in marks:
-            x = self._chip(painter, x, image_rect.top() + 6, text, colour, "#101216",
-                           18)
+            x = self._chip(painter, x, image_rect.top() + 6, text, colour,
+                           theme.css("text.onAccent"), 18)
 
         if wallpaper.id in self.busy:
             badge = QRect(image_rect.right() - 96, image_rect.bottom() - 26, 92, 22)
             painter.setPen(Qt.NoPen)
-            painter.setBrush(QColor(theme.C["accent"]))
+            painter.setBrush(theme.color("accent"))
             painter.drawRoundedRect(badge, 3, 3)
-            painter.setPen(QColor("#101216"))
+            painter.setPen(theme.color("text.onAccent"))
             painter.drawText(badge, Qt.AlignCenter, "subscribing…")
         elif hovered and not wallpaper.subscribed:
             hint = QRect(image_rect.left(), image_rect.bottom() - 26,
@@ -466,11 +466,11 @@ class GalleryDelegate(QStyledItemDelegate):
             painter.setPen(Qt.NoPen)
             painter.setBrush(QColor(0, 0, 0, 150))
             painter.drawRect(hint)
-            painter.setPen(QColor(theme.C["text"]))
+            painter.setPen(theme.color("text.body"))
             painter.drawText(hint, Qt.AlignCenter, "click to subscribe")
 
         title = wallpaper.title or wallpaper.id
-        painter.setPen(QColor(theme.C["text"]))
+        painter.setPen(theme.color("text.body"))
         font.setPointSize(10)
         painter.setFont(font)
         text_rect = QRect(card.left() + 6, image_rect.bottom() + 5,
@@ -490,24 +490,24 @@ class GalleryDelegate(QStyledItemDelegate):
         kind = item.kind
         if kind:
             x = self._chip(painter, x, y, f"{KIND_MARKS.get(kind, UNKNOWN_KIND)} {kind}",
-                           theme.kind_color(kind), "#101216")
+                           theme.kind_color(kind), theme.css("text.onAccent"))
         if item.size_text:
             if item.large:
                 x = self._chip(painter, x, y, f"⚠ {item.size_text}",
-                               theme.C["warn"], "#101216")
+                               theme.css("warn"), theme.css("text.onAccent"))
             else:
-                x = self._chip(painter, x, y, item.size_text, None, theme.C["muted"])
+                x = self._chip(painter, x, y, item.size_text, None, theme.css("text.mid"))
         when = wallpaper.created
         if when:
             self._chip(painter, x, y, when.strftime("%Y-%m-%d"), None,
-                       theme.C["faint"])
+                       theme.css("text.lo"))
 
         if selected:
-            painter.setPen(QPen(QColor(theme.C["accent"]), 2))
+            painter.setPen(QPen(theme.color("accent"), 2))
             painter.setBrush(Qt.NoBrush)
             painter.drawRoundedRect(QRect(card).adjusted(1, 1, -1, -1), 6, 6)
         elif hovered:
-            painter.setPen(QPen(QColor(theme.C["border_strong"]), 1))
+            painter.setPen(QPen(theme.color("border.strong"), 1))
             painter.setBrush(Qt.NoBrush)
             painter.drawRoundedRect(card, 6, 6)
         painter.restore()

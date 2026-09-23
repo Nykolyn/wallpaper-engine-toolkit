@@ -54,7 +54,7 @@ It writes the report to `data\selfcheck.txt` as well as printing it. A good one
 looks like this:
 
 ```
-version: 2.0.0
+version: 2.2.0
 frozen: True
 ok      PySide6.QtWidgets  (the window)
 ok      sqlite3  (the authors database and the Steam cache)
@@ -67,6 +67,8 @@ ok      app.secrets  (the stored Steam key)
 ok      PySide6.QtNetwork  (one window, raised from the tray)
 ok      app.window_instance  (starting the window on its own)
 ok      app.engines.playlist_refresh  (rebuilding Wallpaper Engine's playlist after a rotation)
+ok      PySide6.QtSvg  (icons)
+ok      svg images  (check marks and arrows)
 ok      preview downloads (HTTP 404 from the host)
 ```
 

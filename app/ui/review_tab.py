@@ -190,15 +190,15 @@ class AuthorDelegate(QStyledItemDelegate):
         hovered = bool(option.state & QStyle.State_MouseOver)
 
         painter.setPen(Qt.NoPen)
-        painter.setBrush(QColor(theme.C["raised"] if selected or hovered
-                                else theme.C["surface"]))
+        painter.setBrush(theme.color("surface.raised" if selected or hovered
+                                else "surface.wash"))
         painter.drawRoundedRect(rect, 5, 5)
 
         name = QRect(rect.left() + 10, rect.top() + 6, rect.width() - 90, 18)
         font = QFont(painter.font())
         font.setBold(True)
         painter.setFont(font)
-        painter.setPen(QColor(theme.C["text"]))
+        painter.setPen(theme.color("text.body"))
         shown = painter.fontMetrics().elidedText(card.name, Qt.ElideRight, name.width())
         painter.drawText(name, Qt.AlignLeft | Qt.AlignVCenter, shown)
 
@@ -209,7 +209,7 @@ class AuthorDelegate(QStyledItemDelegate):
             used = painter.fontMetrics().horizontalAdvance(shown)
             font.setBold(False)
             painter.setFont(font)
-            painter.setPen(QColor(theme.C["faint"]))
+            painter.setPen(theme.color("text.lo"))
             old = QRect(name.left() + used + 8, name.top(),
                         max(0, name.width() - used - 8), name.height())
             painter.drawText(old, Qt.AlignLeft | Qt.AlignVCenter,
@@ -219,19 +219,19 @@ class AuthorDelegate(QStyledItemDelegate):
         font.setBold(False)
         font.setPointSize(8)
         painter.setFont(font)
-        colour = {rv.NEW: theme.C["ok"], rv.KNOWN: theme.C["muted"],
-                  rv.DUPLICATE: theme.C["warn"],
-                  rv.UNKNOWN: theme.C["danger"]}[card.state]
+        colour = {rv.NEW: theme.css("ok"), rv.KNOWN: theme.css("text.mid"),
+                  rv.DUPLICATE: theme.css("warn"),
+                  rv.UNKNOWN: theme.css("danger")}[card.state]
         chip_text = STATE_LABEL[card.state]
         width = painter.fontMetrics().horizontalAdvance(chip_text) + 12
         chip = QRect(rect.left() + 10, rect.bottom() - 22, width, 16)
         painter.setPen(Qt.NoPen)
         painter.setBrush(QColor(colour))
         painter.drawRoundedRect(chip, 3, 3)
-        painter.setPen(QColor("#101216"))
+        painter.setPen(theme.color("text.onAccent"))
         painter.drawText(chip, Qt.AlignCenter, chip_text)
 
-        painter.setPen(QColor(theme.C["faint"]))
+        painter.setPen(theme.color("text.lo"))
         detail = f"{len(card.queued)} queued"
         if card.appeared:
             detail += f"  ·  added {_short_date(card.appeared)}"
@@ -246,18 +246,18 @@ class AuthorDelegate(QStyledItemDelegate):
         # The badge, right-aligned: the number the whole tab exists to produce.
         if card.filled:
             text = str(card.badge)
-            badge_colour = theme.C["accent"] if card.badge else theme.C["raised"]
+            badge_colour = theme.css("accent") if card.badge else theme.css("surface.raised")
             badge = QRect(rect.right() - 54, rect.top() + 14, 44, 24)
             painter.setPen(Qt.NoPen)
             painter.setBrush(QColor(badge_colour))
             painter.drawRoundedRect(badge, 4, 4)
-            painter.setPen(QColor("#101216" if card.badge else theme.C["faint"]))
+            painter.setPen(theme.color("text.onAccent" if card.badge else "text.lo"))
             font.setPointSize(10)
             font.setBold(True)
             painter.setFont(font)
             painter.drawText(badge, Qt.AlignCenter, text)
         else:
-            painter.setPen(QColor(theme.C["faint"]))
+            painter.setPen(theme.color("text.lo"))
             painter.drawText(QRect(rect.right() - 54, rect.top() + 14, 44, 24),
                              Qt.AlignCenter, "…")
         painter.restore()
@@ -439,8 +439,8 @@ class ReviewTab(QWidget):
         self.keyless = QWidget()
         self.keyless.setObjectName("keyless")
         self.keyless.setStyleSheet(
-            f"#keyless {{ background: {theme.C['surface']}; "
-            f"border: 1px solid {theme.C['warn']}; border-radius: 5px; }}")
+            f"#keyless {{ background: {theme.css('surface.wash')}; "
+            f"border: 1px solid {theme.css('warn')}; border-radius: 5px; }}")
         keyless_row = QHBoxLayout(self.keyless)
         keyless_row.setContentsMargins(10, 6, 8, 6)
         keyless_text = QLabel("⚠  No Steam Web API key.  " + WITHOUT_KEY)

@@ -24,6 +24,7 @@ from ..settings import (
     Settings, DEFAULT_COPIER_DEST, DEFAULT_COPIER_COUNT,
 )
 from ..workers import CopierBridge
+from .kit import icon
 
 SECTION = "copier"
 
@@ -135,10 +136,10 @@ class CopierTab(QWidget):
 
         # --- Start / Cancel ---
         action_row = QHBoxLayout()
-        self.start_btn = QPushButton("▶  Start copying")
+        self.start_btn = QPushButton(icon("play", "text.onAccent"), "Start copying")
         self.start_btn.setMinimumHeight(40)
         theme.make_accent(self.start_btn)
-        self.cancel_btn = QPushButton("✖  Cancel")
+        self.cancel_btn = QPushButton(icon("close"), "Cancel")
         self.cancel_btn.setMinimumHeight(40)
         self.cancel_btn.setEnabled(False)
         self.start_btn.clicked.connect(self._start)

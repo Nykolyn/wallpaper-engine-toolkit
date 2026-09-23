@@ -6,6 +6,47 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [2.2.0] - 2026-09-23
+
+The first step of the redesign: the design system becomes code. No screen is
+restructured yet; the tabs keep their layout and take on the new look.
+
+### Changed
+
+- **The whole app moves to the new dark "glass" palette.** A radial gradient
+  behind the window, translucent panels over it, and every standard control —
+  buttons, fields, spin and combo boxes, check boxes, lists, headers, scroll
+  bars, menus and tool tips — drawn from one stylesheet generated from the
+  design's tokens. Secondary text is lighter than before (the design holds
+  captions to 4.5:1 on a panel), and the default text is the design's 12.5 px.
+- **Buttons carry drawn icons instead of Unicode glyphs** (Start, Build,
+  Cancel, Stop, Rescan), in the colour of their text, and greyed with it when
+  disabled.
+- Drop-down lists open below their box, as the design's do, rather than over
+  it; and ticked rows in lists (the cleanup dialog's folders) use the same
+  check box as everywhere else.
+- **Motion is retimed to the design's three durations** — 90, 140 and 220 ms —
+  on its one curve. Progress bars ease over 220 ms, pages cross-fade over 140.
+- **Windows' own "Animation effects" switch is honoured.** With it off, the
+  app's transitions become instant changes.
+
+### Added
+
+- The design's 26 icons, and the six glyphs its screens draw outside the set,
+  kept in the code as SVG: nothing new to bundle.
+- `tools/kit_preview.py`, a development window that draws the design system —
+  colours, type, spacing, radii, shadows, icons and the live loops — from the
+  app's own code, with `--grab` to save a section as a picture. See
+  [Look and feel](docs/development.md#look-and-feel).
+- `--selfcheck` reports whether the build can draw SVG, which the check boxes'
+  ticks and the spin arrows now depend on.
+
+### Removed
+
+- **The unused light palette.** The design is dark only; its token names say
+  what a colour is for, so a light one can be added back without touching the
+  UI.
+
 ## [2.1.1] - 2026-09-22
 
 ### Removed
@@ -317,7 +358,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   was right for one library and wrong for every other. Nothing is tagged now
   unless you ask for it.
 
-[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v2.1.1...HEAD
+[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v2.2.0...HEAD
+[2.2.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v2.1.1...v2.2.0
 [2.1.1]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v2.1.0...v2.1.1
 [2.1.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v2.0.1...v2.1.0
 [2.0.1]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v2.0.0...v2.0.1
