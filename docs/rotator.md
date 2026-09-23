@@ -34,6 +34,13 @@ a duplicate, and what should never move at all.
 7. Rotate. The confirmation dialog states exactly what will move, and which
    playlist will be rebuilt, before anything does.
 
+All three folders are needed, as full paths — `D:\Wallpapers\reserve`, not
+`reserve`. One left empty or relative counts as **not set**: its list on the
+Reserve, Transferred or Duplicates tab says `(not set)` and shows nothing, and
+neither a rotation nor anything on the Duplicates tab will act on it. An empty
+path would otherwise mean the folder the app was started from, which for the
+built exe is the install folder with your `data\` in it.
+
 The first time, build a playlist in Wallpaper Engine from what is in
 `myprojects`. From then on every rotation rebuilds it and starts it over by
 itself, and the [Tracker](tracker.md) tells you when it is done.
@@ -97,6 +104,23 @@ weight the current playlist.
 The rotation log and the confirmation dialog both report how many were skipped,
 so a protected folder is never silently invisible.
 
+## Duplicates
+
+A folder coming back from `myprojects` whose name is already in the reserve is
+not merged into it. It goes to the duplicates folder instead, and the run's
+history lists it. The **Duplicates** tab lists what is in that folder and offers
+two things to do with it:
+
+- **Delete** the selected folders, or all of them. Permanently: nothing goes to
+  the Recycle Bin.
+- **Move & replace → reserve**: each folder replaces the reserve's folder of the
+  same name, which is deleted first.
+
+The question before either names the folders involved. The delete buttons stay
+off until the duplicates folder is set, and the move buttons until the reserve
+is set too. Moving back refuses outright when the duplicates folder *is* the
+reserve, since replacing would delete the very folder being moved.
+
 ## The reserve check
 
 Wallpaper Engine identifies a wallpaper by its `project.json`. A folder without
@@ -149,7 +173,7 @@ before the last rotation rewrote them, are in `data/playlist-refresh/`.
 ## Watch out for
 
 - **Deletion in the reserve check is permanent.** Nothing goes to the Recycle
-  Bin. Read the dialog.
+  Bin. Read the dialog. The same goes for deleting on the Duplicates tab.
 - **Rotation moves, it does not copy.** A folder is in exactly one of the two
   places.
 - **Wallpaper Engine goes away for a few seconds** during a rotation that

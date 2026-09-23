@@ -29,10 +29,56 @@ ProgressCallback = Callable[[ProgressEvent], None]
 CancelCheck = Callable[[], bool]
 
 
+# ---- Folders that are not set -----------------------------------------------
+#
+# An empty setting is not "no folder". Path("") is Path("."), the working
+# directory, and for the built exe that is usually the install folder: data\
+# (the authors database, the Steam key, the tracker's history) and _internal\.
+# With the duplicates folder left empty, the Duplicates tab listed those two as
+# duplicates and "Delete all" deleted them. A relative path is the
+# same hazard with a name on it. So a folder the Rotator lists or acts on is a
+# full path, or it is not set, and nothing is listed, moved or deleted under it.
+
+def folder_is_set(path: str | Path | None) -> bool:
+    """Whether `path` names a folder of its own: not empty, and not relative."""
+    text = "" if path is None else str(path).strip()
+    return bool(text) and Path(text).is_absolute()
+
+
+def folder_problem(label: str, path: str | Path | None) -> str | None:
+    """Why `path` cannot be used as the `label` folder, or None when it can."""
+    if folder_is_set(path):
+        return None
+    text = "" if path is None else str(path).strip()
+    if not text:
+        return f"The {label} folder is not set."
+    return f"The {label} folder is not a full path: {text}"
+
+
+def _child(base: Path, name: str) -> Path | None:
+    """`base / name`, or None when `name` is not one folder name.
+
+    A name with a drive or a separator in it would land outside `base` — an
+    absolute one replaces it outright — and "", "." or ".." is `base` itself or
+    its parent. None of those comes out of a folder listing.
+    """
+    if not name.strip(" .") or Path(name).name != name:
+        return None
+    return base / name
+
+
+def _same_folder(a: str | Path, b: str | Path) -> bool:
+    return (os.path.normcase(os.path.realpath(a))
+            == os.path.normcase(os.path.realpath(b)))
+
+
 # ---- Filesystem helpers ---------------------------------------------------
 
 def list_subfolders(path: str | Path) -> list[str]:
-    """Return names of immediate subdirectories. Empty list if path missing."""
+    """Return names of immediate subdirectories. Empty list if the path is
+    missing or not set — an unset folder is not the working directory."""
+    if not folder_is_set(path):
+        return []
     p = Path(path)
     if not p.exists():
         return []
@@ -231,6 +277,13 @@ def delete_broken(paths: list[str], progress: ProgressCallback = _noop) -> list[
     total = len(paths)
     for i, path in enumerate(paths, 1):
         name = Path(path).name
+        if not folder_is_set(path):
+            # Only a scan of an unset library could produce one, and it would be
+            # relative to the working directory.
+            progress(ProgressEvent("delete", f"Not deleting {path}: not a full path",
+                                   i, total, level="ERROR"))
+            failed.append(path)
+            continue
         if not Path(path).exists():
             # Already gone: removed by hand since the scan, or swept away with a
             # parent that was on the same list. The folder is not there, which
@@ -257,6 +310,14 @@ class Rotator:
         self.completed = False
 
     def validate(self) -> Optional[str]:
+        # All three, before anything else: an unset reserve or myprojects is the
+        # working directory, whose folders would be carried off by the return
+        # phase, and an unset duplicates folder is where duplicates would land.
+        problem = (folder_problem("reserve", self.config.source)
+                   or folder_problem("myprojects", self.config.destination)
+                   or folder_problem("duplicates", self.config.duplicates))
+        if problem:
+            return problem
         if not Path(self.config.source).exists():
             return f"Source folder not found: {self.config.source}"
         if not Path(self.config.destination).exists():
@@ -291,6 +352,10 @@ class Rotator:
 
     def run(self, progress: ProgressCallback = _noop,
             cancelled: CancelCheck = _never_cancel) -> RunRecord:
+        # The worker validates first; this is for any caller that does not.
+        problem = self.validate()
+        if problem:
+            raise ValueError(problem)
         cfg = self.config
         src = Path(cfg.source)
         dst = Path(cfg.destination)
@@ -397,12 +462,25 @@ class Rotator:
 
 def delete_folders(duplicates_dir: str, names: list[str],
                    progress: ProgressCallback = _noop) -> list[str]:
-    """Permanently delete the given folders from duplicates_dir. Returns failures."""
+    """Permanently delete the given folders from duplicates_dir. Returns failures.
+
+    With duplicates_dir not set, nothing is touched and every name is a failure.
+    """
+    problem = folder_problem("duplicates", duplicates_dir)
+    if problem:
+        progress(ProgressEvent("delete", f"{problem} Nothing was deleted.",
+                               level="ERROR"))
+        return list(names)
     base = Path(duplicates_dir)
     failed = []
     total = len(names)
     for i, name in enumerate(names, 1):
-        path = base / name
+        path = _child(base, name)
+        if path is None:
+            progress(ProgressEvent("delete", f"Not deleting {name!r}: not a folder name",
+                                   i, total, level="ERROR"))
+            failed.append(name)
+            continue
         try:
             shutil.rmtree(path)
             progress(ProgressEvent("delete", f"Deleted {name}", i, total))
@@ -415,14 +493,32 @@ def delete_folders(duplicates_dir: str, names: list[str],
 
 def move_replace_to_reserve(duplicates_dir: str, reserve_dir: str, names: list[str],
                             progress: ProgressCallback = _noop) -> list[str]:
-    """Move folders from duplicates back to reserve, replacing any existing. Returns failures."""
+    """Move folders from duplicates back to reserve, replacing any existing. Returns failures.
+
+    With either folder not set, or both the same folder — where "replacing"
+    would delete the folder about to be moved — nothing is touched and every
+    name is a failure.
+    """
+    problem = (folder_problem("duplicates", duplicates_dir)
+               or folder_problem("reserve", reserve_dir))
+    if problem is None and _same_folder(duplicates_dir, reserve_dir):
+        problem = "The duplicates folder is the reserve itself."
+    if problem:
+        progress(ProgressEvent("replace", f"{problem} Nothing was moved.",
+                               level="ERROR"))
+        return list(names)
     dup = Path(duplicates_dir)
     reserve = Path(reserve_dir)
     failed = []
     total = len(names)
     for i, name in enumerate(names, 1):
-        srcpath = dup / name
-        target = reserve / name
+        srcpath = _child(dup, name)
+        target = _child(reserve, name)
+        if srcpath is None or target is None:
+            progress(ProgressEvent("replace", f"Not moving {name!r}: not a folder name",
+                                   i, total, level="ERROR"))
+            failed.append(name)
+            continue
         try:
             if target.exists():
                 shutil.rmtree(target)

@@ -6,6 +6,27 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [2.2.1] - 2026-09-23
+
+### Fixed
+
+- **An unset Rotator folder no longer means the folder the app was started
+  from.** With the duplicates folder left empty, its default, the Duplicates
+  tab listed the working directory's subfolders. For the built exe that is
+  usually the install folder: `data\` (the authors database, the Steam key,
+  the tracker's history) and `_internal\`. **Delete all** deleted them after a
+  plain "delete 2 folder(s)?". An empty reserve was as bad: the rotation
+  started, and with more to pick than the reserve held it carried `data\` and
+  `_internal\` into `myprojects`. Both were reproduced on 2.1.1 in a stand-in
+  install folder, and 2.2.0 left that code as it was. Now an empty or relative
+  folder is *not set*. Its list says so and shows nothing, the Duplicates
+  buttons stay off, and a rotation will not start until all three folders are
+  set. The functions that delete and move refuse on their own as well. See [Duplicates](docs/rotator.md#duplicates).
+- **Move & replace → reserve** refuses when the duplicates folder is the
+  reserve itself. Replacing used to delete the very folder it was about to move.
+- The Duplicates confirmation now names the folder it deletes from, and for a
+  move, the reserve it replaces into.
+
 ## [2.2.0] - 2026-09-23
 
 The first step of the redesign: the design system becomes code. No screen is
@@ -358,7 +379,8 @@ restructured yet; the tabs keep their layout and take on the new look.
   was right for one library and wrong for every other. Nothing is tagged now
   unless you ask for it.
 
-[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v2.2.0...HEAD
+[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v2.2.1...HEAD
+[2.2.1]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v2.2.0...v2.2.1
 [2.2.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v2.1.1...v2.2.0
 [2.1.1]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v2.1.0...v2.1.1
 [2.1.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v2.0.1...v2.1.0
