@@ -13,9 +13,9 @@ engine is the original source, reused as-is:
 ```
 app/
 ├── run_app.py is the entry point (one level up)
-├── main_window.py        the QMainWindow and the tab strip
-├── theme.py              every colour, font and radius
-├── animations.py         the motion, and the switch that turns it off
+├── main_window.py        the QMainWindow and the tab strip, on the app's gradient
+├── theme.py              the design tokens: colour, type, space, radius, shadows, the stylesheet
+├── animations.py         motion tokens, the easing curve, reduced motion, the shared loops
 ├── settings.py           data/suite.json
 ├── secrets.py            data/secrets.json, DPAPI-encrypted
 ├── workers.py            Qt signal bridges for the callback engines
@@ -41,6 +41,7 @@ app/
 │       ├── core.py       + the [protected] rule
 │       └── worker.py     + closing and restarting Wallpaper Engine around a run
 └── ui/
+    ├── kit/              the redesign's components; so far the icons (icons.py)
     ├── copier_tab.py, creator_tab.py
     ├── rotator_tab.py, cleanup_dialog.py
     ├── tracker_tab.py
@@ -49,6 +50,9 @@ app/
     ├── authors_dialog.py the authors database, its backups, restoring one
     └── widgets.py        verbatim  wallpaper_rotator/app/ui/widgets.py
 ```
+
+`tools/kit_preview.py` sits outside the app: a window that draws the design
+system from the app's own code (see [Look and feel](#look-and-feel)).
 
 Only the GUI layer is new. The callback-based Copier and Creator engines are
 driven through small Qt signal bridges in `app/workers.py`, so their background
@@ -77,7 +81,9 @@ for %f in (tests\test_*.py) do .venv\Scripts\python.exe %f
 | `test_playlist_refresh.py` | finding the rotation's playlist, refilling it, restarting one monitor's pass, the state file written back byte for byte |
 | `test_rotator_cleanup.py` | the reserve check and what it offers to delete |
 | `test_autostart.py` | the command line, the task XML, and the rename migration |
-| `test_animations.py` | motion, by sampling real widgets over real time |
+| `test_theme.py` | every token parses, text stays legible on glass, fonts, shadows, the stylesheet fills in and ticks its check boxes |
+| `test_icons.py` | every icon draws, in the colour and at the size asked; unknown names raise |
+| `test_animations.py` | motion, by sampling real widgets over real time; the curve, the loops, reduced motion |
 | `test_steam_api.py` | the Web API client and its cache |
 | `test_authors_store.py` | the authors database: transactions, snapshots, pruning, the second folder, restoring, damaged files |
 | `test_review.py` | the weekly walk |
@@ -102,58 +108,138 @@ machine's real state:
 `test_wallpaper_timer.py --live` skips itself if Wallpaper Engine is not
 installed.
 
-## The theme
+## Look and feel
 
-Every colour, radius and font comes from `app/theme.py` and nothing else names
-one. It holds a token table, a `QPalette` for what Qt draws itself, and one
-stylesheet for the rest; `theme.apply(app)` paints the whole application before
-any window is built.
+The app is being rebuilt to a design made in Claude Design: dark "frosted
+glass", translucent panels over a radial gradient. Everything visual comes from
+`app/theme.py` and `app/animations.py`; nothing else names a colour, a size or
+a duration.
 
-The palette is dark by default. `PALETTES["light"]` is the same tokens the other
-way round.
+### Tokens
 
-Widgets that stay hand-styled ask the theme for a fragment rather than a
-literal: `console_style()` for the log panels (kept as terminals on purpose),
-`card_style()` for the Creator's clip cards, `label_style()` for secondary text,
-`level_color()` for log severities, `status_color()` for ready/skipped/built.
-`make_accent(button)` marks the one button that starts the work, so Build and
-Cancel are told apart at a glance rather than by reading them.
+Colours are keyed by the design's dotted names, and hold the design's values
+exactly — a hex colour or `rgba()` with a 0–1 alpha:
 
-Spin arrows, checkmarks and radio dots are deliberately **not** restyled: they
-are drawn by Fusion from the palette. Overriding the boxes without supplying the
-glyphs is exactly how a themed app ends up with checkboxes that never show a
-tick.
+```python
+theme.color("text.lo")          # QColor, a copy
+theme.css("surface.well")       # "#80080A0E": QSS, QColor() and rich text all read it
+theme.css("accent", 0.3)        # the accent at 30 %, for the design's disabled fills
+theme.composite("surface.raised", "bg.solid")   # what a translucent token shows
+```
 
-## Motion
+Most surfaces are white at a few percent rather than a grey, so they pick up
+the gradient under them. That also means a colour's legibility can only be
+judged over what it sits on: `theme.panel_ground()` is a panel's ground as text
+sees it, and `test_theme.py` holds `text.lo` to 4.5:1 on it.
 
-Qt stylesheets have no transitions, so everything that moves is a real animation
-on a property, in `app/animations.py`.
+Three surfaces are gradients: `bg.app` (the window, `paint_app_background()` or
+`app_background(rect)` for a brush to keep), `surface.glass` and `nav.gradient`
+(`theme.gradient(name, rect)`).
 
-**The rule throughout: motion only earns its place when it makes a change of
-state legible.** Nothing loops, nothing decorates, and nothing delays a click.
-Durations are 120 ms for pointer feedback and 180 ms for a page or a bar,
-because past about 200 ms on a click motion stops reading as responsiveness and
-starts reading as lag.
+The design is dark only. The names say what a colour is for, not what it looks
+like, so a light palette can be added later without touching the UI.
 
-- **Progress eases instead of jumping.** `SmoothProgressBar` replaces the plain
-  bar everywhere. Qt animates a property through its WRITE method, so animating
-  `value` directly would land back in `setValue` and recurse; it animates a
-  private float property that writes the real one. A jump *backwards* is a run
-  starting over, and a hidden bar has nothing to show, so both are applied at
-  once rather than crawling.
-- **Tab pages fade in.** The opacity effect is removed the moment the fade
-  ends — leaving one attached routes every later repaint through an offscreen
-  pixmap, a real cost on a tab holding hundreds of cards. Measured at 2–8 ms per
-  switch.
-- **The Tracker's count flashes** when it changes, and turns green rather than
-  blue when the playlist is finished.
-- **Cards light up under the cursor** and **buttons travel a pixel when
-  pressed** — both pure stylesheet, applied instantly.
-- **Scanning shows a busy cursor.** Reading a source folder takes about half a
-  second: long enough that a frozen window looks broken, short enough that
-  moving it to a thread would cost more than it returns.
+### Type
 
-`animations.ENABLED = False` turns all of it off in one go.
+`theme.font("type.h3")` gives a QFont for a type token; `theme.qss_font()` the
+same as stylesheet declarations. Sizes are CSS px, which are Qt logical px, and
+go in as points (`px × 0.75`): 11.5 px has no integer pixel size, and Qt scales
+by the display itself, so nothing multiplies by the device pixel ratio. Prose
+is Segoe UI Variable Text (Segoe UI where that is missing); anything counted,
+pathed or logged is Consolas, whose numerals are tabular. `line_height(token)`
+gives the design's line height in px for layouts that stack lines by hand.
+
+### Space, radius, elevation
+
+`SPACING` (`sp.2` … `sp.32`, a 2 px grid) and `RADIUS` (`r.sm` 4 … `r.xl` 12,
+`r.pill`) are dicts by name, and constants (`SP_12`, `R_LG`) for code.
+
+`ELEVATION` holds the four shadows. `paint_shadow(painter, rect, "elev.2")`
+draws one around a box from a pre-blurred nine-slice pixmap (`shadow(elev)`,
+made once per elevation and screen scale in a few ms). Outer shadows are drawn
+only outside the box, as CSS draws them — panels are translucent, and a shadow
+under one would read as a darker panel. `elev.inset` darkens a well's top edge
+inside the box.
+
+### The stylesheet
+
+Qt draws the standard controls — buttons, inputs, spin and combo boxes, check
+boxes, lists and headers, scroll bars, menus, tool tips, the old tab strip —
+from one stylesheet, generated from a template with `$(token)` placeholders.
+`theme.unresolved(qss)` lists any left unfilled, and the test fails on them: Qt
+silently drops a rule it cannot read.
+
+Check marks and spin and combo arrows are icons drawn into small SVG files in
+the temp folder (a stylesheet only takes a file), named by their contents so
+two versions running side by side never share one. `--selfcheck` confirms the
+build can read SVG; without it a check box would never show its tick.
+
+`theme.apply(app)` sets Fusion, the palette, the font and the stylesheet, and
+reads Windows' animation switch. The old tabs' helpers (`label_style`,
+`console_style`, `card_style`, `status_color`, `level_color`, `kind_color`,
+`make_accent`) are mapped onto the tokens until the pages that call them are
+replaced.
+
+### Icons
+
+`app/ui/kit/icons.py` holds the design's 26 icons, and the few glyphs the
+screens draw outside that set, as SVG text — nothing to bundle, nothing read
+from disk. `icon(name, colour, size)` gives a QIcon (with a pixmap per screen
+scale, and a 40 % disabled state); `pixmap(name, colour, size, dpr)` a pixmap
+for painting; `svg(name, colour, stroke=)` the text. Colours are tokens or
+QColors. Everything is cached, so painting an icon never parses SVG.
+
+### Motion
+
+Three durations and one curve carry the whole app:
+
+| Token | ms | Used for |
+|---|---|---|
+| `FAST` | 90 | hover tint, icon colour |
+| `BASE` | 140 | button fill, toggle knob, the cross-fade between pages |
+| `SLOW` | 220 | progress width, a panel expanding |
+| `FLASH` | 880 | a count that changed by itself, fading back (four `SLOW` beats) |
+
+`ease()` is the design's `cubic-bezier(.2,.7,.3,1)`, for everything except
+spinners.
+
+- **Progress eases instead of jumping.** `SmoothProgressBar` animates a private
+  float property that writes the real value, because animating `value` itself
+  would land back in `setValue` and recurse. A jump backwards is a run starting
+  over, and a hidden bar has nothing to show, so both are applied at once.
+- **Pages cross-fade** (`fade_in`, `FadingTabWidget`). The opacity effect is
+  removed the moment the fade ends — leaving one attached routes every later
+  repaint through an offscreen pixmap.
+- **A count that changed by itself flashes** (`flash`), and turns green rather
+  than blue when the playlist is finished.
+- **Loops share one clock per kind.** `loop("spin")`, `"pulse"`, `"shimmer"`
+  and `"indeterminate"` are drivers a widget `subscribe()`s to and reads
+  `value()` from in its paint: a spinner's angle, a live dot's opacity, a
+  skeleton row's opacity (with a `delay` for staggering), the sweep's travel.
+  A driver's timer runs only while a subscriber is visible — a hidden page or
+  a minimised window stops it.
+
+What does not move: the frame, table rows and gallery cards (no enter
+animations), dialogs, and numbers (they step, they do not roll).
+
+**Reduced motion.** When Windows' "Animation effects" are off
+(`SystemParametersInfoW(SPI_GETCLIENTAREAANIMATION)`), `theme.apply()` sets
+`animations.ENABLED = False`: every transition becomes an instant change and
+the loops stand on their resting frame.
+
+### The kit preview
+
+```
+.venv\Scripts\python.exe tools\kit_preview.py
+.venv\Scripts\python.exe tools\kit_preview.py --grab icons icons.png
+.venv\Scripts\python.exe tools\kit_preview.py --grab all <folder>
+```
+
+A development window that draws the design system from the app's own code:
+Colour, Type, Space/Radius/Elevation, Motion (the loops, live) and Icons. It is
+not bundled and nothing in `app/` imports it. `--grab` renders a section
+offscreen at 100 %, which is how a change is compared with the design's own
+pictures. Each step that adds components to the kit adds their section here.
 
 ## Conventions
 

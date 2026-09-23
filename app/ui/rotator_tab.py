@@ -24,6 +24,7 @@ from ..engines.rotator.worker import (
     RotationWorker, DuplicateActionWorker, ReserveScanWorker, CleanupWorker,
 )
 from .cleanup_dialog import CleanupDialog
+from .kit import icon
 from .widgets import FolderListPanel
 
 
@@ -83,7 +84,7 @@ class RotatorTab(QWidget):
         layout.addWidget(settings)
 
         btn_row = QHBoxLayout()
-        self.start_btn = QPushButton("▶  Start Rotation")
+        self.start_btn = QPushButton(icon("play", "text.onAccent"), "Start Rotation")
         self.start_btn.setMinimumHeight(44)
         theme.make_accent(self.start_btn)
         self.start_btn.clicked.connect(self.start_rotation)
@@ -94,7 +95,7 @@ class RotatorTab(QWidget):
             "show those, and rotating one in loses a slot in the playlist.\n"
             "Runs on its own here; it is also step 1 of every rotation.")
         self.check_btn.clicked.connect(self.check_folders)
-        self.cancel_btn = QPushButton("■  Stop")
+        self.cancel_btn = QPushButton(icon("stop"), "Stop")
         self.cancel_btn.setMinimumHeight(44)
         self.cancel_btn.setEnabled(False)
         self.cancel_btn.clicked.connect(self.cancel_rotation)

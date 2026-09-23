@@ -24,7 +24,7 @@ Start with [Getting started](getting-started.md) if this is a fresh install.
 | [Gallery](gallery.md) | The wall of previews the Review tab opens: what the badges mean, and subscribing. |
 | [Authors database](authors-database.md) | The file behind Review — what is in it, its backups, and restoring one. |
 | [Building](building.md) | Producing a standalone `.exe`. |
-| [Development](development.md) | Architecture, the test suite, the theme and the motion rules. |
+| [Development](development.md) | Architecture, the test suite, and the look and feel: tokens, type, icons, motion, the kit preview. |
 | [Troubleshooting](troubleshooting.md) | What each failure looks like and which file answers it. |
 
 ## What this does not do

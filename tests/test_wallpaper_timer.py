@@ -638,21 +638,21 @@ def pixels(icon) -> QImage:
 
 
 def near(image: QImage, x: int, y: int, colour: str) -> bool:
-    want = QColor(colour)
+    want = theme.color(colour)
     got = image.pixelColor(x, y)
     return (abs(got.red() - want.red()) < 40 and abs(got.green() - want.green()) < 40
             and abs(got.blue() - want.blue()) < 40 and got.alpha() > 200)
 
 
 full = pixels(tray_icon(42, 1.0))
-check("a full ring is drawn in the running colour at the top", near(full, 32, 6, theme.C["accent"]))
+check("a full ring is drawn in the running colour at the top", near(full, 32, 6, "accent"))
 half = pixels(tray_icon(42, 0.5))
-check("half a ring covers the right side", near(half, 54, 32, theme.C["accent"]))
-check("and leaves the left side as bare track", not near(half, 10, 32, theme.C["accent"]))
+check("half a ring covers the right side", near(half, 54, 32, "accent"))
+check("and leaves the left side as bare track", not near(half, 10, 32, "accent"))
 check("no ring at all when the time is unknown", not near(pixels(tray_icon(42, None)), 32, 6,
-                                                          theme.C["accent"]))
+                                                          "accent"))
 check("a paused ring is greyed rather than blue", near(pixels(tray_icon(42, 1.0, paused=True)),
-                                                       32, 6, theme.C["muted"]))
+                                                       32, 6, "text.lo"))
 check("the icon still draws with nothing in the middle", not tray_icon(None, 0.3).isNull())
 
 

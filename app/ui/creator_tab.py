@@ -26,6 +26,7 @@ from ..settings import (
 )
 from .. import animations, theme
 from ..workers import CreatorBridge
+from .kit import icon
 
 SECTION = "creator"
 
@@ -247,7 +248,7 @@ class CreatorTab(QWidget):
             f"Preview: {GIF_SIZE}×{GIF_SIZE} (1:1) @ {GIF_FPS}fps · "
             f"{GIF_DURATION:g}s from {GIF_SKIP:g}s"))
         opts.addStretch()
-        self.rescan_btn = QPushButton("⟳ Rescan")
+        self.rescan_btn = QPushButton(icon("refresh"), "Rescan")
         self.rescan_btn.clicked.connect(self._scan)
         opts.addWidget(self.rescan_btn)
         grid.addLayout(opts, 2, 0, 1, 3)
@@ -271,10 +272,10 @@ class CreatorTab(QWidget):
         self.progress = animations.SmoothProgressBar()
         self.percent = QLabel("0%")
         self.percent.setMinimumWidth(44)
-        self.start_btn = QPushButton("▶  Build")
+        self.start_btn = QPushButton(icon("play", "text.onAccent"), "Build")
         self.start_btn.setMinimumHeight(36)
         theme.make_accent(self.start_btn)
-        self.cancel_btn = QPushButton("✖  Cancel")
+        self.cancel_btn = QPushButton(icon("close"), "Cancel")
         self.cancel_btn.setMinimumHeight(36)
         self.cancel_btn.setEnabled(False)
         self.start_btn.clicked.connect(self._start)

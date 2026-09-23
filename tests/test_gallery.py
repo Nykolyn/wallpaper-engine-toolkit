@@ -170,7 +170,7 @@ check("and one at a gigabyte or over is a warning",
 check("every kind Wallpaper Engine publishes reads as its own colour",
       len({theme.kind_color(k) for k in gal.KIND_MARKS}) == len(gal.KIND_MARKS))
 check("and an untagged wallpaper gets the neutral chip, not a gap",
-      theme.kind_color("") == theme.C["raised"])
+      theme.kind_color("") == theme.css("surface.raised"))
 check("each kind has a glyph to be recognised by before the word is read",
       set(gal.KIND_MARKS) == {"Scene", "Video", "Web", "Application", "Preset"})
 
@@ -186,11 +186,11 @@ chosen = gal.GalleryModel()
 chosen.set_items([wallpaper()])
 image = painted(delegate, chosen.index(0, 0), state=QStyle.State_Selected)
 under_text = image.pixelColor(200, gal.CARD_H - 12)
+# The canvas starts black, so the translucent panel lands as itself over black.
 check("a selected card keeps the panel its title is read on",
-      under_text.name().lower() == theme.C["raised"].lower())
+      under_text.name() == theme.composite("surface.raised", QColor("#000000")).name())
 check("and is marked out by its border instead",
-      image.pixelColor(gal.CARD_W // 2, 5).name().lower()
-      == theme.C["accent"].lower())
+      image.pixelColor(gal.CARD_W // 2, 5).name() == theme.color("accent").name())
 
 one = gal.GalleryModel()
 one.set_items([wallpaper()])
