@@ -19,7 +19,9 @@ from PySide6.QtWidgets import (
 from .. import animations, theme
 from ..engines import playlist_refresh
 from ..engines.rotator.config import Config, History, RunRecord
-from ..engines.rotator.core import Rotator, list_subfolders, ProgressEvent
+from ..engines.rotator.core import (
+    Rotator, list_subfolders, ProgressEvent, folder_is_set, folder_problem,
+)
 from ..engines.rotator.worker import (
     RotationWorker, DuplicateActionWorker, ReserveScanWorker, CleanupWorker,
 )
@@ -38,6 +40,7 @@ class RotatorTab(QWidget):
         self.scan_worker: ReserveScanWorker | None = None
         self.cleanup_worker: CleanupWorker | None = None
         self._rotate_after_check = False
+        self._dup_busy = False
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
@@ -212,13 +215,22 @@ class RotatorTab(QWidget):
         self.refresh_duplicates()
 
     def refresh_reserve(self):
-        self.reserve_panel.set_names(list_subfolders(self.config.source))
+        self._list_folder(self.reserve_panel, "Reserve folders", self.config.source)
 
     def refresh_transferred(self):
-        self.transferred_panel.set_names(list_subfolders(self.config.destination))
+        self._list_folder(self.transferred_panel, "In myprojects", self.config.destination)
 
     def refresh_duplicates(self):
-        self.dup_panel.set_names(list_subfolders(self.config.duplicates))
+        self._list_folder(self.dup_panel, "Duplicates", self.config.duplicates)
+        if not self._dup_busy:
+            self._set_dup_buttons(True)
+
+    @staticmethod
+    def _list_folder(panel: FolderListPanel, title: str, path: str):
+        # An unset folder lists nothing — list_subfolders sees to that — and
+        # says why, rather than looking like an empty folder.
+        panel.set_title(title if folder_is_set(path) else f"{title} (not set)")
+        panel.set_names(list_subfolders(path))
 
     def refresh_history(self):
         self.history_tree.clear()
@@ -264,15 +276,24 @@ class RotatorTab(QWidget):
     def _begin_check(self, then_rotate: bool):
         # Both libraries, and each only once: with reserve and myprojects set to
         # the same folder every finding would be listed — and deleted — twice.
-        roots, seen = [], set()
-        for candidate in (self.config.source, self.config.destination):
+        # One that is not set is left out, not checked as the working directory.
+        roots, seen, unset = [], set(), []
+        for label, candidate in (("reserve", self.config.source),
+                                 ("myprojects", self.config.destination)):
+            problem = folder_problem(label, candidate)
+            if problem:
+                unset.append(problem)
+                continue
             try:
                 key = str(Path(candidate).resolve()).lower()
             except OSError:
                 key = candidate.lower()
-            if candidate and key not in seen:
+            if key not in seen:
                 seen.add(key)
                 roots.append(candidate)
+        if not roots:
+            QMessageBox.critical(self, "Cannot check", "\n".join(unset))
+            return
         missing = [r for r in roots if not Path(r).exists()]
         if missing:
             QMessageBox.critical(self, "Cannot check",
@@ -280,6 +301,9 @@ class RotatorTab(QWidget):
             return
         self._rotate_after_check = then_rotate
         self.log.clear()
+        for problem in unset:
+            self._append_log(ProgressEvent("scan", f"{problem} Not checked.",
+                                           level="WARN"))
         self._set_running(True)
         self.phase_label.setText("Step 1 — checking every folder for a project.json")
         self.scan_worker = ReserveScanWorker(roots)
@@ -453,6 +477,16 @@ class RotatorTab(QWidget):
 
     # ---------------------------------------------------- Duplicate actions
     def _dup_action(self, action: str, all_items: bool):
+        # The buttons are off while a folder is unset, but the settings can be
+        # saved by Check folders or Start without this tab being refreshed.
+        problem = folder_problem("duplicates", self.config.duplicates)
+        if problem is None and action == "replace":
+            problem = folder_problem("reserve", self.config.source)
+        if problem:
+            QMessageBox.warning(self, "Folder not set",
+                                f"{problem}\nChoose it on the Rotate tab and save.")
+            self.refresh_duplicates()
+            return
         if all_items:
             names = list_subfolders(self.config.duplicates)
         else:
@@ -461,16 +495,21 @@ class RotatorTab(QWidget):
             QMessageBox.information(self, "Nothing selected",
                                     "Select one or more folders first.")
             return
-        verb = "delete" if action == "delete" else "move & replace into reserve"
+        if action == "delete":
+            what = f"permanently delete {len(names)} folder(s) from\n{self.config.duplicates}"
+        else:
+            what = (f"move {len(names)} folder(s) from\n{self.config.duplicates}\n"
+                    f"into the reserve\n{self.config.source}\n"
+                    f"replacing any there with the same name")
         if QMessageBox.question(
-            self, "Confirm",
-            f"Are you sure you want to {verb} {len(names)} folder(s)?"
+            self, "Confirm", f"Are you sure you want to {what}?"
         ) != QMessageBox.Yes:
             return
 
         self.dup_progress.setVisible(True)
         self.dup_progress.setMaximum(len(names))
         self.dup_progress.setValue(0)
+        self._dup_busy = True
         self._set_dup_buttons(False)
 
         self.dup_worker = DuplicateActionWorker(action, self.config, names)
@@ -485,6 +524,7 @@ class RotatorTab(QWidget):
             self.dup_progress.setValue(e.current)
 
     def _on_dup_finished(self, failed: list):
+        self._dup_busy = False
         self._set_dup_buttons(True)
         self.dup_progress.setVisible(False)
         self.refresh_duplicates()
@@ -496,5 +536,10 @@ class RotatorTab(QWidget):
             QMessageBox.information(self, "Done", "Action completed successfully.")
 
     def _set_dup_buttons(self, enabled: bool):
-        for b in (self.del_sel_btn, self.del_all_btn, self.mv_sel_btn, self.mv_all_btn):
-            b.setEnabled(enabled)
+        # Each action only while the folders it works on are set.
+        dup_set = folder_is_set(self.config.duplicates)
+        reserve_set = folder_is_set(self.config.source)
+        for b in (self.del_sel_btn, self.del_all_btn):
+            b.setEnabled(enabled and dup_set)
+        for b in (self.mv_sel_btn, self.mv_all_btn):
+            b.setEnabled(enabled and dup_set and reserve_set)

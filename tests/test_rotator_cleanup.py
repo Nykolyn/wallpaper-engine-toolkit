@@ -5,21 +5,27 @@ Run it directly — there is no test framework in this project:
     .venv\\Scripts\\python.exe tests\\test_rotator_cleanup.py
 
 Everything works on a temporary reserve built here, so nothing on the machine is
-read or deleted. The last section builds the real confirmation dialog (it needs
-Qt, but never shows a window) to check what it ticks by default — that default
-is the whole safety story of the feature, so it is worth a test rather than a
-glance.
+read or deleted. Two sections build real widgets (they need Qt, but never show a
+window): the confirmation dialog, to check what it ticks by default — that
+default is the whole safety story of the feature, so it is worth a test rather
+than a glance — and the Rotator tab with its folders unset, run from a stand-in
+install folder, to check that nothing in it is listed or deleted.
 """
 from __future__ import annotations
 
+import json
+import os
 import shutil
 import sys
 import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from app.engines.rotator import core                  # noqa: E402
+from app.engines.rotator import config as rotator_config   # noqa: E402
+from app.engines.rotator import core                       # noqa: E402
+from app.engines.rotator.config import Config, History     # noqa: E402
 
 TMP = Path(tempfile.mkdtemp(prefix="wallpaper_cleanup_test_"))
 RESERVE = TMP / "reserve"
@@ -132,6 +138,91 @@ check("and the wallpapers next to them are untouched", (RESERVE / "video-ok").ex
 check("a folder that is already gone is not reported as a failure",
       core.delete_broken([str(RESERVE / "shader-cache")]) == [])
 
+# ------------------------------------------------- folders that are not set
+#
+# Path("") is the working directory, and for the built exe that is the install
+# folder, with the user's data\ in it. An unset folder must list nothing and
+# lose nothing. The working directory from here on is a stand-in install folder
+# holding the same two folders, and the Rotator's own files are kept out of the
+# source tree.
+
+INSTALL = TMP / "install"
+for inside in ("data", "_internal"):
+    (INSTALL / inside).mkdir(parents=True)
+    (INSTALL / inside / "keep.txt").write_bytes(b"live")
+DUPES = TMP / "duplicates"
+(DUPES / "dup-a").mkdir(parents=True)
+MYPROJECTS = TMP / "myprojects"
+MYPROJECTS.mkdir()
+rotator_config.CONFIG_PATH = TMP / "rotator-config.json"
+rotator_config.HISTORY_PATH = TMP / "rotator-history.json"
+HOME = os.getcwd()
+os.chdir(INSTALL)
+
+
+def untouched() -> bool:
+    """The stand-in install folder still holds what it held."""
+    return (sorted(p.name for p in INSTALL.iterdir()) == ["_internal", "data"]
+            and all((INSTALL / d / "keep.txt").exists() for d in ("data", "_internal")))
+
+
+check("an empty folder setting is not set",
+      not any(core.folder_is_set(p) for p in ("", "   ", None)))
+check("nor is a relative one",
+      not any(core.folder_is_set(p) for p in ("data", ".", "\\data", "C:data")))
+check("a full path is", core.folder_is_set(str(DUPES)))
+
+check("an unset folder lists nothing, not the working directory",
+      core.list_subfolders("") == [] and core.list_subfolders(".") == [])
+check("and a check of it finds nothing to delete", core.scan_invalid("") == [])
+
+check("deleting from an unset duplicates folder deletes nothing",
+      core.delete_folders("", ["data", "_internal"]) == ["data", "_internal"]
+      and untouched())
+check("nor from a relative one",
+      core.delete_folders(".", ["data"]) == ["data"] and untouched())
+check("moving back from an unset duplicates folder moves nothing",
+      core.move_replace_to_reserve("", str(RESERVE), ["data"]) == ["data"]
+      and untouched() and not (RESERVE / "data").exists())
+check("nor into an unset reserve",
+      core.move_replace_to_reserve(str(DUPES), "", ["dup-a"]) == ["dup-a"]
+      and (DUPES / "dup-a").exists() and untouched())
+# Replacing clears the target first, and with one folder for both the target
+# is the folder about to be moved.
+check("nor when the duplicates folder is the reserve",
+      core.move_replace_to_reserve(str(DUPES), str(DUPES), ["dup-a"]) == ["dup-a"]
+      and (DUPES / "dup-a").exists())
+odd = ["", ".", "..", str(INSTALL / "data"), "dup-a\\..\\..", "C:data"]
+check("a name that is not one folder name is refused, not joined",
+      core.delete_folders(str(DUPES), odd) == odd
+      and (DUPES / "dup-a").exists() and untouched())
+check("the reserve check's delete refuses a relative path",
+      core.delete_broken(["data"]) == ["data"] and untouched())
+
+
+def validate(**folders: str) -> str:
+    cfg = Config(**{"source": str(RESERVE), "destination": str(MYPROJECTS),
+                    "duplicates": str(DUPES), **folders})
+    return core.Rotator(cfg, History([])).validate() or ""
+
+
+check("a rotation with all three folders set may start", validate() == "")
+check("not with the reserve unset",
+      validate(source="") == "The reserve folder is not set.")
+check("nor myprojects", validate(destination="") == "The myprojects folder is not set.")
+check("nor the duplicates folder",
+      validate(duplicates="") == "The duplicates folder is not set.")
+check("nor with a relative folder, even one that is there",
+      validate(source="data") == "The reserve folder is not a full path: data")
+try:
+    core.Rotator(Config(source="", destination="", duplicates="", count=1),
+                 History([])).run()
+    refused = False
+except ValueError:
+    refused = True
+check("and a rotation run without validating refuses before moving anything",
+      refused and untouched() and not rotator_config.HISTORY_PATH.exists())
+
 check("sizes are shown in units a person reads",
       (core.human_size(512), core.human_size(2048), core.human_size(5 * 1024 ** 2))
       == ("512 B", "2.0 KB", "5.0 MB"))
@@ -176,6 +267,89 @@ check("the paths handed back are absolute, ready to delete",
       all(Path(p).is_absolute() for p in dialog.paths()))
 
 dialog.deleteLater()
+
+# ------------------------------------------------ the Rotator tab, unset
+#
+# The reported case end to end: no duplicates folder, and the working
+# directory holding data\. The Duplicates tab listed data\ and _internal\ and
+# "Delete all" would have deleted them. Every question is answered yes here, so
+# only the guards stand between the click and the delete.
+
+from PySide6.QtWidgets import QMessageBox            # noqa: E402
+from app.ui import rotator_tab                       # noqa: E402
+
+shown: list[tuple[str, str]] = []
+
+
+def _box(kind: str):
+    def show(_parent, _title, text, *_rest):
+        shown.append((kind, text))
+        return QMessageBox.Yes
+    return staticmethod(show)
+
+
+class Boxes:
+    Yes = QMessageBox.Yes
+    question = _box("question")
+    information = _box("information")
+    warning = _box("warning")
+    critical = _box("critical")
+
+
+rotator_tab.QMessageBox = Boxes
+rotator_config.CONFIG_PATH.write_text(json.dumps(
+    {"source": "", "destination": "", "duplicates": "", "count": 1,
+     "refresh_playlist": False}), encoding="utf-8")
+
+tab = rotator_tab.RotatorTab()
+dup_buttons = (tab.del_sel_btn, tab.del_all_btn, tab.mv_sel_btn, tab.mv_all_btn)
+check("with no duplicates folder the Duplicates tab lists nothing",
+      tab.dup_panel.model.rowCount() == 0)
+check("and says the folder is not set",
+      tab.dup_panel.count_label.text() == "Duplicates (not set): 0")
+check("and none of its actions can be pressed",
+      not any(b.isEnabled() for b in dup_buttons))
+check("the reserve and myprojects lists are empty and say why too",
+      tab.reserve_panel.model.rowCount() == tab.transferred_panel.model.rowCount() == 0
+      and "(not set)" in tab.reserve_panel.count_label.text()
+      and "(not set)" in tab.transferred_panel.count_label.text())
+
+for action in ("delete", "replace"):
+    shown.clear()
+    tab._dup_action(action, True)
+    check(f"'{action} all' stops before asking, and says the folder is not set",
+          tab.dup_worker is None and [k for k, _ in shown] == ["warning"]
+          and "duplicates folder is not set" in shown[0][1] and untouched())
+
+shown.clear()
+tab.check_folders()
+check("Check folders with nothing set says so and checks nothing",
+      tab.scan_worker is None and [k for k, _ in shown] == ["critical"]
+      and "reserve folder is not set" in shown[0][1])
+shown.clear()
+tab.start_rotation()
+check("and a rotation will not start",
+      tab.rotation_worker is None and [k for k, _ in shown] == ["critical"]
+      and shown[0][1] == "The reserve folder is not set." and untouched())
+
+tab.config.duplicates = str(DUPES)
+tab.refresh_duplicates()
+check("once the duplicates folder is set, what is in it is listed",
+      tab.dup_panel.model.rowCount() == 1
+      and tab.dup_panel.count_label.text() == "Duplicates: 1")
+check("deleting is offered, moving back waits for the reserve",
+      tab.del_all_btn.isEnabled() and not tab.mv_all_btn.isEnabled())
+shown.clear()
+tab._dup_action("delete", True)
+tab.dup_worker.wait(10_000)
+app.processEvents()
+check("and Delete all deletes it, having named the folder in the question",
+      not (DUPES / "dup-a").exists() and DUPES.exists()
+      and shown[0][0] == "question" and str(DUPES) in shown[0][1] and untouched())
+check("the buttons come back when it is done", tab.del_all_btn.isEnabled())
+
+tab.deleteLater()
+os.chdir(HOME)
 shutil.rmtree(TMP, ignore_errors=True)
 
 print()

@@ -33,6 +33,7 @@ from typing import Callable, Iterable
 
 from ..settings import app_data_dir
 from .rotator.config import Config as RotatorConfig
+from .rotator.core import folder_is_set
 from . import steam_paths
 
 INDEX_PATH = app_data_dir() / "library.json"
@@ -251,9 +252,13 @@ class Library:
 
 
 def _rotator_roots() -> list[Path]:
-    """The three folders the Rotator already knows about."""
+    """The three folders the Rotator already knows about — those that are set.
+
+    An empty or relative one would walk the working directory instead.
+    """
     config = RotatorConfig.load()
-    return [Path(p) for p in (config.source, config.destination, config.duplicates) if p]
+    return [Path(p) for p in (config.source, config.destination, config.duplicates)
+            if folder_is_set(p)]
 
 
 def _workshop_id(folder: str) -> str | None:
