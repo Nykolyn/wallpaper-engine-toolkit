@@ -64,6 +64,7 @@ TOKENS: dict[str, str] = {
     "surface.console": "rgba(6,8,12,.72)",
     "surface.overlay": "rgba(18,22,30,.94)",    # dialog, toast
     "surface.popup": "rgba(18,22,30,.97)",      # menu, dropdown, tool tip
+    "surface.note": "rgba(255,255,255,.04)",    # a neutral Callout
 
     # borders
     "border.hairline": "rgba(255,255,255,.10)",
@@ -99,6 +100,14 @@ TOKENS: dict[str, str] = {
     "danger.solidPress": "#B93A3A",
     "info": "#7FB2FF",
     "info.soft": "rgba(127,178,255,.14)",
+
+    # The edge of a tinted box — a chip, a callout, a panel with a verdict —
+    # in its own hue, stronger than its fill so the box reads on glass.
+    "accent.line": "rgba(76,141,255,.55)",
+    "ok.line": "rgba(61,214,140,.40)",
+    "warn.line": "rgba(245,165,36,.45)",
+    "danger.line": "rgba(255,107,107,.45)",
+    "info.line": "rgba(127,178,255,.40)",
 
     # the log console
     "console.text": "#D3D9E3",
@@ -169,9 +178,16 @@ def _parsed(name: str) -> QColor:
         raise KeyError(f"no colour token {name!r}") from None
 
 
-def color(name: str) -> QColor:
-    """A colour token as a QColor. A copy, so the caller may change it freely."""
-    return QColor(_parsed(name))
+def color(name: str, alpha: float | None = None) -> QColor:
+    """A colour token as a QColor. A copy, so the caller may change it freely.
+
+    `alpha` scales the token's own opacity, as `css()` does: the design's
+    disabled AccentButton is "the accent at 30 %".
+    """
+    c = QColor(_parsed(name))
+    if alpha is not None:
+        c.setAlphaF(c.alphaF() * alpha)
+    return c
 
 
 def css(name: str, alpha: float | None = None) -> str:
@@ -182,9 +198,7 @@ def css(name: str, alpha: float | None = None) -> str:
     token's own opacity, for the few states the design writes as "the accent
     at 30%".
     """
-    c = color(name)
-    if alpha is not None:
-        c.setAlphaF(c.alphaF() * alpha)
+    c = color(name, alpha)
     return c.name(QColor.HexArgb if c.alpha() < 255 else QColor.HexRgb).upper()
 
 
@@ -299,8 +313,10 @@ TYPE: dict[str, TypeSpec] = {
     "type.body": TypeSpec(12.5, 1.45),
     "type.bodySm": TypeSpec(11.5, 1.4),                    # dense rows, buttons
     "type.label": TypeSpec(11, 1.3),
+    "type.labelStrong": TypeSpec(11, 1.3, 600),            # a Callout's title
     "type.caption": TypeSpec(10.5, 1.4),                   # text.lo only
     "type.overline": TypeSpec(10, 1.3, 600, mono=True, upper=True, tracking=0.11),
+    "type.chip": TypeSpec(10, 1.2, 600, mono=True, upper=True, tracking=0.04),  # Chip label
     "type.mono": TypeSpec(11, 1.85, mono=True),            # paths, ids, log
     "type.monoSm": TypeSpec(10.5, 1.4, mono=True),         # meta, counts
 }
@@ -399,6 +415,16 @@ def _phi(x: float) -> float:
 def _margin(e: Elevation) -> int:
     """How far a shadow reaches past its box: three sigmas, where it is gone."""
     return math.ceil(3 * e.blur / 2)
+
+
+def shadow_reach(elev: str) -> tuple[int, int, int, int]:
+    """How far an elevation's outer shadow reaches past its box: left, top,
+    right, bottom. Nothing for elev.0 and the inset."""
+    e = _elevation(elev)
+    if e.inset or e.blur <= 0:
+        return (0, 0, 0, 0)
+    m, dy = _margin(e), math.ceil(e.dy)
+    return (m, max(0, m - dy), m, m + dy)
 
 
 _shadows: dict[tuple[str, float], QPixmap] = {}
@@ -516,6 +542,148 @@ def _paint_inset(painter: QPainter, rect: QRectF, box: QPainterPath, e: Elevatio
                      QBrush(grad))
 
 
+def paint_sheen(painter: QPainter, rect, radius: float, elev: str = "elev.1") -> None:
+    """The inset top light of a raised box: a 1 px line just inside its top edge."""
+    e = _elevation(elev)
+    if not e.sheen:
+        return
+    rect = QRectF(rect)
+    radius = min(radius, rect.height() / 2)
+    box = QPainterPath()
+    box.addRoundedRect(rect, radius, radius)
+    painter.save()
+    painter.setClipPath(box)
+    painter.fillRect(QRectF(rect.left(), rect.top(), rect.width(), 1.0),
+                     QColor(255, 255, 255, round(255 * e.sheen)))
+    painter.restore()
+
+
+# The knob of a Toggle: `0 1px 2px rgba(0,0,0,.5)` under a 12 px disc.
+KNOB_SHADOW = Elevation(1, 2, 0.5)
+
+
+def paint_disc_shadow(painter: QPainter, centre: QPointF, radius: float,
+                      e: Elevation = KNOB_SHADOW) -> None:
+    """A soft shadow under a disc. The nine-slice box shadow would show its
+    square corners round something this small, so this one is radial."""
+    sigma = e.blur / 2
+    reach = radius + 3 * sigma
+    c = QPointF(centre.x(), centre.y() + e.dy)
+    grad = QRadialGradient(c, reach)
+    shade = QColor(0, 0, 0)
+    for step in range(9):
+        r = reach * step / 8
+        shade.setAlphaF(e.alpha * _phi((radius - r) / sigma))
+        grad.setColorAt(step / 8, shade)
+    painter.save()
+    painter.setPen(Qt.NoPen)
+    painter.setBrush(QBrush(grad))
+    painter.drawEllipse(c, reach, reach)
+    painter.restore()
+
+
+# The focus ring: `0 0 0 2px focus.ring` round the box, keyboard focus only.
+FOCUS_RING = 2
+
+
+def paint_focus_ring(painter: QPainter, rect, radius: float) -> None:
+    """The ring round a box with keyboard focus, outside it, following its corners."""
+    rect = QRectF(rect)
+    radius = min(radius, rect.height() / 2)
+    inner = QPainterPath()
+    inner.addRoundedRect(rect, radius, radius)
+    grown = rect.adjusted(-FOCUS_RING, -FOCUS_RING, FOCUS_RING, FOCUS_RING)
+    outer = QPainterPath()
+    outer.addRoundedRect(grown, radius + FOCUS_RING, radius + FOCUS_RING)
+    painter.save()
+    painter.setRenderHint(QPainter.Antialiasing)
+    painter.fillPath(outer.subtracted(inner), color("focus.ring"))
+    painter.restore()
+
+
+# A disabled control is drawn at this opacity, sheen and shadow dropped. Fields
+# are a shade stronger, so the text in them stays legible.
+DISABLED_OPACITY = 0.4
+DISABLED_FIELD_OPACITY = 0.45
+
+
+# ---- Component metrics -------------------------------------------------------
+#
+# The design system's component sizes, in CSS px = Qt logical px, so no kit
+# module carries a number of its own. The design draws most controls with CSS
+# `content-box` sizing, so a bordered box is 2 px bigger than its padding says;
+# these are the outer sizes, border included.
+
+# A single-line control — a medium button, a field, a Dropdown — is this tall,
+# so a toolbar of them lines up.
+CONTROL_HEIGHT = 30
+
+
+@dataclass(frozen=True)
+class ButtonSize:
+    height: int          # outer, border included
+    pad: int             # left and right, inside the 1 px border
+    font: str            # type token
+    icon: int            # leading icon, px
+    gap: int             # between icon, text and key cap
+
+
+BUTTON: dict[str, ButtonSize] = {
+    # inline actions in a card header ("Open log"): padding 6/10 around 11 px
+    "sm": ButtonSize(26, 9, "type.label", 13, 6),
+    # the default: padding 7/13 around 11.5 px
+    "md": ButtonSize(CONTROL_HEIGHT, 12, "type.bodySm", 14, 7),
+    # an empty state's one action ("Choose folders"): padding 9/18 around 12 px
+    "lg": ButtonSize(34, 17, "type.body", 16, 7),
+}
+
+# IconButton: (side, glyph) — 30 px in toolbars, 22 px in a Pagination
+ICON_BUTTON: dict[str, tuple[int, int]] = {"md": (30, 16), "sm": (22, 13)}
+
+KEY_CAP_PAD = 4          # the "Ctrl+V" cap inside a button: padding 0 4px, r.sm
+
+CHECK_BOX = 17           # 15 px inside a 1 px border
+CHECK_GAP = 8            # box to label
+TOGGLE_TRACK = (36, 20)  # 34 × 18 inside a 1 px border
+TOGGLE_KNOB = 12
+TOGGLE_INSET = 3         # knob to track, inside the border
+TOGGLE_GAP = 9           # track to label
+SEGMENT_HEIGHT = 26      # padding 5/11 around 11 px, and the border
+SEGMENT_PAD = 11
+PAGE_GAP = 3             # between a Pagination's cells
+PAGE_PAD = 5             # a page number's padding, in a 22 px cell
+
+CHIP_HEIGHT = 18         # padding 2 around 10 px mono, and the border
+CHIP_PAD = 8
+CHIP_GAP = 5             # leading dot or glyph to the label
+CHIP_DOT = 5
+CHIP_GLYPH = 10
+CHIP_DASH = (3.0, 2.0)   # the Unidentified chip's dashed edge, in pen widths
+
+FIELD_PAD = 10           # TextInput and Dropdown: padding 7/10
+FIELD_ICON = 13          # a field's leading search icon, and the chevron
+FIELD_ICON_GAP = 7
+FIELD_ERROR_GAP = 5      # the box to its error line
+FIELD_ERROR_HEIGHT = FIELD_ERROR_GAP + math.ceil(line_height("type.label"))
+POPUP_GAP = 4            # a Dropdown's box to its popup
+POPUP_PAD = 4
+POPUP_ROW = (6, 8)       # a row's padding, vertical and horizontal
+POPUP_CHECK = 12         # the selected row's check
+
+PANEL_PADDING: dict[str, tuple[int, int]] = {   # (vertical, horizontal)
+    "none": (0, 0),
+    "sm": (12, 13),
+    "md": (13, 14),
+    "lg": (14, 15),
+}
+CALLOUT_PAD = (9, 11)
+CALLOUT_ICON = 14
+CALLOUT_GAP = 9
+METRIC_PAD = 11          # each value's side padding, either side of a divider
+METRIC_RULE_PAD = 10     # above and below the values, inside the rules
+METRIC_CAPTION_GAP = 4
+
+
 # ---- Semantic colours the old tabs ask for ---------------------------------
 
 def status_color(kind: str) -> str:
@@ -585,9 +753,9 @@ def _palette() -> QPalette:
 # value appears once, under its design name. Understood: a colour $(text.lo),
 # a colour at part of its opacity $(accent/.3), a radius $(r.md) or space
 # $(sp.8), a type style $(font:type.bodySm), a gradient $(grad:surface.glass),
-# and a drawing in a colour $(img:check/text.onAccent), with an optional
-# stroke width after a third slash. Anything left unfilled is a typo, and
-# test_theme.py fails on it.
+# a component size $(px:field.error), and a drawing in a colour
+# $(img:check/text.onAccent), with an optional stroke width after a third
+# slash. Anything left unfilled is a typo, and test_theme.py fails on it.
 
 _TEMPLATE = """
 * { outline: none; }
@@ -906,7 +1074,55 @@ QSplitter::handle { background: transparent; }
 QSplitter::handle:horizontal { width: 10px; }
 QSplitter::handle:vertical { height: 10px; }
 QScrollArea { border: none; background: transparent; }
+
+/* ---- the kit's fields and check box (app/ui/kit) ----
+   They are Qt's own controls under the rules above; these add what the kit
+   classes know and Qt does not. [forceState] draws a state without a pointer,
+   for the kit preview. A field in error keeps its red edge under the pointer
+   and in focus, and makes room below itself for the message. */
+TextInput[forceState="hover"], SpinBox[forceState="hover"], Dropdown[forceState="hover"] {
+    border-color: $(border.strong);
+}
+TextInput[forceState="focus"], SpinBox[forceState="focus"] { border-color: $(border.focus); }
+TextInput[error="true"], TextInput[error="true"]:hover, TextInput[error="true"]:focus {
+    border-color: $(danger);
+}
+TextInput[error="true"] { margin-bottom: $(px:field.error)px; }
+/* A Dropdown shows focus when the keyboard brought it there, as a button does,
+   and while its list is open; the class sets focusVisible for both. */
+Dropdown:focus { border-color: $(border.control); }
+Dropdown:focus:hover { border-color: $(border.strong); }
+Dropdown[focusVisible="true"], Dropdown[forceState="focus"] { border-color: $(border.focus); }
+/* its list paints its own rows, on its own popup ground */
+DropdownPopup QListView { background: transparent; border: none; padding: 0; }
+
+/* Kit labels name their colour, so no label carries a stylesheet of its own. */
+QLabel[tone="hi"] { color: $(text.hi); }
+QLabel[tone="body"] { color: $(text.body); }
+QLabel[tone="mid"] { color: $(text.mid); }
+QLabel[tone="lo"] { color: $(text.lo); }
+QLabel[tone="ok"] { color: $(ok); }
+QLabel[tone="warn"] { color: $(warn); }
+QLabel[tone="danger"] { color: $(danger); }
+QLabel[tone="info"] { color: $(info); }
+QLabel[tone="accent"] { color: $(accent.hover); }
+QLabel[tone]:disabled { color: $(text.disabled); }
+
+Checkbox { $(font:type.bodySm) spacing: $(px:check.gap)px; }
+Checkbox[forceState="hover"]::indicator {
+    background: $(surface.raised); border-color: $(border.strong);
+}
+Checkbox[forceState="hover"]::indicator:checked,
+Checkbox[forceState="hover"]::indicator:indeterminate {
+    background: $(accent.hover); border-color: $(accent.hover);
+}
 """
+
+# Sizes the stylesheet takes from the component metrics, as $(px:name).
+_QSS_PX = {
+    "field.error": FIELD_ERROR_HEIGHT,
+    "check.gap": CHECK_GAP,
+}
 
 _PLACEHOLDER = re.compile(r"\$\(([^()]*)\)")
 
@@ -980,6 +1196,8 @@ def stylesheet(asset_dir: Path | None = None) -> str:
                 return _asset(key[4:], folder)
             if key.startswith("grad:"):
                 return _qss_gradient(key[5:])
+            if key.startswith("px:"):
+                return str(_QSS_PX[key[3:]])
             if key in RADIUS:
                 return str(RADIUS[key])
             if key in SPACING:

@@ -10,7 +10,9 @@ place, and compared with the design's own pictures.
 
 `--grab <section> <out.png>` renders one section offscreen at 100 % and saves
 it; `--grab all <folder>` saves every section. The sections are the design
-system's: color, type, space, icons, motion. Each kit step adds its own.
+system's: color, type, space, motion, icons, controls (Qt's own widgets under
+the stylesheet), then the kit's buttons, inputs, selection, chips and panels,
+each state in a row. Each kit step adds its own.
 """
 from __future__ import annotations
 
@@ -38,7 +40,7 @@ from PySide6.QtWidgets import (  # noqa: E402
 )
 
 from app import animations, theme  # noqa: E402
-from app.ui.kit import icons  # noqa: E402
+from app.ui.kit import base as kit_base, icons  # noqa: E402
 
 PAGE_WIDTH = 1440
 PAGE_PADDING = (48, 44, 48, 64)      # left, top, right, bottom, as the design page
@@ -59,19 +61,26 @@ def overline(content: str) -> QLabel:
     return text(content, "type.overline", "text.lo")
 
 
-def divider() -> QFrame:
+def divider(token: str = "border.hairline") -> QFrame:
     line = QFrame()
     line.setFixedHeight(1)
-    line.setStyleSheet(f"background: {theme.css('border.hairline')};")
+    line.setStyleSheet(f"background: {theme.css(token)};")
     return line
 
 
 class Page(QWidget):
-    """The design system page's ground: `bg.app`, like the app's window."""
+    """The design system page's ground: `bg.app`, like the app's window. It is
+    the surface the kit's controls draw their shadows and focus rings on."""
+
+    def __init__(self):
+        super().__init__()
+        kit_base.declare(self)
+        self.setFocusPolicy(Qt.ClickFocus)
 
     def paintEvent(self, event) -> None:        # noqa: N802 - Qt's name
         painter = QPainter(self)
         theme.paint_app_background(painter, self.rect())
+        kit_base.paint(painter, self, event.rect())
 
 
 class Section(QWidget):
@@ -92,7 +101,13 @@ class Section(QWidget):
         if description:
             note = text(description, "type.bodySm", "text.mid", wrap=True)
             note.setMaximumWidth(760)
-            self.body.addWidget(note)
+            # In a row with a stretch, so its wrapped height is measured at the
+            # 760 px it gets, not at the page's width: measured wide, two lines
+            # count as one and every row below is squeezed.
+            line = QHBoxLayout()
+            line.addWidget(note, 1)
+            line.addStretch(0)
+            self.body.addLayout(line)
 
     def paintEvent(self, event) -> None:        # noqa: N802 - Qt's name
         painter = QPainter(self)
@@ -196,8 +211,10 @@ TYPE_SAMPLES = {
     "type.body": "Move 1 000 new folders in",
     "type.bodySm": "Drawn at random from 8 204 never used",
     "type.label": "Verify after move",
+    "type.labelStrong": "Move empties the source folder",
     "type.caption": "kept for 30 days",
     "type.overline": "The loop",
+    "type.chip": "New author",
     "type.mono": r"D:\reserve\1234567890",
     "type.monoSm": "412 / 1 000 · 41%",
 }
@@ -634,6 +651,392 @@ def controls_section() -> Section:
     return section
 
 
+# ---- kit controls: a state table like the design system's ------------------------------
+
+NAME_COLUMN = 210
+
+
+class StateTable:
+    """Rows of one component, a column per state, as the design system lays
+    out its Buttons, Inputs and Selection sections."""
+
+    def __init__(self, section: Section, columns: tuple[str, ...]):
+        self.grid = QGridLayout()
+        self.grid.setHorizontalSpacing(14)
+        self.grid.setVerticalSpacing(13)
+        self.grid.setColumnMinimumWidth(0, NAME_COLUMN)
+        for i, name in enumerate(columns, start=1):
+            self.grid.addWidget(overline(name), 0, i)
+            self.grid.setColumnStretch(i, 1)
+        self.grid.addWidget(divider(), 1, 0, 1, len(columns) + 1)
+        self.width = len(columns) + 1
+        self.row = 2
+        section.body.addLayout(self.grid)
+
+    def add(self, name: str, note: str, *widgets: QWidget) -> None:
+        words = QVBoxLayout()
+        words.setSpacing(2)
+        words.addWidget(text(name, "type.bodySm", "text.body"))
+        if note:
+            words.addWidget(text(note, "type.monoSm", "text.lo"))
+        self.grid.addLayout(words, self.row, 0)
+        for i, widget in enumerate(widgets, start=1):
+            self.grid.addWidget(widget, self.row, i, Qt.AlignLeft | Qt.AlignVCenter)
+        self.grid.addWidget(divider("chrome.divider"), self.row + 1, 0, 1, self.width)
+        self.row += 2
+
+
+def in_state(widget: QWidget, state: str | None) -> QWidget:
+    """A kit control shown in one state: None, hover, pressed, focus or disabled."""
+    if state == "disabled":
+        widget.setEnabled(False)
+    elif state:
+        widget.force_state = state
+    return widget
+
+
+BUTTON_STATES = ("DEFAULT", "HOVER", "PRESSED", "DISABLED", "FOCUS")
+_BUTTON_ORDER = (None, "hover", "pressed", "disabled", "focus")
+
+
+def buttons_section() -> Section:
+    from app.ui.kit import (AccentButton, DangerButton, GhostButton, IconButton,
+                            SecondaryButton)
+
+    section = Section(7, "Buttons",
+                      "Every interactive widget has these five states. Hover is the "
+                      "pointer only; the focus ring shows on keyboard focus only. The "
+                      "fill eases over motion.base; the box never moves.")
+    table = StateTable(section, BUTTON_STATES)
+    rows = (
+        ("AccentButton", "one per screen", lambda: AccentButton("Start run")),
+        ("SecondaryButton", "default weight", lambda: SecondaryButton("Playlist settings")),
+        ("DangerButton", "destructive only", lambda: DangerButton("Delete")),
+        ("GhostButton", "inline, low weight", lambda: GhostButton("Open folder")),
+        ("GhostButton outlined", "page header", lambda: GhostButton("Skip for now", outlined=True)),
+        ("IconButton", "30×30 · 16px glyph", lambda: IconButton("refresh", "Refresh")),
+        ("IconButton sm", "22×22 · 13px glyph", lambda: IconButton("chevR", "Next page", size="sm")),
+    )
+    for name, note, make in rows:
+        table.add(name, note, *(in_state(make(), state) for state in _BUTTON_ORDER))
+
+    section.body.addWidget(overline("Content and sizes"))
+    row = QHBoxLayout()
+    row.setSpacing(16)
+    for widget in (AccentButton("Start run", icon="play"),
+                   SecondaryButton("Open destination", icon="folder"),
+                   GhostButton("Paste path", icon="clipboard", key="Ctrl+V"),
+                   GhostButton("Open log", size="sm"),
+                   SecondaryButton("Retry", size="sm"),
+                   AccentButton("Choose folders", size="lg"),
+                   SecondaryButton("Paste path", icon="clipboard", key="Ctrl+V", size="lg")):
+        row.addWidget(widget)
+    row.addStretch()
+    section.body.addLayout(row)
+    section.body.addWidget(text("sm: inline actions in a card header · md: the default · lg: an "
+                                "empty state's one action. Every variant of a size has the "
+                                "same box, so a row of them lines up.",
+                                "type.bodySm", "text.mid", wrap=True))
+    return section
+
+
+def inputs_section() -> Section:
+    from app.ui.kit import Dropdown, DropdownPopup, SpinBox, TextInput
+
+    section = Section(8, "Text, number and choice inputs",
+                      "Qt's own fields under the generated stylesheet, with the inset "
+                      "shade and the focus ring the kit adds. A field you type into shows "
+                      "its ring whenever it has focus; a Dropdown only from the keyboard.")
+    table = StateTable(section, ("DEFAULT", "HOVER", "FOCUS", "DISABLED", "ERROR / AT MAX"))
+
+    def field(value: str = "", *, search: bool = False, placeholder="Filter by author…"):
+        widget = TextInput(value, placeholder=placeholder, search=search)
+        widget.setFixedWidth(190)
+        return widget
+
+    wrong = field("rain?")
+    wrong.set_error("no author by that name")
+    table.add("TextInput", "placeholder = text.lo",
+              field(), in_state(field(), "hover"), in_state(field("rain"), "focus"),
+              in_state(field(), "disabled"), wrong)
+    missing = field("zzz", search=True, placeholder="Filter…")
+    missing.set_error("nothing matches")
+    table.add("TextInput search", "leading glyph",
+              field(search=True, placeholder="Filter…"),
+              in_state(field(search=True, placeholder="Filter…"), "hover"),
+              in_state(field("dune", search=True, placeholder="Filter…"), "focus"),
+              in_state(field(search=True, placeholder="Filter…"), "disabled"), missing)
+
+    def spin(maximum: int = 100_000):
+        return SpinBox(minimum=1, maximum=maximum, value=1000)
+
+    table.add("SpinBox", "tabular numerals, 1 000",
+              spin(), in_state(spin(), "hover"), in_state(spin(), "focus"),
+              in_state(spin(), "disabled"), spin(1000))
+
+    def choice(prefix: str = ""):
+        widget = Dropdown(prefix=prefix)
+        for option in ("Random from unused", "Random from all", "Oldest first", "By author"):
+            widget.add_item(option)
+        widget.setFixedWidth(190)
+        return widget
+
+    table.add("Dropdown", "closed / open below",
+              choice(), in_state(choice(), "hover"), in_state(choice(), "focus"),
+              in_state(choice(), "disabled"),
+              text("see open state below", "type.monoSm", "text.lo"))
+
+    def sources():
+        widget = Dropdown()
+        widget.add_section("Your folders")
+        widget.add_item("all", count=12547)
+        widget.add_item("filter", count=836)
+        widget.add_item("new", count=3366)
+        widget.add_separator()
+        for option in ("All folders", "Not in any folder", "Everything you have"):
+            widget.add_item(option)
+        widget.setCurrentIndex(3)
+        widget.setFixedWidth(190)
+        return widget
+
+    sort = choice("Sort")
+    sort.clear()
+    for option in ("Known first", "Most new", "A to Z"):
+        sort.add_item(option)
+    table.add("Dropdown extras", "prefix, section, counts",
+              sort, sources(), in_state(sources(), "focus"))
+
+    section.body.addSpacing(10)
+    row = QHBoxLayout()
+    row.setSpacing(40)
+    for build, hot, note in ((choice, 1, "Dropdown open: the popup on surface.popup at elev.3, 4px "
+                                 "padding, rows at r.sm. The chosen row carries accent.soft "
+                                 "and a check; the hovered row surface.raised."),
+                        (sources, 2, "Section rows (YOUR FOLDERS) and separators are never "
+                                  "chosen; counts sit right in mono, and the closed box "
+                                  "shows the chosen row's count.")):
+        column = QVBoxLayout()
+        column.setSpacing(theme.POPUP_GAP)
+        box = in_state(build(), "focus")
+        column.addWidget(box)
+        popup = DropdownPopup(box, embedded=True)
+        popup.set_hot_row(hot)
+        column.addWidget(popup)
+        column.addStretch()
+        row.addLayout(column)
+        words = text(note, "type.bodySm", "text.mid", wrap=True)
+        words.setFixedWidth(250)
+        row.addWidget(words, 0, Qt.AlignTop)
+    row.addStretch()
+    section.body.addLayout(row)
+    return section
+
+
+def selection_section() -> Section:
+    from app.ui.kit import Checkbox, Pagination, SegmentedControl, Toggle
+
+    section = Section(9, "Selection controls",
+                      "The tick is instant; the Toggle's knob and track move together "
+                      "over motion.base, and jump when motion is off.")
+    table = StateTable(section, ("OFF", "HOVER", "ON", "INDETERMINATE / ON HOVER",
+                                 "DISABLED", "FOCUS"))
+
+    def check(state=Qt.Unchecked):
+        widget = Checkbox("Verify after move", tristate=True)
+        widget.setCheckState(state)
+        return widget
+
+    table.add("Checkbox", "",
+              check(), in_state(check(), "hover"), check(Qt.Checked),
+              check(Qt.PartiallyChecked), in_state(check(), "disabled"),
+              in_state(check(), "focus"))
+
+    def switch(on: bool = False):
+        return Toggle("Restart Wallpaper Engine", checked=on)
+
+    table.add("Toggle", "34×18 · knob 12px",
+              switch(), in_state(switch(), "hover"), switch(True),
+              in_state(switch(True), "hover"), in_state(switch(), "disabled"),
+              in_state(switch(), "focus"))
+
+    section.body.addSpacing(12)
+    segments = StateTable(section, BUTTON_STATES)
+
+    def segmented(labels=("Queue", "Shown")):
+        return SegmentedControl(labels)
+
+    segments.add("SegmentedControl", "2–3 segments · exclusive",
+                 *(in_state(segmented(), state) for state in _BUTTON_ORDER))
+    segments.add("SegmentedControl 3", "the most it takes",
+                 *(in_state(segmented(("All", "Problems", "Shown")), state)
+                   for state in _BUTTON_ORDER))
+    section.body.addWidget(text(
+        "Selected segment is surface.raised + text.hi; the rest sit on transparent with "
+        "text.mid. Never more than three segments and never a lone one — for a binary "
+        "setting use Toggle.", "type.bodySm", "text.mid", wrap=True))
+
+    section.body.addSpacing(12)
+    pages = StateTable(section, ("DEFAULT", "HOVER", "IN THE MIDDLE", "AT LAST PAGE"))
+    hovered = Pagination(pages=6, current=1)
+    hovered.force_state = "hover"
+    pages.add("Pagination", "gallery and table footers",
+              Pagination(pages=6, current=1), hovered, Pagination(pages=6, current=3),
+              Pagination(pages=6, current=6))
+    section.body.addWidget(text(
+        "Current page is an accent fill; the rest are ghost. At most four numbers — first, "
+        "current, current+1, last — and an ellipsis for each gap. Both chevrons are "
+        "IconButtons at 22px and go disabled at the ends. Below two pages the whole "
+        "control is hidden, not disabled.", "type.bodySm", "text.mid", wrap=True))
+    return section
+
+
+def chips_section() -> Section:
+    from app.ui.kit import Chip
+    from app.ui.kit.chips import VARIANTS
+
+    section = Section(10, "Chips and badges",
+                      "Chip variants are semantic, not decorative — the colour is the "
+                      "meaning. Fourteen in total and no more: a screen that needs a new "
+                      "word reuses the nearest variant with its own text.")
+    names = list(VARIANTS)
+    library, jobs = names[:8], names[8:]
+
+    def strip(variants) -> QHBoxLayout:
+        row = QHBoxLayout()
+        row.setSpacing(10)
+        for name in variants:
+            row.addWidget(Chip(name))
+        row.addStretch()
+        return row
+
+    def named(variants, columns: int, notes: dict[str, str] | None = None) -> QGridLayout:
+        grid = QGridLayout()
+        grid.setHorizontalSpacing(22)
+        grid.setVerticalSpacing(12)
+        for i, name in enumerate(variants):
+            cell = QHBoxLayout()
+            cell.setSpacing(9)
+            cell.addWidget(Chip(name), 0, Qt.AlignVCenter)
+            words = QVBoxLayout()
+            words.setSpacing(1)
+            words.addWidget(text(f"Chip.{name}", "type.monoSm", "text.lo"))
+            if notes:
+                words.addWidget(text(notes[name], "type.caption", "text.mid"))
+            cell.addLayout(words, 1)
+            grid.addLayout(cell, i // columns, i % columns)
+        for column in range(columns):
+            grid.setColumnStretch(column, 1)
+        return grid
+
+    section.body.addLayout(strip(library))
+    section.body.addLayout(named(library, 4))
+    section.body.addWidget(divider())
+
+    states = QHBoxLayout()
+    states.setSpacing(26)
+    for state in ("default", "hover", "selected", "disabled"):
+        chip = Chip("Duplicated")
+        if state == "hover":
+            chip.force_state = "hover"
+        elif state == "selected":
+            chip.set_selected(True)
+        elif state == "disabled":
+            chip.setEnabled(False)
+        pair = QHBoxLayout()
+        pair.setSpacing(9)
+        pair.addWidget(chip)
+        pair.addWidget(text(state, "type.monoSm", "text.lo"))
+        states.addLayout(pair)
+    own = QHBoxLayout()
+    own.setSpacing(9)
+    own.addWidget(Chip("Duplicated", "Already have"))
+    own.addWidget(text('Chip("Duplicated", "Already have") — text apart from variant',
+                       "type.monoSm", "text.lo"))
+    states.addLayout(own)
+    states.addStretch()
+    section.body.addLayout(states)
+
+    section.body.addSpacing(10)
+    section.body.addWidget(overline("Job and file state — Creator and Copier"))
+    section.body.addLayout(strip(jobs))
+    section.body.addLayout(named(jobs, 3, {
+        "Tagged": "Creator — file already carries tags",
+        "NeedsTags": "Creator — blocks the build unless skipped",
+        "AutoTagged": "Creator — tags guessed, not confirmed",
+        "Copying": "Copier — job in flight",
+        "Done": "Copier and Creator — finished item",
+        "Failed": "Copier — job stopped, retry offered",
+    }))
+    return section
+
+
+def panels_section() -> Section:
+    from app.ui.kit import (Callout, CardTitle, GhostButton, GlassPanel, MetricStrip,
+                            Overline, SecondaryButton)
+
+    section = Section(11, "Panels",
+                      "GlassPanel is the card: glass, a hairline edge, the sheen, elev.2. "
+                      "A verdict changes only its edge. Overline, CardTitle, Callout and "
+                      "MetricStrip are what goes inside.")
+    tones = QHBoxLayout()
+    tones.setSpacing(14)
+    for tone, words in ((None, "default"), ("ok", "finished cleanly"),
+                        ("warn", "finished with problems"), ("danger", "failed"),
+                        ("accent", "the active tool")):
+        panel = GlassPanel(tone=tone)
+        inside = QVBoxLayout(panel)
+        inside.setSpacing(6)
+        inside.addWidget(Overline(f"tone={tone or 'none'}"))
+        inside.addWidget(text(words, "type.bodySm", "text.mid"))
+        panel.setFixedHeight(84)
+        tones.addWidget(panel, 1)
+    section.body.addLayout(tones)
+    section.body.addSpacing(8)
+
+    row = QHBoxLayout()
+    row.setSpacing(14)
+
+    left = GlassPanel(tone="warn", padding="lg")
+    column = QVBoxLayout(left)
+    column.setSpacing(12)
+    title = CardTitle("Run 38 finished with 2 problems")
+    column.addWidget(title)
+    column.addWidget(text("1 000 folders moved in, 998 returned. Two folders were in use "
+                          "and stayed where they were.", "type.bodySm", "text.mid", wrap=True))
+    column.addWidget(MetricStrip([(1000, "moved in"), (998, "returned"), (3, "duplicates"),
+                                  (2, "failed", "danger")]))
+    column.addWidget(Callout("Wallpaper Engine is still showing the old playlist. Rebuild it "
+                             "from here or restart the app.", tone="danger"))
+    column.addStretch()
+    row.addWidget(left, 1)
+
+    right = GlassPanel(padding="md")
+    column = QVBoxLayout(right)
+    column.setSpacing(11)
+    head = CardTitle("The loop", "run 38 · started 13:41")
+    head.add_action(GhostButton("Open Rotator →", size="sm"))
+    column.addWidget(head)
+    column.addWidget(Overline("Callouts"))
+    column.addWidget(Callout("The Tracker is counting again — 201 on the playlist."))
+    column.addWidget(Callout("Timestamps marked ~ were reconstructed after a restart.",
+                             tone="info"))
+    column.addWidget(Callout("Files are moved out of the source folder, not copied.",
+                             tone="warn", title="Move empties the source folder"))
+    stopped = Callout("Access denied writing to the destination. The folder is open in "
+                      "Wallpaper Engine.", tone="danger", title="A job stopped after 1 item")
+    stopped.add_action(SecondaryButton("Retry"))
+    stopped.add_action(GhostButton("Skip", size="sm"))
+    column.addWidget(stopped)
+    column.addWidget(Callout("37 wallpapers created.", tone="ok"))
+    column.addWidget(Overline("MetricStrip, unruled"))
+    column.addWidget(MetricStrip([(89, "new items seen"), (12, "subscribed", "info"),
+                                  (4, "already had", "warn"), (2, "were yours", "ok")],
+                                 ruled=False))
+    row.addWidget(right, 1)
+    section.body.addLayout(row)
+    return section
+
+
 # ---- the page -------------------------------------------------------------------------
 
 # Every section, in the design system's order. Kit steps add theirs here.
@@ -644,6 +1047,11 @@ SECTIONS = {
     "motion": motion_section,
     "icons": icons_section,
     "controls": controls_section,
+    "buttons": buttons_section,
+    "inputs": inputs_section,
+    "selection": selection_section,
+    "chips": chips_section,
+    "panels": panels_section,
 }
 
 
@@ -666,6 +1074,15 @@ def build_page(names) -> tuple[Page, dict[str, Section]]:
     return page, built
 
 
+def settle(page: Page) -> None:
+    """Size the page again once it is on screen. Widgets take the stylesheet
+    when they are first shown, which can change their size; measured before
+    that, the page comes out short and Qt squeezes the rows to fit."""
+    QApplication.processEvents()
+    page.resize(PAGE_WIDTH, page.layout().totalHeightForWidth(PAGE_WIDTH))
+    QApplication.processEvents()
+
+
 def wait(ms: int) -> None:
     loop = QEventLoop()
     QTimer.singleShot(ms, loop.quit)
@@ -677,6 +1094,8 @@ def grab(which: str, out: Path) -> list[Path]:
     names = list(SECTIONS) if which == "all" else [which]
     page, built = build_page(names)
     page.show()
+    page.setFocus()               # no control starts with focus it was not given
+    settle(page)
     wait(300)                     # let the loops reach a frame worth seeing
     saved = []
     for name, section in built.items():
@@ -715,6 +1134,8 @@ def main() -> int:
     scroll.setStyleSheet(f"QScrollArea {{ background: {theme.css('bg.solid')}; }}")
     scroll.resize(PAGE_WIDTH + 24, 900)
     scroll.show()
+    page.setFocus()
+    settle(page)
     return app.exec()
 
 

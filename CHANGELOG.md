@@ -6,6 +6,34 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [2.2.2] - 2026-09-24
+
+The second step of the redesign: the kit's controls exist, with every state,
+and nothing in the app uses them yet. **Nothing you can see changes**; this is
+for the pages that come next.
+
+### Added
+
+- **Kit controls** in `app/ui/kit/`, named as in the design: `AccentButton`,
+  `SecondaryButton`, `DangerButton`, `GhostButton` (and its outlined header
+  variant), `IconButton`; `TextInput`, `SpinBox`, `Dropdown`; `Checkbox`,
+  `Toggle`, `SegmentedControl`, `Pagination`; `Chip` in its fourteen variants;
+  `GlassPanel`, `Overline`, `CardTitle`, `Callout`, `MetricStrip`. Each has the
+  design's five states. The focus ring shows only when the keyboard brought
+  focus there, a button's fill eases over 140 ms (and changes at once with
+  Windows' animations off), and shadows and rings are drawn outside the box
+  without moving it. A `DangerButton` is never a dialog's default button, so
+  Enter cannot delete. See [the kit](docs/development.md#the-kit).
+- The kit preview (`tools\kit_preview.py`) shows them all, laid out like the
+  design system's Buttons, Inputs, Selection and Chips pages, and Panels.
+- `tests/test_kit_controls.py`: 95 checks.
+
+### Changed
+
+- `theme.py` gains the tokens the controls use (the tinted edges of chips,
+  callouts and panels, a neutral callout ground, two type styles) and the
+  component sizes, so no kit module holds a number of its own.
+
 ## [2.2.1] - 2026-09-23
 
 ### Fixed
@@ -379,7 +407,8 @@ restructured yet; the tabs keep their layout and take on the new look.
   was right for one library and wrong for every other. Nothing is tagged now
   unless you ask for it.
 
-[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v2.2.1...HEAD
+[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v2.2.2...HEAD
+[2.2.2]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v2.2.1...v2.2.2
 [2.2.1]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v2.2.0...v2.2.1
 [2.2.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v2.1.1...v2.2.0
 [2.1.1]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v2.1.0...v2.1.1
