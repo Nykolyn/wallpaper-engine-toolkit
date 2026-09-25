@@ -41,7 +41,8 @@ app/
 │       ├── core.py       + the [protected] rule
 │       └── worker.py     + closing and restarting Wallpaper Engine around a run
 └── ui/
-    ├── kit/              the redesign's components; so far the icons (icons.py)
+    ├── kit/              the redesign's components: icons, and the controls
+    │                       (base, buttons, inputs, selection, chips, panels)
     ├── copier_tab.py, creator_tab.py
     ├── rotator_tab.py, cleanup_dialog.py
     ├── tracker_tab.py
@@ -83,6 +84,7 @@ for %f in (tests\test_*.py) do .venv\Scripts\python.exe %f
 | `test_autostart.py` | the command line, the task XML, and the rename migration |
 | `test_theme.py` | every token parses, text stays legible on glass, fonts, shadows, the stylesheet fills in and ticks its check boxes |
 | `test_icons.py` | every icon draws, in the colour and at the size asked; unknown names raise |
+| `test_kit_controls.py` | every kit control in every state; the fourteen chips, the Pagination rule, the Toggle with motion off, Dropdown rows that cannot be chosen, a DangerButton that never takes Enter, the ring for the keyboard only |
 | `test_animations.py` | motion, by sampling real widgets over real time; the curve, the loops, reduced motion |
 | `test_steam_api.py` | the Web API client and its cache |
 | `test_authors_store.py` | the authors database: transactions, snapshots, pruning, the second folder, restoring, damaged files |
@@ -174,6 +176,14 @@ the temp folder (a stylesheet only takes a file), named by their contents so
 two versions running side by side never share one. `--selfcheck` confirms the
 build can read SVG; without it a check box would never show its tick.
 
+The kit's fields and check box are Qt's own controls under the same
+stylesheet; its rules select them by class name (`TextInput`, `Dropdown`) and
+by the properties the classes set: `forceState`, `error`, `focusVisible`. Kit
+labels name their colour with a `tone` property (`QLabel[tone="lo"]`) rather
+than carrying a stylesheet each. Component sizes come from the metrics at the
+end of `theme.py` (`BUTTON`, `CONTROL_HEIGHT`, `CHIP_HEIGHT`, …), as `$(px:…)`
+in the template.
+
 `theme.apply(app)` sets Fusion, the palette, the font and the stylesheet, and
 reads Windows' animation switch. The old tabs' helpers (`label_style`,
 `console_style`, `card_style`, `status_color`, `level_color`, `kind_color`,
@@ -227,19 +237,56 @@ animations), dialogs, and numbers (they step, they do not roll).
 `animations.ENABLED = False`: every transition becomes an instant change and
 the loops stand on their resting frame.
 
+### The kit
+
+`app/ui/kit/` holds the components the redesigned pages are built from. Each
+class is named as in the design, and each has all of the design's states.
+Nothing in the app uses them yet; the pages move onto them one step at a time.
+
+| Module | Classes |
+|---|---|
+| `buttons.py` | `AccentButton` (the one action that starts the work), `SecondaryButton`, `DangerButton` (never a dialog's default, so Enter cannot delete), `GhostButton` (`outlined=True` for page headers), `IconButton` (30 px, or 22 px as `size="sm"`; its tool tip is required). Text buttons take a leading `icon=`, a trailing `key="Ctrl+V"` cap, and `size="sm"`/`"md"`/`"lg"`. |
+| `inputs.py` | `TextInput` (`search=True`, `set_error(message)`), `SpinBox` (mono, `1 000` with a no-break space), `Dropdown` (`add_item(text, data, count=)`, `add_section`, `add_separator`, `prefix="SORT"`) and its list, `DropdownPopup` |
+| `selection.py` | `Checkbox`, `Toggle` (`knob_position`), `SegmentedControl` (two or three segments, `changed`), `Pagination` (`page_changed`), `page_numbers(pages, current)` |
+| `chips.py` | `Chip(variant, text=None)` in exactly fourteen variants; `chip_pixmap` and `chip_size` for delegates |
+| `panels.py` | `GlassPanel` (`tone=`, `padding=`), `Overline`, `CardTitle`, `Callout` (`tone=`, `title=`, `add_action`), `MetricStrip` |
+| `base.py` | the state model and the surfaces, below; `label(text, type, tone)` and `Glyph` |
+
+**States.** Every interactive control follows the design's five: default,
+hover (the pointer only), pressed, disabled, and a focus ring that shows when
+the keyboard brought focus there — never after a click. Fields you type into
+are the exception: their ring shows whenever they have focus, as a browser's
+do. `force_state = "hover" | "pressed" | "focus"` draws a state without a
+pointer or a keyboard, for the kit preview and snapshots; the app never sets it.
+A button's fill eases between states over `motion.base`; its edge, text and box
+change at once, and with motion off so does the fill.
+
+**Painting outside the box.** CSS draws a shadow and a focus ring round a box
+without either taking room in the layout; Qt clips every widget to its own
+rectangle. So a control that draws outside itself (a `base.Caster`) hands that
+part to the *surface* behind it — the nearest `GlassPanel`, a scroll area's
+viewport, or any widget passed to `base.declare()` whose paintEvent then calls
+`base.paint(painter, self, event.rect())` after its own ground. The surface
+draws the outside parts before its children, which is where CSS puts them,
+and repaints only the strip round a control whose outside changed. Put kit
+controls on a surface; on anything else their shadow and ring may be hidden by
+the parent's own background.
+
 ### The kit preview
 
 ```
 .venv\Scripts\python.exe tools\kit_preview.py
-.venv\Scripts\python.exe tools\kit_preview.py --grab icons icons.png
+.venv\Scripts\python.exe tools\kit_preview.py --grab buttons buttons.png
 .venv\Scripts\python.exe tools\kit_preview.py --grab all <folder>
 ```
 
 A development window that draws the design system from the app's own code:
-Colour, Type, Space/Radius/Elevation, Motion (the loops, live) and Icons. It is
-not bundled and nothing in `app/` imports it. `--grab` renders a section
-offscreen at 100 %, which is how a change is compared with the design's own
-pictures. Each step that adds components to the kit adds their section here.
+Colour, Type, Space/Radius/Elevation, Motion (the loops, live), Icons, Qt's
+standard controls, and the kit's Buttons, Inputs, Selection, Chips and Panels
+with every state in a row. It is not bundled and nothing in `app/` imports it.
+`--grab` renders a section offscreen at 100 %, which is how a change is
+compared with the design's own pictures. Each step that adds components to the
+kit adds their section here.
 
 ## Conventions
 
