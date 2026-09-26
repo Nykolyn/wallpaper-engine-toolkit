@@ -50,6 +50,20 @@ and the next start tries again. `--selfcheck` and `tracker.log` say which
 happened, in their `data:` line. A named mutex keeps the tray and the window
 from moving it at the same time.
 
+**Not from inside another app's sandbox.** A Store app's terminal — the Claude
+desktop app's, for one — runs what it starts inside that app's sandbox, where
+every file and folder it creates under `%LOCALAPPDATA%` lands in the app's
+private copy (`%LOCALAPPDATA%\Packages\<app>\LocalCache\Local`) while reading as
+if it had gone to the real folder; only files that already exist are changed in
+place. Nothing started outside that app ever sees the copy. The
+first start of 3.0.0 was a `--selfcheck` run from such a terminal: it moved the
+data into Claude's copy, and the tray tracker, started by Task Scheduler, found
+the real folder empty and began a new one. From 3.0.1 a start that finds itself
+in a sandbox moves, creates and marks nothing, and its `data:` line says which
+app's sandbox it is in — and warns if that app holds a copy of the data folder.
+The move is left to the next start outside it: the tracker at logon, or
+`schtasks /run /tn WallpaperEngineToolkitTracker`.
+
 A build older than 3.0.0 does not look in `%LOCALAPPDATA%`: going back to one
 means copying the folder back — see
 [Building](building.md#updating-an-installed-copy).

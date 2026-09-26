@@ -80,7 +80,10 @@ ok      preview downloads (HTTP 404 from the host)
 testing the build and not the source tree. `data:` is where the data is. The
 first start after a 2.x build is the one that moves it, and says so on that
 line: how many files, each verified, and that the old folder went to the
-Recycle Bin. A 404 from the preview host is a
+Recycle Bin — unless it runs inside another app's sandbox, a terminal in the
+Claude desktop app for one; then the line names that app and nothing is moved
+(see [Configuration](configuration.md#moved-out-of-the-program-folder-in-300)).
+A 404 from the preview host is a
 pass: any answer at all means the connection works.
 
 ## Updating an installed copy
@@ -107,9 +110,11 @@ schtasks /run /tn WallpaperEngineToolkitTracker
 3. **Build.** No data is touched — see
    [above](#what-the-build-script-does-around-pyinstaller).
 4. **Selfcheck** the new exe, as above. Coming from 2.x, this is the start that
-   moves the data.
+   moves the data — when run from a plain `cmd`. From a Store app's terminal
+   its `data:` line names the app's sandbox instead, and the move is step 5's.
 5. **Start the tracker again.** `tracker.log` gains a `data:` line and a
-   `running; tray icon visible: True` line.
+   `running; tray icon visible: True` line. Task Scheduler starts it outside
+   any sandbox, so this start moves the data if the selfcheck did not.
 
 Measured going from 1.2.1 to 2.0.0: 52 s for the build, and all 365 files in
 `data\` identical afterwards except `tracker.log`, which had gained the
