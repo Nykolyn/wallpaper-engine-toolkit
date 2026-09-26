@@ -6,6 +6,26 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [3.0.1] - 2026-09-26
+
+### Fixed
+
+- **A start inside another app's sandbox no longer moves the data there.** A
+  Store app's terminal — the Claude desktop app's, for one — runs what it
+  starts inside that app's sandbox, where files and folders it creates under
+  `%LOCALAPPDATA%` land in the app's private copy while reading as if they had
+  gone to the real folder.
+  The first start of 3.0.0 was a `--selfcheck` from such a terminal. It moved
+  the data into Claude's copy, and the tray tracker, started by Task Scheduler,
+  found the real folder empty, began a new one, and ran on it for three
+  minutes; a window opened in that time showed the Rotator unset and no
+  history. The data was copied to the real folder, verified file by file, and
+  nothing was lost. Now a start that finds what it creates redirected — it makes
+  a folder and looks for it among the apps' private copies — moves, creates and
+  marks nothing, names the app in its `data:` line, and warns if that app holds
+  a copy of the data folder. The move is left to the next start outside it.
+  See [Where things live](docs/configuration.md#moved-out-of-the-program-folder-in-300).
+
 ## [3.0.0] - 2026-09-26
 
 The data moves out of the program folder, and the Rotator's history can no
@@ -497,7 +517,8 @@ restructured yet; the tabs keep their layout and take on the new look.
   was right for one library and wrong for every other. Nothing is tagged now
   unless you ask for it.
 
-[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.0.0...HEAD
+[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.0.1...HEAD
+[3.0.1]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.0.0...v3.0.1
 [3.0.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v2.2.3...v3.0.0
 [2.2.3]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v2.2.2...v2.2.3
 [2.2.2]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v2.2.1...v2.2.2
