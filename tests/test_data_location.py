@@ -177,6 +177,63 @@ check("with nothing beside the exe, it is adopted rather than writing beside the
       got.folder == new and (new / dl.MARKER).exists() and "adopted" in got.report
       and not old.exists())
 
+# ---- inside another app's sandbox -----------------------------------------------
+#
+# A process started from a Store app's terminal writes %LOCALAPPDATA% into that
+# app's private copy. The first start of 3.0.0 was such a process, and moved the
+# data where the tray tracker could not see it.
+
+print("-- inside another app's sandbox --")
+old, new = scene("sandbox-move")
+files = fill(old)
+bin_ = Bin()
+got = dl.settle(old, new, recycle=bin_, sandbox="Some.App_1234")
+check("data beside the exe is not moved; it stays in use",
+      got.folder == old and same(old, files) and bin_.got == [])
+check("no new folder and no marker are made",
+      not new.exists())
+check("the report names the app and says the next start outside it moves it",
+      "Some.App_1234" in got.report and "next start outside" in got.report)
+got = dl.settle(old, new, recycle=bin_)
+check("that next start, outside, does move it", got.folder == new and same(new, files))
+
+old, new = scene("sandbox-moved")
+dl.settle(old, new, recycle=Bin())
+before = sorted(p.name for p in new.iterdir())
+got = dl.settle(old, new, recycle=Bin(), sandbox="Some.App_1234")
+check("a folder already marked is used, and nothing is written to it",
+      got.folder == new and sorted(p.name for p in new.iterdir()) == before
+      and "changed in place" in got.report)
+
+old, new = scene("sandbox-fresh")
+got = dl.settle(old, new, recycle=Bin(), sandbox="Some.App_1234")
+check("with no data anywhere, nothing is marked",
+      not (new / dl.MARKER).exists() and "not set up yet" in got.report)
+
+old, new = scene("sandbox-copy")
+copy = dl.sandbox_copy(new, "Some.App_1234")
+check("the app's copy is looked for under Packages\\<app>\\LocalCache\\Local",
+      copy == new.parent / "Packages" / "Some.App_1234" / "LocalCache" / "Local" / new.name)
+copy.mkdir(parents=True)
+(copy / "selfcheck.txt").write_text("version: 3.0.1")
+got = dl.settle(old, new, recycle=Bin(), sandbox="Some.App_1234")
+check("a selfcheck report left in the app's copy is not taken for data",
+      "WARNING" not in got.report)
+(copy / "history.json").write_text('{"runs": []}')
+got = dl.settle(old, new, recycle=Bin(), sandbox="Some.App_1234")
+check("a copy of the data inside the app's sandbox is warned about, by path",
+      "WARNING" in got.report and str(copy) in got.report)
+
+print("-- finding the sandbox --")
+where = dl.redirected_into()
+local = dl.installed_dir().parent
+check("it names an app with a private copy, or none — whichever this process is in",
+      where == "" or (local / "Packages" / where / "LocalCache").is_dir())
+check("and leaves no probe folder behind",
+      not any(p.name.startswith(dl.APP_FOLDER + ".write-probe")
+              for p in local.iterdir()))
+print(f"     (this process: {where or 'not in a sandbox'})")
+
 # ---- how the folder is chosen -------------------------------------------------
 
 print("-- choosing the folder --")
