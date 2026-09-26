@@ -16,6 +16,7 @@ app/
 ├── main_window.py        the QMainWindow and the tab strip, on the app's gradient
 ├── theme.py              the design tokens: colour, type, space, radius, shadows, the stylesheet
 ├── animations.py         motion tokens, the easing curve, reduced motion, the shared loops
+├── data_location.py      where the data folder is, and moving it out of the program folder
 ├── settings.py           data/suite.json
 ├── secrets.py            data/secrets.json, DPAPI-encrypted
 ├── workers.py            Qt signal bridges for the callback engines

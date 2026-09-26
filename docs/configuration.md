@@ -4,14 +4,24 @@ Every setting, every file this app writes, and what is worth backing up.
 
 ## Where things live
 
-Everything is written **next to the application**: `data/` beside the executable
-in a build, or beside `run_app.py` in a source run. Nothing goes into
-`%APPDATA%`, the registry (except the one autostart entry) or anywhere else, so
-a whole installation is one folder you can copy or delete.
+A built toolkit keeps everything it writes in **one folder of its own:
+`%LOCALAPPDATA%\WallpaperEngineToolkit`** — not beside the exe. The program
+folder is what a build replaces, an update overwrites and an uninstall deletes;
+the data is outside all three. A source run keeps its data in `data\` beside
+`run_app.py` instead, so working on the code never touches the copy you use.
+These pages call the folder `data/` either way. Nothing else is written
+anywhere, apart from the one autostart entry.
+
+`WALLPAPER_TOOLKIT_DATA`, if set, names a different folder outright — for a test
+build that must not see the real data.
 
 ```
 data/
+├── data-folder.json        marks this as the data folder, and says where it was moved from
 ├── suite.json              Copier, Creator, Review and Tracker settings
+├── config.json             the Rotator's five settings
+├── history.json            one record per rotation run
+├── history_backup/         the history as it was after each of the last 30 saves
 ├── secrets.json            the Steam API key, DPAPI-encrypted
 ├── authors.sqlite          the Review tab's authors database
 ├── tracker.json            the live cycle per monitor, plus 40 finished ones
@@ -23,15 +33,26 @@ data/
 ├── thumbs/                 cached preview images
 ├── authors_backup/         a snapshot of the authors after every change, and journal.jsonl
 └── playlist-refresh/       Wallpaper Engine's two files before the last rotation rewrote them
-
-app/engines/data/
-├── config.json             the Rotator's five settings
-└── history.json            one record per rotation run
 ```
 
-> The Rotator keeps its own two files beside its engine rather than in `data/`.
-> That is how the standalone tool did it, and the [Tracker](tracker.md) reads
-> `history.json` from there to date a cycle.
+### Moved out of the program folder in 3.0.0
+
+Until 3.0.0 a build kept this folder as `data\` beside the exe — inside the
+folder a build rewrites. On 2026-09-20 a build run the wrong way emptied it. The
+Steam key was missed and put back; the Rotator's history was not, and the next
+rotation six days later began a new one.
+
+The first start of 3.0.0 or later moves it, once. Every file is copied to a
+staging folder and compared with its original — size and SHA-256 — and only
+then does the copy become the data folder and the old `data\` go to the
+Recycle Bin. If anything fails, nothing is deleted, the old folder stays in use,
+and the next start tries again. `--selfcheck` and `tracker.log` say which
+happened, in their `data:` line. A named mutex keeps the tray and the window
+from moving it at the same time.
+
+A build older than 3.0.0 does not look in `%LOCALAPPDATA%`: going back to one
+means copying the folder back — see
+[Building](building.md#updating-an-installed-copy).
 
 > `suite.json` keeps its original filename. It is an internal data file, and
 > renaming it would orphan settings for no visible benefit.
@@ -104,9 +125,9 @@ have.
 | | Why |
 |---|---|
 | `data/tracker.json` | the only record of what has been shown |
-| `app/engines/data/history.json` | dates every cycle, and cannot be rebuilt |
+| `data/history.json` and `data/history_backup/` | what keeps a rotation from repeating the last ones, and what dates every cycle; it cannot be rebuilt. The snapshots are made for you — see [the Rotator](rotator.md#the-history-is-not-lost-quietly). |
 | `data/authors.sqlite` and `data/authors_backup/` | every author you have visited, and when — years of review, and nowhere else. The backups are made for you; **Second copy in** under **Authors database…** puts them on another disk as well. See [Backups](authors-database.md#backups). |
-| `data/suite.json`, `app/engines/data/config.json` | your settings; small, easily lost |
+| `data/suite.json`, `data/config.json` | your settings; small, easily lost |
 
 **Not** worth backing up: `thumbs/` and `steam_cache.sqlite` are caches that
 rebuild themselves, and `library.json` rebuilds in about four minutes.

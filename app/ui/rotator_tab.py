@@ -174,6 +174,12 @@ class RotatorTab(QWidget):
         header.addWidget(refresh)
         layout.addLayout(header)
 
+        self.history_notice = QLabel()
+        self.history_notice.setWordWrap(True)
+        self.history_notice.setStyleSheet(theme.label_style("warn", weight=600))
+        self.history_notice.hide()
+        layout.addWidget(self.history_notice)
+
         self.history_tree = QTreeWidget()
         self.history_tree.setHeaderLabels(["Run / Folder", "Details"])
         self.history_tree.setColumnWidth(0, 360)
@@ -236,6 +242,10 @@ class RotatorTab(QWidget):
         self.history_tree.clear()
         runs = self.history.runs
         self.history_summary.setText(f"History: {len(runs)} runs")
+        # What happened to the file on disk, if anything did: put back from a
+        # snapshot, set aside unread. It stays up until the window is closed.
+        self.history_notice.setText(self.history.notice)
+        self.history_notice.setVisible(bool(self.history.notice))
         for r in runs:
             top = QTreeWidgetItem([
                 f"{r.timestamp}   (run {r.id})",
@@ -383,6 +393,8 @@ class RotatorTab(QWidget):
         )
         if p["will_reset"]:
             msg += "\n⚠ Not enough unique folders left — history will RESET and reuse all."
+        if self.history.notice:
+            msg += f"\n⚠ {self.history.notice}"
         if QMessageBox.question(self, "Start rotation?", msg) != QMessageBox.Yes:
             return
 

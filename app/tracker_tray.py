@@ -418,6 +418,10 @@ def _wait_for_tray() -> bool:
 def run_tray() -> int:
     """Entry point for `--tracker`: a tray-only application with no window."""
     log(f"starting: pid {os.getpid()}, {sys.executable}")
+    # The tracker starts first at logon, so it is usually what moves the data
+    # out of the program folder; this is the line that says it did.
+    from .data_location import resolve
+    log(f"data: {resolve().report}")
     try:
         if not _claim_single_instance():
             log("another tracker already has the tray — exiting")

@@ -63,11 +63,14 @@ def _selfcheck() -> int:
     in a file instead.
     """
     from app.settings import app_data_dir
+    from app.data_location import resolve
 
     from app import __version__
 
     lines = [f"version: {__version__}",
-             f"frozen: {bool(getattr(sys, 'frozen', False))}"]
+             f"frozen: {bool(getattr(sys, 'frozen', False))}",
+             # Where the data is, and whether it was just moved there.
+             f"data: {resolve().report}"]
     ok = True
     for module, why in (("PySide6.QtWidgets", "the window"),
                         ("sqlite3", "the authors database and the Steam cache"),

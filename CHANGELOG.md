@@ -6,6 +6,52 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [3.0.0] - 2026-09-26
+
+The data moves out of the program folder, and the Rotator's history can no
+longer disappear without a word.
+
+On 2026-09-20 a build run the wrong way emptied
+`dist\WallpaperEngineToolkit\data`. The Steam key was noticed and put back; the
+Rotator's history, with the runs of 12 and 19 September, was not. Nothing said
+so, and the rotation of 26 September began a new history: "History: 1 runs".
+
+### Changed
+
+- **A built toolkit keeps its data in `%LOCALAPPDATA%\WallpaperEngineToolkit`**,
+  not in `data\` beside the exe. The program folder is what a build replaces, an
+  update overwrites and an uninstall deletes; nothing that happens to it can
+  reach the data now. The first start moves the folder, once: every file is
+  copied and compared with its original by size and SHA-256, and only then does
+  the old `data\` go to the Recycle Bin. If anything fails, nothing is deleted,
+  the old folder stays in use, and the next start tries again. `--selfcheck` and
+  `tracker.log` say where the data is and whether it was just moved. A source
+  run keeps `data\` beside `run_app.py`; `WALLPAPER_TOOLKIT_DATA` names any
+  other folder. See [Where things live](docs/configuration.md#where-things-live).
+- **Breaking:** a build older than 3.0.0 does not look there. Going back to one
+  means copying the folder back first — see
+  [Building](docs/building.md#updating-an-installed-copy).
+- A source run keeps the Rotator's `config.json` and `history.json` in `data\`
+  with everything else, no longer in `app/engines/data/`.
+
+### Fixed
+
+- **The Rotator's history is never lost quietly.** Each save writes the whole
+  file under a temporary name that then replaces the old one, and keeps a
+  snapshot in `history_backup/` (the newest 30). A missing `history.json` is
+  put back from the newest snapshot; an unreadable one is renamed
+  `history.unreadable-<time>.json`, never written over, and put back the same
+  way. Before, either read as an empty history, and the next rotation saved it
+  over the old one. The History tab and the question before a rotation say
+  what happened, and a file that can be neither read nor renamed stops
+  rotations until it can. See
+  [the Rotator](docs/rotator.md#the-history-is-not-lost-quietly).
+- A run with a key this version does not know no longer makes the whole history
+  unreadable: the run is read and the key written back. Going back to an older
+  version after a newer one had added a field lost every run that way.
+- An unreadable `config.json` is renamed `config.unreadable-<time>.json` before
+  the Rotator's defaults are written, rather than overwritten by them.
+
 ## [2.2.3] - 2026-09-25
 
 The third step of the redesign: the kit's data display — the fields, bars,
@@ -451,7 +497,8 @@ restructured yet; the tabs keep their layout and take on the new look.
   was right for one library and wrong for every other. Nothing is tagged now
   unless you ask for it.
 
-[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v2.2.3...HEAD
+[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.0.0...HEAD
+[3.0.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v2.2.3...v3.0.0
 [2.2.3]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v2.2.2...v2.2.3
 [2.2.2]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v2.2.1...v2.2.2
 [2.2.1]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v2.2.0...v2.2.1

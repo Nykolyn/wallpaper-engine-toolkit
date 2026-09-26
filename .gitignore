@@ -1,13 +1,10 @@
 # ---- Local data, never published -------------------------------------------
-# The suite writes everything it learns next to the executable (or into the
-# project root in a dev run): the DPAPI-protected secrets file, the Steam
-# response cache, downloaded thumbnails, the playlist tracker's history. None
-# of it is source, all of it is personal, and some of it is large.
+# A source run writes everything it learns into data\ at the project root (a
+# build uses %LOCALAPPDATA%): the DPAPI-protected secrets file, the Steam
+# response cache, downloaded thumbnails, the Rotator's and the tracker's
+# history, real folder paths from this machine. None of it is source, all of it
+# is personal, and some of it is large.
 /data/
-
-# The Rotator keeps its own config and history beside its engine, which puts
-# real folder paths from this machine inside the source tree.
-/app/engines/data/
 
 # ---- Build output ----------------------------------------------------------
 /build/

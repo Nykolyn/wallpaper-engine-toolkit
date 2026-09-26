@@ -39,7 +39,8 @@ All three folders are needed, as full paths — `D:\Wallpapers\reserve`, not
 Reserve, Transferred or Duplicates tab says `(not set)` and shows nothing, and
 neither a rotation nor anything on the Duplicates tab will act on it. An empty
 path would otherwise mean the folder the app was started from, which for the
-built exe is the install folder with your `data\` in it.
+built exe is the install folder — the program itself, and before 3.0.0 your
+`data\` too.
 
 The first time, build a playlist in Wallpaper Engine from what is in
 `myprojects`. From then on every rotation rebuilds it and starts it over by
@@ -155,20 +156,48 @@ seventeen times faster on a negative answer (0.9 s against 16.8 s).
 
 ## Settings and history
 
-The Rotator keeps its own files, separate from the rest of the app, exactly as
-the standalone tool did:
+Both are in the [data folder](configuration.md#where-things-live) with
+everything else. (Until 3.0.0 a source run kept them apart, in
+`app/engines/data/`, the way the standalone tool did.)
 
-- `app/engines/data/config.json` — the five settings above.
-- `app/engines/data/history.json` — one record per run: which folders moved,
+- `data/config.json` — the five settings above.
+- `data/history.json` — one record per run: which folders moved,
   which were duplicates, how many came back, what failed.
 
-History is not only a log. The [Tracker](tracker.md) reads it to date a cycle:
+History is not only a log. It is what keeps a rotation from picking what the
+last ones already showed, and the [Tracker](tracker.md) reads it to date a cycle:
 the newest run sharing at least half its folders with a playlist *is* that
 playlist's starting moment, which is the difference between an exact cycle start
 and a guess. The Tracker never writes to it.
 
 Wallpaper Engine's `config.json` and `bin/playliststate.bin`, as they were
 before the last rotation rewrote them, are in `data/playlist-refresh/`.
+
+### The history is not lost quietly
+
+It was, once: a build emptied the folder it was in, nothing said so, and the
+next rotation began a history of one run. So now:
+
+- Every save writes the whole file under a temporary name that then replaces
+  the old one — a save cut short leaves the previous version — and a snapshot
+  to `data/history_backup/`. The newest 30 are kept.
+- A `history.json` that is **missing** at start-up is put back from the newest
+  snapshot that reads.
+- One that **cannot be read** is renamed `history.unreadable-<time>.json`,
+  never written over, and put back from a snapshot the same way.
+- A run with a key this version does not know is read anyway, and the key is
+  written back as it was. (An unknown key used to make the whole file
+  unreadable, and the next rotation saved an empty history over it.)
+- Whichever happened, the History tab says so above the list, and so does the
+  question before the next rotation.
+- If the file can be neither read nor renamed, **no rotation starts** — its
+  record would replace the file — until it reads or is moved away.
+
+`config.json` is kept the same way: one that cannot be read is renamed
+`config.unreadable-<time>.json` before the defaults are written.
+
+To start the history over on purpose, delete `history.json` *and*
+`history_backup/`; with a snapshot left, the history comes back.
 
 ## Watch out for
 

@@ -18,10 +18,13 @@ WallpaperEngineToolkit.exe --selfcheck  what this build can actually import
 
 ## What the build script does around PyInstaller
 
-`dist\WallpaperEngineToolkit\data` is where a built installation keeps
-everything it has learned — the authors database and its backups, the tracker's
-history, the encrypted Steam key. PyInstaller empties its output folder before
-writing, so **it never writes there**:
+Since 3.0.0 a build keeps its data in `%LOCALAPPDATA%\WallpaperEngineToolkit`,
+outside `dist\` altogether — see [Configuration](configuration.md#where-things-live).
+An installed copy from before then still has it in
+`dist\WallpaperEngineToolkit\data` until the new build's first start moves it:
+the authors database and its backups, the Rotator's history, the encrypted
+Steam key. PyInstaller empties its output folder before writing, so **it never
+writes there**:
 
 1. It builds into `build\stage\WallpaperEngineToolkit`.
 2. Only if that succeeded, `robocopy /MIR` copies the result into
@@ -50,12 +53,13 @@ So run the selfcheck once after building:
 dist\WallpaperEngineToolkit\WallpaperEngineToolkit.exe --selfcheck
 ```
 
-It writes the report to `data\selfcheck.txt` as well as printing it. A good one
-looks like this:
+It writes the report to `selfcheck.txt` in the data folder as well as printing
+it. A good one looks like this:
 
 ```
-version: 2.2.0
+version: 3.0.0
 frozen: True
+data: C:\Users\you\AppData\Local\WallpaperEngineToolkit
 ok      PySide6.QtWidgets  (the window)
 ok      sqlite3  (the authors database and the Steam cache)
 ok      app.engines.authors_store  (the authors database)
@@ -73,7 +77,10 @@ ok      preview downloads (HTTP 404 from the host)
 ```
 
 `version:` is the build you meant to make, and `frozen: True` confirms you are
-testing the build and not the source tree. A 404 from the preview host is a
+testing the build and not the source tree. `data:` is where the data is. The
+first start after a 2.x build is the one that moves it, and says so on that
+line: how many files, each verified, and that the old folder went to the
+Recycle Bin. A 404 from the preview host is a
 pass: any answer at all means the connection works.
 
 ## Updating an installed copy
@@ -92,16 +99,17 @@ schtasks /run /tn WallpaperEngineToolkitTracker
 
 1. **Stop the tracker** — the task, or **Quit** on its tray icon — and close the
    window if it is open. Ending the task lets it shut down properly:
-   `data\tracker.log` says `stopped with code 0`.
-2. **Keep the build you are replacing**, named for its version and without its
-   `data`, so going back is a copy rather than a rebuild. `build.cmd` never
+   `tracker.log` in the data folder says `stopped with code 0`.
+2. **Keep the build you are replacing**, named for its version and without a
+   `data` it may still hold, so going back is a copy rather than a rebuild. `build.cmd` never
    touches `_previous-*` folders. (robocopy's exit codes below 8 all mean
    success; 1 is "files were copied".)
-3. **Build.** `data\` is not touched — see
+3. **Build.** No data is touched — see
    [above](#what-the-build-script-does-around-pyinstaller).
-4. **Selfcheck** the new exe, as above.
-5. **Start the tracker again.** `data\tracker.log` gains a `running; tray icon
-   visible: True` line.
+4. **Selfcheck** the new exe, as above. Coming from 2.x, this is the start that
+   moves the data.
+5. **Start the tracker again.** `tracker.log` gains a `data:` line and a
+   `running; tray icon visible: True` line.
 
 Measured going from 1.2.1 to 2.0.0: 52 s for the build, and all 365 files in
 `data\` identical afterwards except `tracker.log`, which had gained the
@@ -114,9 +122,18 @@ tracker, then
 robocopy dist\_previous-2.0.0 dist\WallpaperEngineToolkit /MIR /XD "%CD%\dist\WallpaperEngineToolkit\data"
 ```
 
-and start it again. The `/XD` is what keeps `/MIR` from deleting `data\`, which
-the copy does not have. Rolling the exe back does not roll data back: a version
-older than 2.0.0 does not read `authors.sqlite` at all.
+and start it again. The `/XD` is what keeps `/MIR` from deleting a `data\`
+the copy does not have. Rolling the exe back does not roll data back. A version
+older than 3.0.0 looks for its data in `data\` beside the exe, not in
+`%LOCALAPPDATA%`, so give it a copy first:
+
+```
+robocopy "%LOCALAPPDATA%\WallpaperEngineToolkit" dist\WallpaperEngineToolkit\data /E
+```
+
+What it then changes stays there; 3.0.0 or later will not move it a second
+time, and says in its `data:` line that an old folder is still beside the exe.
+A version older than 2.0.0 does not read `authors.sqlite` at all.
 
 ## After renaming the executable
 
@@ -154,7 +171,8 @@ scratch, so a build leaves the source tree as it found it.
 
 A spec file beside the source invites `pyinstaller WallpaperEngineToolkit.spec`,
 which builds straight into `dist\` and empties `dist\WallpaperEngineToolkit`
-first, `data\` included — the way a build once took `secrets.json` with it. It
+first — which, while the data still lived there, is how a build once took
+`secrets.json` and the Rotator's history with it. It
 would not even get that far cleanly: the version resource it names,
 `build\version_info.txt`, is written by `build.cmd` alone.
 

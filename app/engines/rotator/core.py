@@ -318,6 +318,10 @@ class Rotator:
                    or folder_problem("duplicates", self.config.duplicates))
         if problem:
             return problem
+        # A history that could not be read and could not be moved aside would
+        # be overwritten by this run's record.
+        if self.history.problem:
+            return self.history.problem
         if not Path(self.config.source).exists():
             return f"Source folder not found: {self.config.source}"
         if not Path(self.config.destination).exists():
