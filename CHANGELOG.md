@@ -6,6 +6,50 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [2.2.3] - 2026-09-25
+
+The third step of the redesign: the kit's data display — the fields, bars,
+rings, cards, tables and empty states the pages are made of. **Nothing you
+can see changes**; the Review gallery's preview loader moved into the kit and
+works as before.
+
+### Added
+
+- **Formatting** in `app/ui/kit/format.py`, so every page writes numbers one
+  way: counts with a no-break thousands space (`33 421`), sizes (`214 MB`,
+  `1.1 GB`), durations (`4 min 12 s`, `14 min`, `≈6 min left`), the design's
+  date styles (`19 Sep 12:44`, `Fri 09:10`, `Saturday 19 September, 13:44`),
+  ratios (`4 / 201`, `4/201`, `412 of 1 000`), and the `≈` (estimated) and
+  `~` (reconstructed) marks.
+- **Kit components**, named as in the design, each with its states:
+  `PathField` (empty, compact with the path elided from the left, invalid,
+  disabled; a drop target; the folder checked on a worker thread),
+  `TagSelect` (the Creator's 25 tags as pills and a four-column popup, and a
+  per-clip mode: follows the batch, own tags, or none), `ProgressBar` and
+  `ProgressRing`, `StatCard`, `MonitorCard` (compact and detail, filled from a
+  `MonitorView`), `Table` with `TableModel`, group rows, sorting and its
+  toolbar, summary and footer bars, `ListRow` and `RowList`, `Thumb`,
+  `EmptyState` (with a drop-zone variant), `StepList` and `ActivityLine`. See
+  [the kit](docs/development.md#the-kit).
+- **Tables hold 33 000 rows**: the model keeps indices rather than rows (it
+  builds in about 4 ms), and the table paints only the rows on screen, a
+  whole row per call, with about fifteen calls into Qt per row, so another
+  thread busy in Python does not stall scrolling.
+- **Local previews** (`preview.gif`, `.jpg`, `.png` in a wallpaper folder) are
+  read off the GUI thread, for the rows on screen only, and kept as small
+  stills in `data/thumbs/local/`, keyed by the preview's path, time and size.
+- The kit preview (`tools\kit_preview.py`) gains Fields, Progress, Cards,
+  Tables (33 000 made-up rows to scroll) and Empty states; its previews are
+  painted, never read from your library.
+- `tests/test_kit_data.py`: 169 checks, among them that nothing touches the
+  file system on the GUI thread while a table of thumbnails is on screen.
+
+### Changed
+
+- The Review gallery's `ThumbLoader` lives in `app/ui/kit/thumbs.py` now; the
+  gallery imports it from there. The self-check also reports the kit.
+- `theme.py` gains the tokens, type styles and component sizes these use.
+
 ## [2.2.2] - 2026-09-24
 
 The second step of the redesign: the kit's controls exist, with every state,
@@ -407,7 +451,8 @@ restructured yet; the tabs keep their layout and take on the new look.
   was right for one library and wrong for every other. Nothing is tagged now
   unless you ask for it.
 
-[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v2.2.2...HEAD
+[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v2.2.3...HEAD
+[2.2.3]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v2.2.2...v2.2.3
 [2.2.2]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v2.2.1...v2.2.2
 [2.2.1]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v2.2.0...v2.2.1
 [2.2.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v2.1.1...v2.2.0

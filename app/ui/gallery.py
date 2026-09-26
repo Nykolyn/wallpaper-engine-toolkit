@@ -41,22 +41,18 @@ guessing "new".
 """
 from __future__ import annotations
 
-import hashlib
 import time
-from pathlib import Path
 from typing import Iterable
 
 from PySide6.QtCore import (
-    QAbstractListModel, QBuffer, QByteArray, QIODevice, QModelIndex, QObject,
-    QRect, QRunnable, QSize, Qt, QThreadPool, Signal, QTimer)
-from PySide6.QtGui import (
-    QColor, QFont, QImage, QImageReader, QMovie, QPainter, QPen, QPixmap)
+    QAbstractListModel, QBuffer, QByteArray, QIODevice, QModelIndex, QRect, QSize, Qt,
+    Signal, QTimer)
+from PySide6.QtGui import QColor, QFont, QImage, QMovie, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import QListView, QStyle, QStyledItemDelegate
 
 from .. import theme
-from ..settings import app_data_dir
-
-THUMB_DIR = app_data_dir() / "thumbs"
+# The loader lives in the kit now, where the tables' thumbnails use it too.
+from .kit.thumbs import ThumbLoader
 
 # Card geometry. Square, because the previews are: measured on an author's
 # first page, 20 of 20 came back 1:1. A 16:10 frame looked like a wallpaper
@@ -103,150 +99,9 @@ LATE_SECONDS = 0.25
 # ...until the clock has been on time for this long.
 CALM_SECONDS = 2.0
 
-# How hard to look for a frame worth showing, and what counts as one.
-MAX_STILL_FRAMES = 24
-STILL_MIN_BRIGHTNESS = 0.06
-
 # Roles the delegate reads.
 WALLPAPER = Qt.UserRole + 1
 IMAGE = Qt.UserRole + 2
-
-
-# ---- Fetching previews ------------------------------------------------------
-
-class _Fetch(QRunnable):
-    """One preview, off the GUI thread."""
-
-    def __init__(self, loader: "ThumbLoader", item_id: str, url: str):
-        super().__init__()
-        self.loader = loader
-        self.item_id = item_id
-        self.url = url
-
-    def run(self) -> None:
-        import urllib.request
-
-        if self.loader.stopped:
-            return
-        path = self.loader.path_for(self.item_id)
-        data = b""
-        if path.exists():
-            try:
-                data = path.read_bytes()
-            except OSError:
-                data = b""
-        if not data:
-            try:
-                request = urllib.request.Request(
-                    self.url, headers={"User-Agent": "Mozilla/5.0"})
-                with urllib.request.urlopen(request, timeout=20) as response:
-                    data = response.read()
-                path.parent.mkdir(parents=True, exist_ok=True)
-                path.write_bytes(data)
-            except Exception:  # noqa: BLE001 — a missing preview is not an error
-                data = b""
-        if self.loader.stopped:
-            return
-        blob = QByteArray(data)
-        try:
-            self.loader.done.emit(self.item_id, blob, _still_image(blob))
-        except RuntimeError:
-            # The gallery was closed while this was in flight. A preview
-            # nobody is waiting for is not worth a traceback.
-            pass
-
-
-def _still_image(data: QByteArray) -> QImage:
-    """One frame to stand for a preview — decoded here, off the GUI thread.
-
-    Nearly half the previews in a real gallery are animated (46 of 90 in the
-    first author looked at), and Steam serves those as GIF. Taking frame zero
-    fills the grid with black tiles: these wallpapers commonly fade in, and
-    measured on this library four in fourteen were still pure black twelve
-    frames in. So frames are read in order until one is bright enough to be a
-    picture, with a cap so a wallpaper that really is dark still gets a frame.
-
-    A `QImage`, not a `QPixmap`: pixmaps may only be made on the GUI thread,
-    and decoding twenty frames there for ninety cards is a stutter.
-    """
-    if data.isEmpty():
-        return QImage()
-    buffer = QBuffer()
-    buffer.setData(data)
-    buffer.open(QIODevice.ReadOnly)
-    try:
-        reader = QImageReader(buffer)
-        reader.setDecideFormatFromContent(True)
-        best = QImage()
-        best_light = -1.0
-        for _ in range(MAX_STILL_FRAMES):
-            frame = reader.read()
-            if frame.isNull():
-                break
-            light = _brightness(frame)
-            if light > best_light:
-                best, best_light = frame, light
-            if light >= STILL_MIN_BRIGHTNESS:
-                break
-            if not reader.supportsAnimation():
-                break
-        return best
-    finally:
-        buffer.close()
-
-
-def _brightness(frame: QImage) -> float:
-    """Mean lightness of a frame, from an 8×8 thumbnail of it."""
-    small = frame.scaled(8, 8, Qt.IgnoreAspectRatio, Qt.FastTransformation)
-    if small.isNull():
-        return 0.0
-    total = sum(small.pixelColor(x, y).valueF()
-                for x in range(small.width()) for y in range(small.height()))
-    return total / max(1, small.width() * small.height())
-
-
-class ThumbLoader(QObject):
-    """Preview images, fetched once and kept on disk."""
-
-    done = Signal(str, QByteArray, QImage)
-
-    def __init__(self, parent=None, threads: int = 6):
-        super().__init__(parent)
-        self.pool = QThreadPool(self)
-        self.pool.setMaxThreadCount(threads)
-        self._asked: set[str] = set()
-        # Downloads outlive the widget that wanted them, so they have to be
-        # told when nobody is listening any more.
-        self.stopped = False
-
-    def path_for(self, item_id: str) -> Path:
-        return THUMB_DIR / f"{item_id}.img"
-
-    def request(self, item_id: str, url: str | None) -> None:
-        if not url or item_id in self._asked:
-            return
-        self._asked.add(item_id)
-        self.pool.start(_Fetch(self, item_id, url))
-
-    def forget(self) -> None:
-        self._asked.clear()
-
-    def retarget(self) -> None:
-        """A different page is on screen: drop what was queued for the last one.
-
-        Nothing used to be dropped. Clicking through ninety authors queued 662
-        previews behind six download threads, and the page on screen waited for
-        the ones before it. Downloads already running finish and land on disk;
-        whatever they were for is simply not in the model any more.
-        """
-        self.pool.clear()
-        self._asked.clear()
-
-    def stop(self) -> None:
-        """Abandon everything in flight and wait for the threads to notice."""
-        self.stopped = True
-        self.pool.clear()
-        self.pool.waitForDone(2000)
 
 
 # ---- The model --------------------------------------------------------------

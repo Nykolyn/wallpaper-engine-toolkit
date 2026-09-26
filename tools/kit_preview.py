@@ -12,12 +12,16 @@ place, and compared with the design's own pictures.
 it; `--grab all <folder>` saves every section. The sections are the design
 system's: color, type, space, motion, icons, controls (Qt's own widgets under
 the stylesheet), then the kit's buttons, inputs, selection, chips and panels,
-each state in a row. Each kit step adds its own.
+each state in a row, and its data display: fields, progress, cards, tables
+(33 000 made-up rows to scroll) and empty states with steps. Each kit step
+adds its own. Nothing shown comes from this machine's library: previews are
+painted into a temp folder.
 """
 from __future__ import annotations
 
 import os
 import sys
+import tempfile
 from pathlib import Path
 
 GRAB = "--grab" in sys.argv[1:]
@@ -88,6 +92,7 @@ class Section(QWidget):
 
     def __init__(self, number: int, title: str, description: str = ""):
         super().__init__()
+        self.hover_rows: list = []      # (table, row) drawn under the pointer in a grab
         self.body = QVBoxLayout(self)
         self.body.setContentsMargins(0, 34, 0, 34)
         self.body.setSpacing(18)
@@ -141,7 +146,7 @@ class Swatch(QWidget):
         rect = QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5)
         if self.token == "bg.app":
             painter.setBrush(theme.app_background(self.rect()))
-        elif self.token in ("surface.glass", "nav.gradient"):
+        elif self.token in theme.GRADIENTS:
             painter.setBrush(QBrush(theme.gradient(self.token, rect)))
         else:
             painter.setBrush(theme.color(self.token))
@@ -1037,6 +1042,557 @@ def panels_section() -> Section:
     return section
 
 
+# ---- data display: fabricated previews and a playlist --------------------------------------
+#
+# Nothing on these pages comes from this machine's library: the previews are
+# gradients painted into a temp folder, and the playlist is made up. A grab
+# can be published as it is.
+
+_previews: list[str] = []
+_preview_cache: Path | None = None
+
+
+def synthetic_previews(count: int = 16) -> list[str]:
+    """Wallpaper folders with a painted preview each, in a temp folder, read
+    through a loader of their own that caches there too."""
+    global _preview_cache
+    if _previews:
+        return _previews
+    from PySide6.QtGui import QImage, QLinearGradient
+
+    from app.ui.kit import thumbs
+
+    root = Path(tempfile.mkdtemp(prefix="kit-preview-"))
+    for i in range(count):
+        folder = root / f"wallpaper_{i:02d}"
+        folder.mkdir()
+        # a third of them square, as many workshop previews are
+        size = QSize(640, 640) if i % 3 == 0 else QSize(640, 360)
+        image = QImage(size, QImage.Format_RGB32)
+        painter = QPainter(image)
+        painter.setRenderHint(QPainter.Antialiasing)
+        grad = QLinearGradient(0, 0, size.width(), size.height())
+        hue = (i * 0.137) % 1.0
+        grad.setColorAt(0, QColor.fromHsvF(hue, 0.55, 0.62))
+        grad.setColorAt(1, QColor.fromHsvF((hue + 0.18) % 1.0, 0.7, 0.22))
+        painter.fillRect(image.rect(), QBrush(grad))
+        painter.setPen(Qt.NoPen)
+        for k in range(4):
+            glow = QColor.fromHsvF((hue + 0.5) % 1.0, 0.4, 0.95)
+            glow.setAlphaF(0.18 + 0.1 * k)
+            painter.setBrush(glow)
+            r = size.height() * (0.12 + 0.07 * k)
+            painter.drawEllipse(QPointF(size.width() * (0.2 + 0.2 * k), size.height() * 0.62), r, r)
+        painter.end()
+        image.save(str(folder / ("preview.jpg" if i % 2 else "preview.png")))
+        _previews.append(str(folder))
+    _preview_cache = root / "cache"
+    thumbs._shared = thumbs.ThumbLoader(QApplication.instance(), local_root=_preview_cache)
+    return _previews
+
+
+TITLE_WORDS = ("Harbour", "Lights", "Paper", "Cranes", "Tide", "Pine", "Mist", "Copper",
+               "Field", "Glass", "River", "Moth", "Orbit", "Signal", "Quiet", "Ember", "Salt",
+               "Cedar", "Velvet", "Dune", "Hollow", "Prism", "Linen", "Marble", "Fog")
+AUTHORS = ("Marlow", "tidewright", "orbit_lab", "North Room", "Pale Harbour", "Lumen Six",
+           "Ferro Works", "Quill", "ashgrove", "Studio Twelve")
+KINDS = ("scene", "video", "web")
+PLAYLIST_ROWS = 33_000
+PLAYLIST_SHOWN = 4
+
+
+def playlist_model():
+    """A Tracker-like playlist of 33 000 made-up wallpapers: four already shown
+    this cycle, the rest queued."""
+    from datetime import datetime
+
+    from app.ui.kit import Cell, Column, Group, TableModel
+    from app.ui.kit import format as fmt
+
+    previews = synthetic_previews()
+    today = datetime.now()
+    seen = [today.replace(hour=h, minute=m, second=0, microsecond=0)
+            for h, m in ((13, 41), (12, 2), (11, 24), (10, 33))]
+
+    class Playlist(TableModel):
+        def cell(self, item, column):
+            i, title, author, kind, shown = item
+            if column == 0:
+                return fmt.DASH if i < PLAYLIST_SHOWN else f"{i - PLAYLIST_SHOWN + 2:03d}"
+            if column == 1:
+                return title
+            if column == 2:
+                return author
+            if column == 3:
+                return kind
+            if column == 4:
+                return fmt.duration(shown, exact=False) if shown else fmt.DASH
+            if i == 0:
+                return Cell("on screen", "accent.hover", strong=True)
+            return fmt.clock(seen[i]) if i < PLAYLIST_SHOWN else "queued"
+
+        def sort_key(self, item, column):
+            if column in (0, 4):
+                return item[0] if column == 0 else item[4]
+            return super().sort_key(item, column)
+
+        def thumb_source(self, item):
+            return previews[item[0] % len(previews)]
+
+        def row_dimmed(self, item):
+            return 0 < item[0] < PLAYLIST_SHOWN
+
+    n = len(TITLE_WORDS)
+    rows = [(i, f"{TITLE_WORDS[(i * 7) % n]} {TITLE_WORDS[(i * 3 + 5) % n]}",
+             AUTHORS[i % len(AUTHORS)], KINDS[i % 3],
+             ((i * 11) % 50 + 3) * 60 if i < PLAYLIST_SHOWN else None)
+            for i in range(PLAYLIST_ROWS)]
+    columns = [Column("#", 32, "right", mono=True, tone="text.lo"),
+               Column("Wallpaper", None, thumb="row"),
+               Column("Author", 88, font="type.label", tone="text.mid"),
+               Column("Type", 48, font="type.monoXs", tone="text.lo"),
+               Column("Shown", 52, "right", mono=True, tone="text.mid"),
+               Column("State", 64, "right", mono=True, tone="text.lo", sortable=False)]
+    groups = [Group("shown", "Already shown this cycle"), Group("queue", "Queue")]
+    return Playlist(columns, rows, groups=groups,
+                    group_of=lambda r: "shown" if r[0] < PLAYLIST_SHOWN else "queue")
+
+
+# ---- 12 fields -----------------------------------------------------------------------------
+
+# Folders every Windows 11 machine has, so a grab shows a found folder
+# without showing anyone's own.
+FOUND = r"C:\Windows\Web\Wallpaper"
+FOUND_DEEP = r"C:\Windows\Web\Wallpaper\Windows"
+MISSING = r"Z:\old_reserve"
+
+
+def fields_section() -> Section:
+    from app.ui.kit import PathField, TagSelect
+    from app.ui.kit.tags import TagPopup
+
+    section = Section(12, "Fields: folders and tags",
+                      "A PathField is full while empty and compact once set: the path elided "
+                      "from the left, a ✓ once a worker has found the folder, and red with "
+                      "“folder not found” when it has not. It takes a folder dropped on it. "
+                      "A TagSelect shows the chosen tags as pills and opens a grid of the 25.")
+    table = StateTable(section, ("EMPTY", "SET (COMPACT)", "INVALID", "DISABLED", "FOCUS"))
+
+    def field(path: str = "", *, editable: bool = True, width: int = 232):
+        widget = PathField(path, placeholder=r"W:\wallpaper_reserve", editable=editable)
+        widget.setFixedWidth(width)
+        return widget
+
+    table.add("PathField", "full when empty, compact when set",
+              field(), field(FOUND), field(MISSING), in_state(field(), "disabled"),
+              in_state(field(FOUND), "focus"))
+    table.add("PathField read-only", "a page shows what Settings holds",
+              field(FOUND, editable=False), field(FOUND_DEEP, editable=False, width=170),
+              field(MISSING, editable=False), in_state(field(FOUND, editable=False), "disabled"))
+
+    def tags(value=("Game", "Nature", "Girls"), *, per_file=False, batch=()):
+        widget = TagSelect(per_file=per_file)
+        if per_file:
+            widget.set_batch_tags(batch)
+        widget.set_value(None if value is None else list(value))
+        widget.setFixedWidth(232)
+        return widget
+
+    section.body.addSpacing(10)
+    selects = StateTable(section, ("CLOSED", "HOVER", "FOCUS", "DISABLED", "NONE CHOSEN"))
+    selects.add("TagSelect", "pills · 3 / 25 · chevron",
+                tags(), in_state(tags(), "hover"), in_state(tags(), "focus"),
+                in_state(tags(), "disabled"), tags(()))
+    batch = ("Game", "Nature")
+    selects.add("TagSelect per file", "follows batch · own · none",
+                tags(None, per_file=True, batch=batch),
+                tags(("Anime", "Girls", "Music", "Retro", "Relaxing"), per_file=True, batch=batch),
+                tags((), per_file=True, batch=batch))
+
+    section.body.addSpacing(12)
+    row = QHBoxLayout()
+    row.setSpacing(40)
+    for select, note in ((tags(), "Open: the hint, the 25 in four columns (the pointer on "
+                                  "Landscape), “3 selected” and Clear. surface.popup at elev.3."),
+                         (tags(("Anime", "Girls"), per_file=True, batch=batch),
+                          "Per file, three states first: follow the batch, own tags, or none. "
+                          "Ticking a box while following starts an own list from the batch's.")):
+        column = QVBoxLayout()
+        column.setSpacing(6)
+        in_state(select, "focus")
+        column.addWidget(select)
+        popup = TagPopup(select, embedded=True)
+        if not select.per_file():
+            popup.grid.set_hot(select.options().index("Landscape"))
+        column.addWidget(popup)
+        column.addStretch()
+        row.addLayout(column)
+        words = text(note, "type.bodySm", "text.mid", wrap=True)
+        words.setFixedWidth(150)
+        row.addWidget(words, 0, Qt.AlignTop)
+    row.addStretch()
+    section.body.addLayout(row)
+    return section
+
+
+# ---- 13 progress -----------------------------------------------------------------------------
+
+def progress_section() -> Section:
+    from app.ui.kit import ProgressBar, ProgressRing
+
+    section = Section(13, "Progress",
+                      "Both painted. A bar's fill eases to each new width over motion.slow; "
+                      "the indeterminate sweep and the spinning ring run from the shared "
+                      "clocks. Numbers under a bar say how many and what share, in the bar's "
+                      "colour.")
+    section.body.addWidget(overline("ProgressBar — determinate · indeterminate · error · success"))
+    row = QHBoxLayout()
+    row.setSpacing(22)
+    for state, done in (("determinate", 412), ("indeterminate", 0), ("error", 620),
+                        ("success", 1000)):
+        bar = ProgressBar(caption=True)
+        bar.set_value(done, 1000)
+        bar.set_state(state)
+        bar.setFixedWidth(208)
+        row.addWidget(bar)
+    row.addStretch()
+    section.body.addLayout(row)
+
+    section.body.addWidget(overline("Heights 3 · 4 · 5 · 6 · 8, and the other tones"))
+    row = QHBoxLayout()
+    row.setSpacing(22)
+    for height in theme.PROGRESS_HEIGHTS:
+        bar = ProgressBar(height=height)
+        bar.set_value(412, 1000)
+        bar.setFixedWidth(120)
+        row.addLayout(_captioned(bar, f"{height}px", "accent"))
+    for tone, note in (("muted", "follows its own order"), ("warn", "paused")):
+        bar = ProgressBar(height=6, tone=tone)
+        bar.set_value(4, 201)
+        bar.setFixedWidth(120)
+        row.addLayout(_captioned(bar, tone, note))
+    row.addStretch()
+    section.body.addLayout(row)
+
+    section.body.addWidget(overline("ProgressRing — 58 · 52 · 34 · indeterminate · done"))
+    row = QHBoxLayout()
+    row.setSpacing(26)
+    for size, done, total in ((58, 412, 1000), (52, 412, 1000), (34, 412, 1000), (58, 4, 201)):
+        ring = ProgressRing(size)
+        ring.set_value(done, total)
+        row.addLayout(_captioned(ring, f"{size}px", f"{done} / {total}"))
+    spinning = ProgressRing(34)
+    spinning.set_indeterminate()
+    row.addLayout(_captioned(spinning, "34px", "indeterminate"))
+    done = ProgressRing(58)
+    done.set_done()
+    row.addLayout(_captioned(done, "58px", "done"))
+    row.addWidget(text("stroke 4px · cap round · track surface.well", "type.monoSm", "text.lo"))
+    row.addStretch()
+    section.body.addLayout(row)
+    return section
+
+
+# ---- 14 cards ---------------------------------------------------------------------------------
+
+def cards_section() -> Section:
+    from datetime import datetime, timedelta
+
+    from PySide6.QtWidgets import QMenu
+
+    from app.ui.kit import MonitorCard, MonitorView, StatCard
+
+    previews = synthetic_previews()
+    section = Section(14, "Cards",
+                      "A StatCard is one number: hover (a card that opens a page), loading, "
+                      "and empty with the reason. A MonitorCard is filled from a MonitorView: "
+                      "compact on the Overview, detailed in the Tracker, in the monitor's state.")
+    section.body.addWidget(overline("StatCard — default · hover · loading · empty · a tone"))
+    row = QHBoxLayout()
+    row.setSpacing(14)
+    hovered = StatCard("Reserve", 33421, "8 204 never used", clickable=True)
+    hovered.force_state = "hover"
+    loading = StatCard("Reserve", 33421, "8 204 never used")
+    loading.set_loading()
+    for card in (StatCard("Reserve", 33421, "8 204 never used", clickable=True), hovered,
+                 loading, StatCard("Duplicates set aside"),
+                 StatCard("New since last review", 89, "from 12 authors · not reviewed",
+                          tone="warn")):
+        card.setFixedWidth(232)
+        row.addWidget(card)
+    row.addStretch()
+    section.body.addLayout(row)
+
+    now = datetime.now()
+    started = (now - timedelta(days=6)).replace(hour=12, minute=44, second=0, microsecond=0)
+    common = dict(resolution="2560×1440", title="Harbour Lights Loop", author="Marlow",
+                  position=4, total=201, shown_for=14 * 60, remaining=26 * 60,
+                  cycle_started=started, preview=previews[3])
+    views = [MonitorView("Monitor1", "leading", author_chip="Known", **common),
+             MonitorView("Monitor1", "summary", **common),
+             MonitorView("Monitor1", "paused", author_chip="Known", **common),
+             MonitorView("Monitor1", "disconnected", reconstructed=True,
+                         last_seen=now.replace(hour=11, minute=2, second=0, microsecond=0),
+                         **common)]
+    section.body.addWidget(overline("MonitorCard compact — leading · summary · paused · disconnected"))
+    row = QHBoxLayout()
+    row.setSpacing(14)
+    for view in views:
+        card = MonitorCard(view)
+        card.setFixedWidth(300)
+        row.addWidget(card)
+    row.addStretch()
+    section.body.addLayout(row)
+
+    section.body.addWidget(overline("MonitorCard detail — leading · paused · disconnected (~ rebuilt)"))
+    row = QHBoxLayout()
+    row.setSpacing(14)
+    for view in (views[0], views[2], views[3]):
+        card = MonitorCard(view, detail=True)
+        card.set_menu(QMenu(card))
+        card.setFixedWidth(330)
+        row.addWidget(card, 0, Qt.AlignTop)
+    second = MonitorCard(MonitorView("Monitor2", "summary", resolution="1920×1080",
+                                     title="Night Platform", author="orbit_lab", position=2,
+                                     total=201, shown_for=180, preview=previews[8],
+                                     note="follows its own order · not counted for rotation"))
+    second.setFixedWidth(330)
+    row.addWidget(second, 0, Qt.AlignTop)
+    row.addStretch()
+    section.body.addLayout(row)
+    return section
+
+
+# ---- 15 tables ----------------------------------------------------------------------------------
+
+def tables_section() -> Section:
+    from PySide6.QtGui import QStandardItem, QStandardItemModel
+
+    from app.ui.kit import (
+        ChipCell, Column, Dropdown, GhostButton, GlassPanel, IconButton, ListRow, RowList,
+        SegmentedControl, Table, TableBar, TableFooter, TableModel, TableSummary, TextInput,
+        ThumbLoader,
+    )
+    from app.ui.kit import format as fmt
+    from app.ui.kit.tables import LIST_ROW_ROLE, LIST_STATE_ROLE, list_row_height
+
+    section = Section(15, "Tables and rows",
+                      f"One delegate paints whole rows: zebra .025, hover surface.raised, "
+                      f"selected accent.soft with the 2px accent edge; group headers; the "
+                      f"sorted column's title in text.body with the accent chevron. Below, "
+                      f"{fmt.count(PLAYLIST_ROWS)} made-up rows, virtualised: scroll it.")
+    card = GlassPanel(padding="none")
+    column = QVBoxLayout(card)
+    column.setContentsMargins(0, 0, 0, 0)
+    column.setSpacing(0)
+    bar = TableBar()
+    search = TextInput(placeholder="Filter by title or author…", search=True)
+    search.setFixedWidth(200)
+    authors = Dropdown()
+    authors.add_item("All authors")
+    for name in AUTHORS[:4]:
+        authors.add_item(name)
+    authors.setFixedWidth(150)
+    bar.add(search)
+    bar.add(authors)
+    bar.add(SegmentedControl(("Shown", "Queue")))
+    bar.add_stretch()
+    bar.add(IconButton("refresh", "Read the playlist again"))
+    column.addWidget(bar)
+    model = playlist_model()
+    table = Table(loader=ThumbLoader(card, local_root=_preview_cache))
+    table.setModel(model)
+    table.sort_by(1)
+    table.selectRow(model.row_of_item(0))
+    column.addWidget(table, 1)
+    footer = TableFooter(f"virtualised · {fmt.count(model.item_rows())} rows")
+    footer.set_note("Wallpaper Engine decides the order — this is a read of its playlist")
+    column.addWidget(footer)
+    card.setFixedHeight(720)
+    section.body.addWidget(card)
+    first_queued = model.group_rows()[1] + 2
+    section.hover_rows = [(table, first_queued)]    # drawn under the pointer in a grab
+
+    section.body.addWidget(overline("Without thumbs: a summary strip, chips, a footer with actions"))
+    files = GlassPanel(padding="none")
+    column = QVBoxLayout(files)
+    column.setContentsMargins(0, 0, 0, 0)
+    column.setSpacing(0)
+    column.addWidget(TableSummary(["41 files", "3 need tags", "1.4 GB", r"D:\videos\clips"]))
+    clips = [("harbour_dusk.mp4", "Nature", "3840×2160", 24, 182),
+             ("pine_mist.mp4", "Nature", "2560×1440", 40, 142),
+             ("tram_night_02.webm", None, "3840×2160", 18, 96),
+             ("polar_sky.mp4", "Nature", "3840×2160", 72, 318),
+             ("campfire_loop.mp4", "Game", "2560×1440", 30, 74),
+             ("wet_street.mkv", None, "1920×1080", 52, 88)]
+
+    class Clips(TableModel):
+        def cell(self, item, c):
+            name, tag, resolution, seconds, megabytes = item
+            if c == 1:
+                return ChipCell("Known", tag) if tag else ChipCell("NeedsTags")
+            if c == 3:
+                return f"{seconds // 60}:{seconds % 60:02d}"
+            if c == 4:
+                return fmt.size(megabytes * 1024 ** 2)
+            return item[c]
+
+    clip_table = Table()
+    clip_table.setModel(Clips([Column("File", None, icon="video"), Column("Tag", 96),
+                               Column("Resolution", 84, "right", mono=True),
+                               Column("Length", 48, "right", mono=True),
+                               Column("Size", 60, "right", mono=True, tone="text.mid")],
+                              clips))
+    clip_table.sort_by(4, Qt.DescendingOrder)
+    clip_table.setFixedHeight(clip_table.horizontalHeader().sizeHint().height()
+                              + len(clips) * clip_table.row_height())
+    column.addWidget(clip_table)
+    clip_footer = TableFooter("41 selected")
+    clip_footer.add_action(GhostButton("Open source folder", icon="ext", size="sm"))
+    column.addWidget(clip_footer)
+    files.setFixedWidth(760)
+    section.body.addWidget(files)
+
+    section.body.addWidget(overline("ListRow — default · hover · selected · focus · disabled"))
+    rows = QHBoxLayout()
+    rows.setSpacing(14)
+    holder = GlassPanel(padding="none")
+    inside = QVBoxLayout(holder)
+    inside.setContentsMargins(8, 8, 8, 8)
+    view = RowList()
+    items = QStandardItemModel(view)
+    for state in ("default", "hover", "selected", "focus", "disabled"):
+        item = QStandardItem()
+        item.setData(ListRow("Paper Cranes at Dusk", "scene · 214 MB · added 18 Sep", thumb=True,
+                             chips=(("New", None),), trailing="#1234567890"), LIST_ROW_ROLE)
+        item.setData(state, LIST_STATE_ROLE)
+        items.appendRow(item)
+    view.setModel(items)
+    view.setSpacing(1)
+    view.setFixedSize(604, 5 * (list_row_height(ListRow("", "x", thumb=True)) + 2))
+    inside.addWidget(view)
+    rows.addWidget(holder)
+    activity = GlassPanel(padding="none")
+    inside = QVBoxLayout(activity)
+    inside.setContentsMargins(6, 6, 6, 6)
+    feed = RowList()
+    events = QStandardItemModel(feed)
+    for when, icon, title, meta, chips in (
+            ("13:47", "rotator", "Moving folders into myprojects", "412 of 1 000 · run 38",
+             (("Queued", None),)),
+            ("13:46", "", "998 folders returned to the reserve",
+             "2 could not be moved — still in use", (("Duplicated", None),)),
+            ("12:44", "clock", "Playlist advanced to #4", "Harbour Lights Loop on Monitor1", ()),
+            ("Fri 09:10", "review", "Review opened for 13–19 Sep", "12 authors · 89 new items",
+             (("New", None),))):
+        item = QStandardItem()
+        item.setData(ListRow(title, meta, when=when, icon=icon,
+                             icon_tone="accent" if icon == "rotator" else "text.mid",
+                             chips=chips), LIST_ROW_ROLE)
+        events.appendRow(item)
+    feed.setModel(events)
+    feed.setFixedSize(560, 4 * list_row_height(ListRow("", "x")))
+    inside.addWidget(feed)
+    rows.addWidget(activity, 0, Qt.AlignTop)
+    rows.addStretch()
+    section.body.addLayout(rows)
+    return section
+
+
+# ---- 16 empty states and steps ------------------------------------------------------------------
+
+def empty_section() -> Section:
+    from app.ui.kit import (
+        AccentButton, ActivityLine, EmptyState, GhostButton, GlassPanel, SecondaryButton, StepList,
+    )
+
+    previews = synthetic_previews()
+    section = Section(16, "Empty states, steps and activity",
+                      "No page is ever a blank box. An EmptyState says why and what to do; its "
+                      "tile takes the page's verdict. The drop zone is dashed. A StepList "
+                      "walks a run; an ActivityLine names the one thing in hand.")
+
+    def panel(widget: QWidget, tone=None, height: int = 400) -> GlassPanel:
+        card = GlassPanel(tone=tone, padding="none")
+        inside = QVBoxLayout(card)
+        inside.setContentsMargins(40, 30, 40, 30)
+        inside.addWidget(widget)
+        card.setFixedHeight(height)
+        return card
+
+    grid = QGridLayout()
+    grid.setSpacing(14)
+    neutral = EmptyState("Nothing scanned since the last review",
+                         "A scan checks all 118 authors you follow and lists what they have "
+                         "published since the last review. It changes nothing on disk.",
+                         icon="review", meta="last scan Friday 09:10 · 12 authors had new items")
+    neutral.add_action(AccentButton("Scan for new items", size="lg"))
+    grid.addWidget(panel(neutral), 0, 0)
+    stopped = EmptyState("The scan stopped at author 34 of 118",
+                         "Steam did not answer for 30 seconds. Nothing was changed — the 6 "
+                         "authors already found are kept and the scan can carry on.",
+                         icon="warn", tone="danger")
+    stopped.add_action(AccentButton("Carry on from author 34"))
+    stopped.add_action(SecondaryButton("Start over"))
+    stopped.add_action(GhostButton("Open log folder"))
+    grid.addWidget(panel(stopped, "danger"), 0, 1)
+    finished = EmptyState("Review finished",
+                          "All 12 authors went through. 23 wallpapers were subscribed and are "
+                          "downloading in Steam.", icon="check", tone="ok",
+                          meta="next scan due Saturday 26 September")
+    finished.add_action(AccentButton("Send 23 to Copier"))
+    finished.add_action(SecondaryButton("Open review as a list"))
+    grid.addWidget(panel(finished, "ok"), 1, 0)
+    drop = EmptyState("Drop folders here, or paste a path",
+                      "Drag wallpaper folders from Explorer, paste a folder path you copied, "
+                      "or send a selection here from Review. Jobs queue up and run one after "
+                      "another.", icon="copier", drop_zone=True)
+    drop.add_action(AccentButton("Choose folders", size="lg"))
+    drop.add_action(SecondaryButton("Paste path", icon="clipboard", key="Ctrl+V", size="lg"))
+    grid.addWidget(panel(drop), 1, 1)
+    grid.setColumnStretch(0, 1)
+    grid.setColumnStretch(1, 1)
+    section.body.addLayout(grid)
+
+    row = QHBoxLayout()
+    row.setSpacing(14)
+    for title, steps in (
+            ("The four steps — running", [
+                ("Return the previous batch to the reserve", "998 returned · 2 left behind · 13:46",
+                 "done"),
+                ("Move 1 000 new folders in", "412 / 1 000 · ≈6 min left", "active"),
+                ("Check for duplicates", "waiting"),
+                ("Rebuild the playlist in Wallpaper Engine", "waiting")]),
+            ("Finished with a problem", [
+                ("Return the previous batch to the reserve", "998 returned · 13:46", "done"),
+                ("Move 1 000 new folders in", "1 000 moved · 13:58", "done"),
+                ("Check for duplicates", "3 set aside · 13:59", "done"),
+                ("Rebuild the playlist in Wallpaper Engine", "Wallpaper Engine did not restart",
+                 "failed")])):
+        card = GlassPanel(padding="lg")
+        inside = QVBoxLayout(card)
+        inside.setSpacing(11)
+        inside.addWidget(overline(title))
+        inside.addWidget(StepList(steps))
+        inside.addStretch()
+        card.setFixedWidth(330)
+        row.addWidget(card)
+    card = GlassPanel(padding="lg")
+    inside = QVBoxLayout(card)
+    inside.setSpacing(11)
+    inside.addWidget(overline("ActivityLine — spinner · thumb"))
+    inside.addWidget(ActivityLine("1234567890 → myprojects"))
+    with_thumb = ActivityLine("slow_tide-1234500001 → myprojects")
+    with_thumb.set_thumb(previews[5])
+    inside.addWidget(with_thumb)
+    inside.addStretch()
+    card.setFixedWidth(330)
+    row.addWidget(card)
+    row.addStretch()
+    section.body.addLayout(row)
+    return section
+
+
 # ---- the page -------------------------------------------------------------------------
 
 # Every section, in the design system's order. Kit steps add theirs here.
@@ -1052,6 +1608,11 @@ SECTIONS = {
     "selection": selection_section,
     "chips": chips_section,
     "panels": panels_section,
+    "fields": fields_section,
+    "progress": progress_section,
+    "cards": cards_section,
+    "tables": tables_section,
+    "empty": empty_section,
 }
 
 
@@ -1089,6 +1650,22 @@ def wait(ms: int) -> None:
     loop.exec()
 
 
+def await_thumbs(page: QWidget, limit_ms: int = 5000) -> None:
+    """Wait until every thumbnail the page asked for has been read."""
+    from PySide6.QtCore import QElapsedTimer
+
+    from app.ui.kit import ThumbLoader
+
+    clock = QElapsedTimer()
+    clock.start()
+    loaders = page.findChildren(ThumbLoader) + QApplication.instance().findChildren(ThumbLoader)
+    while clock.elapsed() < limit_ms:
+        wait(120)
+        if all(loader.local_pool.activeThreadCount() == 0 for loader in loaders):
+            wait(120)             # the last arrivals, queued to this thread
+            return
+
+
 def grab(which: str, out: Path) -> list[Path]:
     """Save one section (or all of them, into a folder) as the design crops them."""
     names = list(SECTIONS) if which == "all" else [which]
@@ -1097,6 +1674,11 @@ def grab(which: str, out: Path) -> list[Path]:
     page.setFocus()               # no control starts with focus it was not given
     settle(page)
     wait(300)                     # let the loops reach a frame worth seeing
+    await_thumbs(page)
+    for section in built.values():
+        for table, row in section.hover_rows:
+            table._hover_to(row)
+    QApplication.processEvents()
     saved = []
     for name, section in built.items():
         target = out / f"{name}.png" if which == "all" else out

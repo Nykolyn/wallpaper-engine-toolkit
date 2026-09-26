@@ -29,15 +29,10 @@ from PySide6.QtWidgets import QAbstractScrollArea, QLabel, QWidget
 
 from ... import animations, theme
 from . import icons
+# `1 000`: thousands apart by a no-break space, as every count in the design
+from .format import NBSP, count as grouped  # noqa: F401 - kit modules import them from here
 
 STATES = (None, "hover", "pressed", "focus")
-
-NBSP = "\u00a0"
-
-
-def grouped(n: int) -> str:
-    """`1 000`: thousands apart by a no-break space, as every count in the design."""
-    return f"{n:,}".replace(",", NBSP)
 
 
 _SURFACE = "kitSurface"             # the dynamic property that marks a surface

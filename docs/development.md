@@ -41,8 +41,10 @@ app/
 │       ├── core.py       + the [protected] rule
 │       └── worker.py     + closing and restarting Wallpaper Engine around a run
 └── ui/
-    ├── kit/              the redesign's components: icons, and the controls
-    │                       (base, buttons, inputs, selection, chips, panels)
+    ├── kit/              the redesign's components: icons, the controls
+    │                       (base, buttons, inputs, selection, chips, panels),
+    │                       the formats, and data display (paths, tags, progress,
+    │                       cards, tables, thumbs)
     ├── copier_tab.py, creator_tab.py
     ├── rotator_tab.py, cleanup_dialog.py
     ├── tracker_tab.py
@@ -85,6 +87,7 @@ for %f in (tests\test_*.py) do .venv\Scripts\python.exe %f
 | `test_theme.py` | every token parses, text stays legible on glass, fonts, shadows, the stylesheet fills in and ticks its check boxes |
 | `test_icons.py` | every icon draws, in the colour and at the size asked; unknown names raise |
 | `test_kit_controls.py` | every kit control in every state; the fourteen chips, the Pagination rule, the Toggle with motion off, Dropdown rows that cannot be chosen, a DangerButton that never takes Enter, the ring for the keyboard only |
+| `test_kit_data.py` | the formats; a PathField checked on a worker; a per-clip TagSelect's three states; MonitorView to card; TableModel groups, sorting and zebra; 33 000 rows built under 100 ms and only visible rows painted; local previews cached by path and time; no file-system call on the GUI thread |
 | `test_animations.py` | motion, by sampling real widgets over real time; the curve, the loops, reduced motion |
 | `test_steam_api.py` | the Web API client and its cache |
 | `test_authors_store.py` | the authors database: transactions, snapshots, pruning, the second folder, restoring, damaged files |
@@ -241,7 +244,8 @@ the loops stand on their resting frame.
 
 `app/ui/kit/` holds the components the redesigned pages are built from. Each
 class is named as in the design, and each has all of the design's states.
-Nothing in the app uses them yet; the pages move onto them one step at a time.
+The pages move onto them one step at a time; so far only the Review gallery
+uses the kit, for its preview loader.
 
 | Module | Classes |
 |---|---|
@@ -251,6 +255,13 @@ Nothing in the app uses them yet; the pages move onto them one step at a time.
 | `chips.py` | `Chip(variant, text=None)` in exactly fourteen variants; `chip_pixmap` and `chip_size` for delegates |
 | `panels.py` | `GlassPanel` (`tone=`, `padding=`), `Overline`, `CardTitle`, `Callout` (`tone=`, `title=`, `add_action`), `MetricStrip` |
 | `base.py` | the state model and the surfaces, below; `label(text, type, tone)` and `Glyph` |
+| `format.py` | how every number is written: `count` (`33 421`), `size` (`1.1 GB`), `duration` (`4 min 12 s`), `left` (`≈6 min left`), `approx` / `reconstructed` (`≈`, `~`), `date_table`, `date_activity`, `date_long`, `day`, `ratio` (`4 / 201`, `4/201`, `412 of 1 000`), `percent`. Pages never format numbers themselves. |
+| `paths.py` | `PathField`: empty (type, paste or Browse…), compact (path elided from the left, ✓, a folder button), invalid ("folder not found"), disabled; a drop target. `path_changed` for the user's choice, `validity_changed` when a worker has checked the folder. |
+| `tags.py` | `TagSelect` (pills, `3 / 25`, a popup of the Creator's `WE_TAGS` in four columns); `per_file=True` adds the clip's three states — `value()` None follows the batch, a list is its own, `[]` is none. `TagPopup` is the open state. |
+| `progress.py` | `ProgressBar` (3–8 px; determinate, eased over `motion.slow`; indeterminate; error; success; optional caption row) and `ProgressRing` (58, 52, 34 px; percentage, spin, done) |
+| `cards.py` | `StatCard` (default, hover when `clickable`, `set_loading`, empty), `MonitorCard` (compact or `detail=True`) and `MonitorView`, the plain values a page fills it from |
+| `tables.py` | `Table`, `TableModel`, `Column`, `Cell`, `ChipCell`, `Group`, `RowDelegate`, `TableHeader`, `TableBar`, `TableSummary`, `TableFooter`; `ListRow`, `paint_list_row`, `RowList`; `Thumb` and `paint_thumb` |
+| `thumbs.py` | `ThumbLoader`: Steam previews for the gallery (`request`), and a wallpaper folder's own preview (`request_local`), read on a worker and kept in `data/thumbs/local/` |
 
 **States.** Every interactive control follows the design's five: default,
 hover (the pointer only), pressed, disabled, and a focus ring that shows when
@@ -272,6 +283,38 @@ and repaints only the strip round a control whose outside changed. Put kit
 controls on a surface; on anything else their shadow and ring may be hidden by
 the parent's own background.
 
+**Tables.** A `TableModel` takes the page's items as they are and a
+`Column` spec per column: title, a content `width` (or None to share what is
+left), `align`, `mono` (or a `font` token), `tone`, `sortable`, and a `thumb`
+size or `icon` drawn before the text. A subclass says what a cell shows
+(`cell(item, column)`: a str, a `Cell` for another tone, a `ChipCell`), what
+it sorts by (`sort_key`), where a row's preview is (`thumb_source`) and
+whether it is dimmed (`row_dimmed`). `set_rows(items, groups=[Group(...)],
+group_of=fn)` puts header rows over runs of items ("ALREADY SHOWN THIS CYCLE ·
+4 of 201"); sorting stays inside each group, a filter is `set_filter(fn)`, and
+the zebra restarts under each header. The model holds a list of ints, not a
+row object per item: 33 000 rows build in about 4 ms and sort in under 30.
+
+`Table` paints its own viewport, one whole row per call, and only the rows on
+screen. It keeps the number of calls into Qt per row low (about fifteen:
+thumbs are tiles drawn once, chips are cached pixmaps, elided text and colours
+are remembered), because PySide gives up the GIL on each call and another
+thread busy in Python can make every one of them wait. Measured on a
+33 000-row table with a thread spinning in Python: a scroll step at p95
+3.7 ms, where drawing each part afresh took 85. Hover is tracked per row and
+repaints the two rows it moved between; a click on a sortable column's title
+sorts, keeping the selection.
+
+**Thumbnails.** A table asks its `ThumbLoader` for the previews of the rows
+on screen once scrolling has settled for 90 ms, and drops whatever it had
+queued for rows scrolled past. The loader lists the wallpaper folder on a
+worker, takes one still (a GIF's first bright frame), fits it into 480 × 270
+and keeps it as a JPEG under `data/thumbs/local/`, named by the preview's
+path, modification time and size: an unchanged preview is never decoded
+twice, an edited one misses its old still, which is then deleted. Nothing on
+the GUI thread touches the disk; `test_kit_data.py` checks it by making every
+file-system call from the GUI thread fail while a table of thumbs is shown.
+
 ### The kit preview
 
 ```
@@ -283,7 +326,10 @@ the parent's own background.
 A development window that draws the design system from the app's own code:
 Colour, Type, Space/Radius/Elevation, Motion (the loops, live), Icons, Qt's
 standard controls, and the kit's Buttons, Inputs, Selection, Chips and Panels
-with every state in a row. It is not bundled and nothing in `app/` imports it.
+with every state in a row; then Fields, Progress, Cards, Tables (33 000
+made-up rows, to feel the scroll) and Empty states with steps. Its previews
+are painted into a temp folder, so a grab never shows your library. It is not
+bundled and nothing in `app/` imports it.
 `--grab` renders a section offscreen at 100 %, which is how a change is
 compared with the design's own pictures. Each step that adds components to the
 kit adds their section here.

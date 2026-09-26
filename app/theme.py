@@ -65,6 +65,10 @@ TOKENS: dict[str, str] = {
     "surface.overlay": "rgba(18,22,30,.94)",    # dialog, toast
     "surface.popup": "rgba(18,22,30,.97)",      # menu, dropdown, tool tip
     "surface.note": "rgba(255,255,255,.04)",    # a neutral Callout
+    "surface.tile": "rgba(255,255,255,.05)",    # an EmptyState's icon tile
+    "surface.rowHover": "rgba(255,255,255,.08)",  # a TagSelect option under the pointer
+    # A Thumb with no picture: two diagonals, white .28 drawn at .4 opacity.
+    "thumb.cross": "rgba(255,255,255,.11)",
 
     # borders
     "border.hairline": "rgba(255,255,255,.10)",
@@ -138,6 +142,8 @@ GRADIENTS: dict[str, tuple[tuple[float, str], ...]] = {
     "bg.app": ((0.0, "#2C3752"), (0.46, "#1B2130"), (1.0, "#141821")),
     # linear-gradient(155deg, ...), every panel and card
     "surface.glass": ((0.0, "rgba(255,255,255,.085)"), (1.0, "rgba(255,255,255,.022)")),
+    # the same glass under the pointer: a StatCard that opens a page
+    "surface.glassHover": ((0.0, "rgba(255,255,255,.12)"), (1.0, "rgba(255,255,255,.04)")),
     # linear-gradient(180deg, ...), the sidebar
     "nav.gradient": ((0.0, "rgba(255,255,255,.115)"), (0.48, "rgba(255,255,255,.05)"),
                      (1.0, "rgba(255,255,255,.015)")),
@@ -237,8 +243,9 @@ def contrast(fg: QColor, bg: QColor) -> float:
 
 
 def gradient(name: str, rect: QRectF) -> QLinearGradient:
-    """`surface.glass` or `nav.gradient` laid across `rect`, as the design draws it."""
-    if name == "surface.glass":
+    """`surface.glass` (or its hover) or `nav.gradient` laid across `rect`, as
+    the design draws it."""
+    if name in ("surface.glass", "surface.glassHover"):
         # CSS spreads an angled gradient so that the two far corners land
         # exactly on the first and last stop; the half-length is the rectangle
         # projected onto the gradient's direction.
@@ -319,6 +326,15 @@ TYPE: dict[str, TypeSpec] = {
     "type.chip": TypeSpec(10, 1.2, 600, mono=True, upper=True, tracking=0.04),  # Chip label
     "type.mono": TypeSpec(11, 1.85, mono=True),            # paths, ids, log
     "type.monoSm": TypeSpec(10.5, 1.4, mono=True),         # meta, counts
+    # The in-between sizes the screens use for data, each where the design
+    # draws it: a row's meta line, a card's facts, a ring's percentage.
+    "type.monoXs": TypeSpec(10, 1.4, mono=True),           # meta under a title, step captions
+    "type.value": TypeSpec(12, 1.35, mono=True),           # MonitorCard's SHOWN FOR / REMAINING
+    "type.ring": TypeSpec(12, 1.0, 600, mono=True),        # the % in a 58 or 52 px ring
+    "type.ringSm": TypeSpec(10, 1.0, 600, mono=True),      # the % in a 34 px ring
+    "type.tableHead": TypeSpec(10, 1.3, 600, mono=True, upper=True, tracking=0.09),
+    "type.step": TypeSpec(12, 1.35),                       # a StepList title
+    "type.lead": TypeSpec(12, 1.6),                        # an EmptyState's body
 }
 
 
@@ -682,6 +698,103 @@ CALLOUT_GAP = 9
 METRIC_PAD = 11          # each value's side padding, either side of a divider
 METRIC_RULE_PAD = 10     # above and below the values, inside the rules
 METRIC_CAPTION_GAP = 4
+
+# -- data display: thumbs, progress, cards, tables, empty states, steps
+
+# A wallpaper's preview, at the sizes the screens draw it: (width, height, radius).
+THUMB: dict[str, tuple[int, int, int]] = {
+    "xs": (34, 19, 3),       # an ActivityLine
+    "sm": (40, 23, 4),
+    "md": (64, 36, 5),
+    "card": (72, 41, 5),     # a compact MonitorCard (Overview)
+    "row": (120, 68, 6),     # a table's thumb column
+    "wide": (298, 84, 5),    # a detailed MonitorCard's preview (Tracker)
+    "grid": (160, 90, 6),    # 16:9 in a grid; the width follows the cell
+}
+THUMB_GAP = 9            # a thumb to the text beside it
+
+PROGRESS_HEIGHTS = (3, 4, 5, 6, 8)
+PROGRESS_CAPTION_GAP = 5
+PROGRESS_SWEEP = 0.38    # the indeterminate sweep, as a share of the track
+PROGRESS_SWEEP_TRAVEL = 3.65   # from -100 % to +265 % of the sweep's width
+# A ring: its outer size → (radius of the stroke's centre line, the label's type)
+RING: dict[int, tuple[float, str]] = {58: (25, "type.ring"), 52: (22, "type.ring"),
+                                      34: (13, "type.ringSm")}
+RING_STROKE = 4
+RING_SPIN_ARC = 0.25     # the indeterminate arc, as a share of the circle
+RING_TICK = (16, 12, 10)  # the done tick in a 58, 52 and 34 px ring
+
+STAT_PAD = (13, 15)      # a StatCard: vertical, horizontal
+STAT_MIN_WIDTH = 186
+STAT_VALUE_GAP = 6       # overline to value
+STAT_CAPTION_GAP = 5     # value to caption
+STAT_EXT = 13            # the ↗ that says a hovered card opens a page
+# the loading skeleton: three bars, (width, height, radius) and the gap above each
+STAT_SKELETON = ((72, 9, 3, 0), (104, 26, 5, 10), (88, 8, 3, 9))
+SKELETON_STAGGER = 200   # ms between one skeleton bar and the next
+
+MONITOR_PAD = {"compact": (11, 13), "detail": (14, 15)}
+MONITOR_GAP = {"compact": 9, "detail": 12}
+MONITOR_ICON = 15
+BADGE_PAD = (2, 6)       # LEADING, PAUSED, DISCONNECTED
+DIM_OPACITY = 0.6        # a table row already behind you (shown this cycle)
+
+TABLE_PAD = 13           # a table row's sides
+TABLE_GAP = 11           # between columns
+TABLE_ROW_PAD = 6        # above and below a row's tallest cell
+TABLE_ROW_PAD_TEXT = 7   # the same, in a table without thumbs
+TABLE_HEAD_PAD = 8       # above and below the column titles
+TABLE_GROUP_PAD = 9      # above and below a group's title
+TABLE_GROUP_GAP = 10     # a group's title to its count
+TABLE_FOOTER_PAD = (8, 13)
+TABLE_SORT_ICON = 11
+TABLE_SELECT_EDGE = 2    # the accent inset down a selected row's left side
+TABLE_ICON = 13          # a column's leading glyph (a video file)
+TABLE_ICON_GAP = 7
+
+LIST_ROW_PAD = (8, 11)
+LIST_ROW_GAP = 11
+LIST_ROW_THUMB = 30      # a list row's square thumb
+LIST_ROW_TIME = 58       # the time column of an activity list
+
+PATH_PAD = (6, 9)        # a compact PathField
+PATH_ICON = 13
+PATH_MARK = 12           # the ✓ that says the folder is there
+PATH_GAP = 7
+
+TAG_POPUP_WIDTH = 540
+TAG_POPUP_PAD = (12, 14)
+TAG_POPUP_GAP = 10
+TAG_COLUMNS = 4
+TAG_GRID_GAP = (2, 10)   # between rows, between columns
+TAG_ROW_PAD = (5, 6)
+TAG_BOX = 14
+TAG_TICK = 9
+TAG_PILL_PAD = (2, 7)
+TAG_PILL_GAP = 5
+TAG_FIELD_PAD = (5, 8)
+
+EMPTY_TILE = 56
+EMPTY_TILE_RADIUS = 14
+EMPTY_ICON = 24
+EMPTY_GAP = 14
+EMPTY_BODY_WIDTH = 440   # the body's measure; a drop zone's is wider
+DROP_BODY_WIDTH = 520
+DROP_PAD = (38, 34)
+DROP_DASH = (4.0, 3.0)   # the drop zone's dashed edge, in pen widths
+EMPTY_META_ICON = 13
+
+STEP_DOT = 15
+STEP_GAP = 10            # dot to title
+STEP_LINK_GAP = 3        # dot to the connector under it
+STEP_PAD = 9             # below a step's caption, before the next
+STEP_TICK = (9, 8)       # the ✓ in a done dot, the × in a failed one
+
+ACTIVITY_PAD = (8, 10)
+ACTIVITY_GAP = 10
+ACTIVITY_SPINNER = 14
+ACTIVITY_SPINNER_STROKE = 2
+ACTIVITY_SPIN_ARC = 0.5  # two of the ring's four sides, as the CSS draws it
 
 
 # ---- Semantic colours the old tabs ask for ---------------------------------
@@ -1095,6 +1208,15 @@ Dropdown:focus:hover { border-color: $(border.strong); }
 Dropdown[focusVisible="true"], Dropdown[forceState="focus"] { border-color: $(border.focus); }
 /* its list paints its own rows, on its own popup ground */
 DropdownPopup QListView { background: transparent; border: none; padding: 0; }
+/* A PathField draws its own box; the line you type a path into is bare. */
+PathField QLineEdit, PathField QLineEdit:hover, PathField QLineEdit:focus,
+PathField QLineEdit:disabled {
+    background: transparent; border: none; padding: 0; margin: 0;
+    selection-background-color: $(console.selection);
+    $(font:type.monoSm)
+}
+/* A Table and a RowList paint their own rows, on the card they sit in. */
+Table, RowList { background: transparent; border: none; border-radius: 0; }
 
 /* Kit labels name their colour, so no label carries a stylesheet of its own. */
 QLabel[tone="hi"] { color: $(text.hi); }
@@ -1172,7 +1294,7 @@ def _asset(spec: str, folder: Path) -> str:
 
 def _qss_gradient(name: str) -> str:
     stops = GRADIENTS[name]
-    if name == "surface.glass":
+    if name in ("surface.glass", "surface.glassHover"):
         rad = math.radians(GLASS_ANGLE)
         dx, dy = math.sin(rad) / 2, -math.cos(rad) / 2
         coords = f"x1:{0.5 - dx:.3f}, y1:{0.5 - dy:.3f}, x2:{0.5 + dx:.3f}, y2:{0.5 + dy:.3f}"

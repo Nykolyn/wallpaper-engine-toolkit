@@ -81,7 +81,8 @@ def _selfcheck() -> int:
                         ("app.window_instance", "starting the window on its own"),
                         ("app.engines.playlist_refresh",
                          "rebuilding Wallpaper Engine's playlist after a rotation"),
-                        ("PySide6.QtSvg", "icons")):
+                        ("PySide6.QtSvg", "icons"),
+                        ("app.ui.kit", "the redesign's components, and the gallery's previews")):
         try:
             __import__(module)
             lines.append(f"ok      {module}  ({why})")
