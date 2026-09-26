@@ -37,6 +37,7 @@ from app import theme                                       # noqa: E402
 theme.apply(app)
 
 import app.ui.gallery as gal                                # noqa: E402
+import app.ui.kit.thumbs as thumbs                          # noqa: E402
 import app.ui.review_tab as tab_mod                         # noqa: E402
 import app.engines.review as rv                             # noqa: E402
 from app.engines.authors_store import Author                # noqa: E402
@@ -77,7 +78,7 @@ def painted(delegate, index, width=gal.CARD_W, height=gal.CARD_H,
 
 def has_ink(image: QImage) -> bool:
     """Whether anything was drawn — the canvas started black."""
-    return gal._brightness(image) > 0.01
+    return thumbs._brightness(image) > 0.01
 
 
 # ---- The gallery model ------------------------------------------------------

@@ -517,7 +517,7 @@ from PySide6.QtGui import QColor, QImage                    # noqa: E402
 from PySide6.QtWidgets import QApplication                  # noqa: E402
 
 _app = QApplication.instance() or QApplication([])
-import app.ui.gallery as gal                                # noqa: E402
+import app.ui.kit.thumbs as thumbs                          # noqa: E402
 
 
 def encoded(colour: str, fmt: bytes = b"PNG") -> QByteArray:
@@ -536,17 +536,17 @@ dark.fill(QColor("black"))
 bright = QImage(4, 4, QImage.Format_RGB32)
 bright.fill(QColor("white"))
 check("a black frame reads as dark and a white one as light",
-      gal._brightness(dark) < 0.05 and gal._brightness(bright) > 0.95)
+      thumbs._brightness(dark) < 0.05 and thumbs._brightness(bright) > 0.95)
 check("and the threshold sits between them, so a fade-in is skipped",
-      gal._brightness(dark) < gal.STILL_MIN_BRIGHTNESS < gal._brightness(bright))
+      thumbs._brightness(dark) < thumbs.STILL_MIN_BRIGHTNESS < thumbs._brightness(bright))
 
-still = gal._still_image(encoded("#3366cc"))
+still = thumbs._still_image(encoded("#3366cc"))
 check("a still image is used as it is", not still.isNull()
-      and gal._brightness(still) > 0.1)
+      and thumbs._brightness(still) > 0.1)
 check("and nothing at all is not an image",
-      gal._still_image(QByteArray()).isNull())
+      thumbs._still_image(QByteArray()).isNull())
 check("neither is something that is not a picture",
-      gal._still_image(QByteArray(b"not an image at all")).isNull())
+      thumbs._still_image(QByteArray(b"not an image at all")).isNull())
 
 
 # ---- The Steamworks layer --------------------------------------------------
