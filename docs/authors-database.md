@@ -14,8 +14,9 @@ the nine published since you were last here".
 
 ## Where it is
 
-`data/authors.sqlite`, beside the other things the toolkit keeps — next to the
-exe in a built copy, in the project folder when run from source.
+`data/authors.sqlite`, in the [data folder](configuration.md#where-things-live)
+with the other things the toolkit keeps — `%LOCALAPPDATA%\WallpaperEngineToolkit`
+in a built copy, the project folder's `data\` when run from source.
 
 There is nothing to set up. The file is made the first time the Review tab
 needs it, and **Authors database…** in the tab says how many authors it holds,

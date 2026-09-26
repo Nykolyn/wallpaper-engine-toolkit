@@ -1,4 +1,4 @@
-"""authors_store.py — the authors database, as one file beside the app.
+"""authors_store.py — the authors database, as one file in the data folder.
 
 Review's whole premise is remembering, per author, when you last looked at
 their work. That lives here — `data/authors.sqlite`, created the first time it

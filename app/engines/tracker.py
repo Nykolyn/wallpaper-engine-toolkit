@@ -41,7 +41,6 @@ from __future__ import annotations
 import ctypes
 import json
 import os
-import sys
 import time
 import uuid
 from ctypes import wintypes
@@ -51,21 +50,11 @@ from pathlib import Path
 from typing import Callable
 
 from . import steam_paths
+from ..settings import app_data_dir
 from .wallpaper_timer import WRITE_LAG, EngineFiles, MonitorDeck, wallpaper_engine_process
 
 
 # ---- Where things live ----------------------------------------------------
-
-def app_data_dir() -> Path:
-    """Directory where tracker state lives. Next to the exe, or project root in dev."""
-    if getattr(sys, "frozen", False):
-        base = Path(sys.executable).parent
-    else:
-        base = Path(__file__).resolve().parent.parent.parent
-    d = base / "data"
-    d.mkdir(parents=True, exist_ok=True)
-    return d
-
 
 STATE_PATH = app_data_dir() / "tracker.json"
 

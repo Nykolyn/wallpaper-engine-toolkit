@@ -2,15 +2,16 @@
 :: Build a standalone WallpaperEngineToolkit.exe with PyInstaller.
 cd /d "%~dp0"
 
-:: dist\WallpaperEngineToolkit\data is where a deployed copy keeps its live
-:: state: the authors database and its backups, the DPAPI-encrypted Steam key,
-:: the library index, the tracker's history. PyInstaller empties its output
-:: folder before writing, so it never writes there any more. It builds into
-:: build\stage, and robocopy mirrors the result into dist\ with that one data
-:: folder excluded - excluded from the copy AND from the purge, so nothing under
-:: it can be deleted or overwritten by a build, failed or not. (The old way
-:: stashed data\ in %TEMP% and put it back; a build that died half way through
-:: the wipe took secrets.json with it.)
+:: Since 3.0.0 a build keeps its data in %LOCALAPPDATA%\WallpaperEngineToolkit,
+:: outside dist\ altogether. A copy installed before then still has it in
+:: dist\WallpaperEngineToolkit\data - the authors database, the DPAPI-encrypted
+:: Steam key, the Rotator's history - until the new build's first start moves
+:: it. PyInstaller empties its output folder before writing, so it never writes
+:: there. It builds into build\stage, and robocopy mirrors the result into dist\
+:: with that one data folder excluded - excluded from the copy AND from the
+:: purge, so nothing under it can be deleted or overwritten by a build, failed
+:: or not. (The old way stashed data\ in %TEMP% and put it back; a build that
+:: died half way through the wipe took secrets.json with it.)
 set "STAGE=build\stage"
 set "APP=WallpaperEngineToolkit"
 set "LIVE=%~dp0dist\%APP%"

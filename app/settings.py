@@ -7,7 +7,6 @@ UI layer. Everything is stored in a single ``data/suite.json`` file.
 from __future__ import annotations
 
 import json
-import sys
 from pathlib import Path
 
 from .engines import steam_paths
@@ -41,14 +40,9 @@ _RENAMED_SECTIONS = {"autocreator": "creator"}
 
 
 def app_data_dir() -> Path:
-    """Directory where suite settings live. Next to the exe, or project root in dev."""
-    if getattr(sys, "frozen", False):
-        base = Path(sys.executable).parent
-    else:
-        base = Path(__file__).resolve().parent.parent
-    d = base / "data"
-    d.mkdir(parents=True, exist_ok=True)
-    return d
+    """The one folder every data file lives in — see app/data_location.py."""
+    from .data_location import data_dir
+    return data_dir()
 
 
 SETTINGS_PATH = app_data_dir() / "suite.json"

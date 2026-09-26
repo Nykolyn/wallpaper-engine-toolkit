@@ -147,7 +147,6 @@ first's.
 | Never | Why |
 |---|---|
 | `data/` | Your Steam API key (DPAPI-encrypted, still private), your authors database and its backups, your tracker history, 150 MB of cached thumbnails. |
-| `app/engines/data/` | The Rotator's config and history — real folder paths from your machine. |
 | `dist/`, `build/`, `.venv/` | Build output and the virtualenv. |
 
 **No credential, hostname or personal path belongs in source.** Folder

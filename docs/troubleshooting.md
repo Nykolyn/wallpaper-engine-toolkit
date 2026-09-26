@@ -171,9 +171,15 @@ remembered after the first time.
 
 ## A rebuild lost my settings
 
-It should not: `build.cmd` copies `data/` out before PyInstaller wipes `dist/`
-and restores it afterwards. If it happened anyway, the backup is at
-`%TEMP%\WallpaperEngineToolkit_data_backup`.
+It cannot since 3.0.0: the data is not in the program folder at all, but in
+`%LOCALAPPDATA%\WallpaperEngineToolkit` — see
+[Where things live](configuration.md#where-things-live). If the Rotator's
+history went missing anyway, the History tab says what it put back from
+`history_backup/`.
+
+The first start of 3.0.0 moves the old `data\` from beside the exe and sends it
+to the Recycle Bin once the copy is verified. If something from before is
+missing, look there.
 
 ## The window stopped answering
 
