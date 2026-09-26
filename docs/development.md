@@ -23,6 +23,7 @@ app/
 ├── tracker_tray.py       the tracker as a tray-only app (--tracker)
 ├── tracker_feed.py       one tracker, looked at when Wallpaper Engine writes
 ├── autostart.py          the logon task, and the rename migration
+├── external.py           starting other programs without the toolkit's own DLLs
 ├── engines/
 │   ├── steam_paths.py    where Steam, its libraries and Wallpaper Engine are
 │   ├── copier.py         verbatim  wallpaper_copier/copier.py
@@ -96,6 +97,7 @@ for %f in (tests\test_*.py) do .venv\Scripts\python.exe %f
 | `test_gallery.py` | every delegate, painted in every state; memory and animation bounds |
 | `test_hang_watch.py` | a stuck GUI thread leaves its stacks in the hang log |
 | `test_window_instance.py` | one window, raised from the tray, in a process of its own |
+| `test_external.py` | a child cannot load a DLL from the bundle, through the DLL directory or PATH; a quoted URL survives cmd.exe; nothing in `app/` starts a program another way |
 
 Most need **PySide6** (they build real widgets); none need Wallpaper Engine,
 windows on screen, or a network.
@@ -344,5 +346,13 @@ kit adds their section here.
   appears, it came from a run.
 - **Nothing writes without saying what it would write.** The database plans
   first; the reserve check confirms first; rotation states the move first.
+- **Other programs are started through `app/external.py`.** Use `popen`, `run`
+  or `open_url`, not `subprocess`, `os.startfile` or `webbrowser`. A build
+  otherwise hands every child its `_internal` folder, both as the DLL directory,
+  which Windows searches before System32, and at the front of `PATH`. Wallpaper
+  Engine restarted by a rotation ran on the build's `VCRUNTIME140.dll` that way,
+  and kept `build.cmd` from replacing it. `test_external.py` fails on any other
+  kind of launch in `app/`. The one exception is `window_instance.launch`,
+  which starts the toolkit itself.
 - **Line endings** are normalised to LF by `.gitattributes`, except `.cmd`
   files, which cmd.exe wants as CRLF.

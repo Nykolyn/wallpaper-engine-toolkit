@@ -34,6 +34,8 @@ import random
 import threading
 import time
 
+from .. import external
+
 # Folder naming + project.json come from the Creator engine unchanged.
 
 # Video extensions Wallpaper Engine can use.
@@ -157,14 +159,18 @@ def find_ffmpeg():
         return exe
     try:
         import imageio_ffmpeg
-        return imageio_ffmpeg.get_ffmpeg_exe()
+        # It runs the binary once to see that it works, with subprocess and this
+        # process's environment. Only the DLL folder can be kept from it, and that
+        # stays cleared for the whole run (once per process: the answer is cached).
+        with external.clean_dll_search():
+            return imageio_ffmpeg.get_ffmpeg_exe()
     except Exception:  # noqa: BLE001 — package missing or binary not downloaded
         return None
 
 
 def _run(args):
     """Run ffmpeg quietly; return the CompletedProcess."""
-    return subprocess.run(
+    return external.run(
         args, capture_output=True, text=True, errors="replace",
         creationflags=_NO_WINDOW,
     )

@@ -8,7 +8,6 @@ wallpaper that lost its manifest rather than leftover rubbish.
 """
 from __future__ import annotations
 
-import subprocess
 from pathlib import Path
 
 from PySide6.QtCore import Qt
@@ -17,7 +16,7 @@ from PySide6.QtWidgets import (
     QTreeWidgetItem, QAbstractItemView, QDialogButtonBox,
 )
 
-from .. import theme
+from .. import external, theme
 from ..engines.rotator.core import BrokenFolder, human_size
 
 PATH_ROLE = Qt.UserRole + 1
@@ -185,6 +184,6 @@ class CleanupDialog(QDialog):
     @staticmethod
     def _open(path: Path) -> None:
         try:
-            subprocess.Popen(["explorer", str(path)])
+            external.popen(["explorer", str(path)])
         except OSError:
             pass

@@ -6,6 +6,35 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [3.0.1] - 2026-09-26
+
+Programs the toolkit starts no longer run on its DLLs.
+
+### Fixed
+
+- **Wallpaper Engine no longer loads the build's Visual C++ runtime when a
+  rotation restarts it.** In a PyInstaller build, the bootloader sets
+  `_internal` as the process's DLL directory, and run-time hooks put `_internal`
+  and `_internal\PySide6` at the front of `PATH`. Windows passes both on to
+  every process the toolkit starts, and the DLL directory is searched before
+  System32. On 26 September, Wallpaper Engine restarted after a rotation was
+  running on `_internal\VCRUNTIME140.dll` and `VCRUNTIME140_1.dll`, and
+  `build.cmd` could not replace them while it ran (robocopy ERROR 32). Every
+  program the toolkit starts now goes through `app/external.py`: Wallpaper
+  Engine, schtasks, ffmpeg, Explorer, and the browser or Steam for links. The
+  DLL directory is cleared while each process is created, then put back
+  (2 ms median). Every path into the bundle is left out of the child's
+  environment. Checked on a build: the old code's restart loaded both DLLs from
+  the build's `_internal`. After the fix both come from System32, and the
+  engine's `PATH` begins with `C:\WINDOWS\system32`. `--selfcheck` reports this
+  as `other programs`.
+- **Opening a folder or a link no longer goes through the toolkit's own
+  process.** `os.startfile` and `webbrowser` call `ShellExecute` in-process, so
+  a program they start inherits an environment that cannot be cleaned. The
+  authors dialog now opens folders with Explorer. The Review tab opens Steam
+  and workshop pages with `cmd /c start`, in a clean child. The URL is quoted
+  so that cmd.exe passes the `&`s in a workshop URL through.
+
 ## [3.0.0] - 2026-09-26
 
 The data moves out of the program folder, and the Rotator's history can no
@@ -497,7 +526,8 @@ restructured yet; the tabs keep their layout and take on the new look.
   was right for one library and wrong for every other. Nothing is tagged now
   unless you ask for it.
 
-[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.0.0...HEAD
+[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.0.1...HEAD
+[3.0.1]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.0.0...v3.0.1
 [3.0.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v2.2.3...v3.0.0
 [2.2.3]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v2.2.2...v2.2.3
 [2.2.2]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v2.2.1...v2.2.2
