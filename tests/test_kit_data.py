@@ -25,6 +25,9 @@ from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+# The labels carry ≈ and →, which a Windows console's code page (cp1252 on CI)
+# cannot print; a check must not fail for the way its name is shown.
+sys.stdout.reconfigure(errors="replace")
 
 from PySide6.QtCore import QElapsedTimer, QEventLoop, QMimeData, QPointF, QSize, Qt, QTimer, QUrl  # noqa: E402
 from PySide6.QtGui import QColor, QDropEvent, QImage, QPainter                  # noqa: E402
