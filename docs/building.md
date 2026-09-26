@@ -72,7 +72,9 @@ ok      PySide6.QtNetwork  (one window, raised from the tray)
 ok      app.window_instance  (starting the window on its own)
 ok      app.engines.playlist_refresh  (rebuilding Wallpaper Engine's playlist after a rotation)
 ok      PySide6.QtSvg  (icons)
+ok      app.ui.kit  (the redesign's components, and the gallery's previews)
 ok      svg images  (check marks and arrows)
+ok      other programs  (DLL directory (_internal) cleared while one starts; left out of their environment: 2 of PATH, QML2_IMPORT_PATH, QT_PLUGIN_PATH, _PYI_ARCHIVE_FILE, _PYI_PARENT_PROCESS_LEVEL)
 ok      preview downloads (HTTP 404 from the host)
 ```
 
@@ -82,6 +84,14 @@ first start after a 2.x build is the one that moves it, and says so on that
 line: how many files, each verified, and that the old folder went to the
 Recycle Bin. A 404 from the preview host is a
 pass: any answer at all means the connection works.
+
+`other programs` describes the setup that Wallpaper Engine, Explorer,
+schtasks, ffmpeg and the browser get when the toolkit starts them. PyInstaller
+sets `_internal` as the process's DLL directory and puts it at the front of
+`PATH`, and a child inherits both. So the DLL directory is cleared while each
+program starts, and every path into the bundle is left out of its environment
+(see `app/external.py`). A source run has no DLL directory to clear and leaves
+out one entry of `PATH`, PySide6's own folder.
 
 ## Updating an installed copy
 
@@ -114,6 +124,15 @@ schtasks /run /tn WallpaperEngineToolkitTracker
 Measured going from 1.2.1 to 2.0.0: 52 s for the build, and all 365 files in
 `data\` identical afterwards except `tracker.log`, which had gained the
 tracker's own "stopped" line.
+
+**If the copy fails with ERROR 32 on `_internal\VCRUNTIME140.dll`** (or
+`VCRUNTIME140_1.dll`), a program outside the toolkit has those files loaded.
+Before 3.0.1 that was Wallpaper Engine whenever a rotation had restarted it,
+because it inherited the build's DLL folder. Quit Wallpaper Engine from its tray,
+start it the usual way, and run `build.cmd` again. The new build is complete in
+`build\stage` either way, and `data\` is not touched. This is needed once, while
+leaving a version older than 3.0.1: from 3.0.1 on, a rotation starts Wallpaper
+Engine on the system's own runtime.
 
 **Going back** is the same with the copy the other way round — stop the
 tracker, then
