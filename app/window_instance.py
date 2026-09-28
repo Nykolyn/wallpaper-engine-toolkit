@@ -17,6 +17,15 @@ raised the same window instead of opening another. That is kept the way the
 tracker keeps to one tray icon: a named mutex says whether a window exists, and
 a local socket carries the request to show it — from the tray, or from a second
 launch of the program, which passes the request on and exits.
+
+**What travels on the socket** is one line per request, in one of two forms:
+
+- `show <page>` (or `show` alone): come forward, on that page. Every version
+  sends this to bring the window up, because it is the only form a window
+  from before the redesign reads; `<page>` may be an old tab name.
+- `<verb>:<argument>`, the command form: `show:rotator` now; the tray's
+  "Rotate now…" will send `rotate:confirm`. A window that does not know a
+  verb still comes forward.
 """
 from __future__ import annotations
 
@@ -77,10 +86,35 @@ def already_running(mutex_name: str = MUTEX_NAME) -> bool:
     return True
 
 
-class WindowInstance(QObject):
-    """The running window's end of the socket: hears "show" and says so."""
+def parse_command(line: str) -> tuple[str, str] | None:
+    """One line from the socket as (verb, argument), or None if it is neither
+    form: `show Tracker` → ("show", "Tracker"), `show:rotator` → ("show",
+    "rotator"), `rotate:confirm` → ("rotate", "confirm")."""
+    line = line.strip()
+    head, _, rest = line.partition(" ")
+    if head == "show":
+        return "show", rest.strip()
+    verb, colon, argument = line.partition(":")
+    if colon and _VERB.fullmatch(verb):
+        return verb, argument.strip()
+    return None
 
-    show_requested = Signal(str)          # the tab to show, or ""
+
+def command(verb: str, argument: str = "") -> str:
+    """The command form of a request, as `send` takes it: `show:rotator`."""
+    if not _VERB.fullmatch(verb):
+        raise ValueError(f"not a command verb: {verb!r}")
+    return f"{verb}:{argument}"
+
+
+_VERB = re.compile(r"[a-z][a-z0-9_-]*")
+
+
+class WindowInstance(QObject):
+    """The running window's end of the socket: hears requests and says so."""
+
+    show_requested = Signal(str)          # the page (or old tab) to show, or ""
+    command_received = Signal(str, str)   # verb, argument: every request, "show" too
 
     def __init__(self, name: str, mutex, parent: QObject | None = None):
         super().__init__(parent)
@@ -119,15 +153,26 @@ class WindowInstance(QObject):
 
     def _read(self, socket: QLocalSocket) -> None:
         while socket.canReadLine():
-            line = bytes(socket.readLine()).decode("utf-8", "replace").strip()
-            verb, _, tab = line.partition(" ")
+            line = bytes(socket.readLine()).decode("utf-8", "replace")
+            parsed = parse_command(line)
+            if parsed is None:
+                continue
+            verb, argument = parsed
+            self.command_received.emit(verb, argument)
             if verb == "show":
-                self.show_requested.emit(tab.strip())
+                self.show_requested.emit(argument)
 
 
 def ask_to_show(tab: str = "", wait: float = REACH_SECONDS,
                 name: str | None = None) -> bool:
-    """Ask a running window to come forward. False if none could be reached."""
+    """Ask a running window to come forward. False if none could be reached.
+
+    Sent in the plain form, which a window of any version understands."""
+    return send(f"show {tab}", wait, name)
+
+
+def send(message: str, wait: float = REACH_SECONDS, name: str | None = None) -> bool:
+    """Hand one request line to a running window. False if none could be reached."""
     deadline = time.monotonic() + max(0.0, wait)
     while True:
         socket = QLocalSocket()
@@ -137,7 +182,7 @@ def ask_to_show(tab: str = "", wait: float = REACH_SECONDS,
             # foreground; without this Windows flashes the taskbar instead.
             if _u32 is not None:
                 _u32.AllowSetForegroundWindow(_ASFW_ANY)
-            socket.write(f"show {tab}\n".encode("utf-8"))
+            socket.write(f"{message}\n".encode("utf-8"))
             # On Windows the write only reaches the pipe from the event loop, and
             # waitForBytesWritten alone comes back with all of it still queued.
             # Dropping the socket then drops the request with it — and a second

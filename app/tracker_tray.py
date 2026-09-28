@@ -150,7 +150,7 @@ class TrackerTray:
         self._build_clock()
 
         self.icon = QSystemTrayIcon(tray_icon(0, None))
-        self.icon.setToolTip("Wallpaper Tracker")
+        self.icon.setToolTip("Toolkit")
         self.icon.activated.connect(self._on_activated)
 
         self.menu = QMenu()
@@ -236,6 +236,8 @@ class TrackerTray:
 
     # ------------------------------------------------------------ rendering
     def _primary(self) -> Progress | None:
+        # The window's Settings page chooses it too.
+        self.settings.reload_if_changed()
         return pick_primary(self.results, self.settings.get("tracker", "primary", None))
 
     def _render(self):
@@ -296,7 +298,7 @@ class TrackerTray:
         if self.results:
             self.menu.addSeparator()
 
-        self.menu.addAction("Open Wallpaper Engine Toolkit", self.open_toolkit)
+        self.menu.addAction("Open Toolkit", self.open_toolkit)
         self.menu.addAction("Refresh now", self.refresh)
 
         if len(self.results) > 1:
@@ -335,6 +337,7 @@ class TrackerTray:
                                   QSystemTrayIcon.Warning, 10000)
 
     def _set_primary(self, monitor: str):
+        self.settings.reload_if_changed()       # not to write back what the window changed
         self.settings.set("tracker", "primary", monitor)
         self.settings.save()
         self._render()
@@ -348,7 +351,7 @@ class TrackerTray:
             self.open_toolkit()
 
     def open_toolkit(self):
-        """Bring up the Wallpaper Engine Toolkit window, on the Tracker tab.
+        """Bring up the Toolkit window, on the Tracker page.
 
         The window is a program of its own (see `window_instance`), not
         something built inside the tray: when it was, a window that froze took
@@ -365,8 +368,8 @@ class TrackerTray:
                 return
             log("the toolkit window did not answer a request to show itself")
             self.icon.showMessage(
-                "Wallpaper Engine Toolkit",
-                "The toolkit window is not answering yet. If it stays that way, "
+                "Toolkit",
+                "The Toolkit window is not answering yet. If it stays that way, "
                 "close it from Task Manager — the tracker keeps counting either way.",
                 QSystemTrayIcon.Warning, 10000)
             return
@@ -375,7 +378,7 @@ class TrackerTray:
             log(f"opened the toolkit window: pid {child.pid}")
         except OSError as err:
             log(f"could not open the toolkit window: {err}")
-            self.icon.showMessage("Wallpaper Engine Toolkit",
+            self.icon.showMessage("Toolkit",
                                   f"Could not open the window: {err}",
                                   QSystemTrayIcon.Warning, 10000)
 

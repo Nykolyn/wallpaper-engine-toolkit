@@ -1,8 +1,13 @@
-"""Persistent settings for the Copier and Creator tabs.
+"""Persistent settings: ``data/suite.json``.
 
-The Rotator tab keeps its own verbatim Config/History (engines/rotator/config.py),
-so this module only covers the two tabs whose original settings lived in their
-UI layer. Everything is stored in a single ``data/suite.json`` file.
+The Rotator keeps its own Config/History (engines/rotator/config.py); this is
+everything else — the Copier's and the Creator's folders, the tracker's, the
+Review's. The Settings page writes both stores, each through its own API.
+
+Two processes use this file: the window and the tray. Each holds it in memory
+and writes it whole, so each reads it again when the other has written it
+(`reload_if_changed`) before it relies on or changes what the other may have
+set.
 """
 from __future__ import annotations
 
@@ -48,19 +53,44 @@ def app_data_dir() -> Path:
 SETTINGS_PATH = app_data_dir() / "suite.json"
 
 
+def _stamp() -> tuple[int, int] | None:
+    """What the file looks like on disk: enough to see that it was written."""
+    try:
+        st = SETTINGS_PATH.stat()
+    except OSError:
+        return None
+    return st.st_mtime_ns, st.st_size
+
+
 class Settings:
     """Tiny JSON-backed settings store with section helpers."""
 
     def __init__(self, data: dict | None = None):
         self._data = data or {}
+        self._stamp: tuple[int, int] | None = None
 
     @classmethod
     def load(cls) -> "Settings":
+        stamp = _stamp()
         try:
             data = json.loads(SETTINGS_PATH.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             return cls({})
-        return cls(cls._rename_sections(data))
+        settings = cls(cls._rename_sections(data))
+        settings._stamp = stamp
+        return settings
+
+    def reload_if_changed(self) -> bool:
+        """Read the file again if it was written since this was loaded or saved
+        — by the other process. In place, so everyone holding this object sees
+        it. True if it was read again."""
+        stamp = _stamp()
+        if stamp is None or stamp == self._stamp:
+            return False
+        fresh = Settings.load()
+        self._data = fresh._data
+        self._stamp = fresh._stamp
+        return True
 
     @staticmethod
     def _rename_sections(data: dict) -> dict:
@@ -83,7 +113,8 @@ class Settings:
                 encoding="utf-8",
             )
         except OSError:
-            pass
+            return
+        self._stamp = _stamp()
 
     # ----- section access ----------------------------------------------------
 

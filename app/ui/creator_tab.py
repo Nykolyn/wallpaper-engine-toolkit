@@ -9,11 +9,11 @@ from __future__ import annotations
 
 import os
 
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QGroupBox, QLineEdit,
-    QPushButton, QLabel, QPlainTextEdit, QComboBox, QFileDialog,
+    QPushButton, QLabel, QPlainTextEdit, QComboBox,
     QMessageBox, QFrame, QScrollArea, QDialog, QDialogButtonBox, QCheckBox,
 )
 
@@ -27,7 +27,7 @@ from ..settings import (
 )
 from .. import animations, theme
 from ..workers import CreatorBridge
-from .kit import icon
+from .kit import LinkButton, PathField, icon
 
 SECTION = "creator"
 
@@ -188,6 +188,9 @@ class VideoCard(QFrame):
 
 
 class CreatorTab(QWidget):
+    # "Change in Settings": the window goes to the Settings page.
+    settings_requested = Signal()
+
     def __init__(self, settings: Settings):
         super().__init__()
         self.settings = settings
@@ -225,12 +228,19 @@ class CreatorTab(QWidget):
         grid = QGridLayout(paths_box)
         grid.setColumnStretch(1, 1)
 
-        self.source_edit = QLineEdit(
-            self.settings.get(SECTION, "source", DEFAULT_CREATOR_SOURCE))
-        self.target_edit = QLineEdit(
-            self.settings.get(SECTION, "target", DEFAULT_CREATOR_TARGET))
-        self._path_row(grid, 0, "Source (videos):", self.source_edit)
-        self._path_row(grid, 1, "Target (WE projects):", self.target_edit)
+        # Set on the Settings page; shown here, checked on a worker.
+        self.source_field = PathField(self._source(), editable=False,
+                                      placeholder="No source folder set")
+        self.target_field = PathField(self._target_folder(), editable=False,
+                                      placeholder="No output folder set")
+        grid.addWidget(QLabel("Source (videos):"), 0, 0)
+        grid.addWidget(self.source_field, 0, 1)
+        grid.addWidget(QLabel("Target (WE projects):"), 1, 0)
+        grid.addWidget(self.target_field, 1, 1)
+        change = LinkButton("Change in Settings")
+        change.clicked.connect(self.settings_requested.emit)
+        grid.addWidget(change, 0, 2)
+        self._scanned_source: str | None = None
 
         opts = QHBoxLayout()
         opts.addWidget(QLabel("Video mode:"))
@@ -317,19 +327,23 @@ class CreatorTab(QWidget):
             card.set_batch_tags(self.batch_tags)
         self._save_settings()
 
-    def _path_row(self, grid: QGridLayout, row: int, label: str, edit: QLineEdit):
-        grid.addWidget(QLabel(label), row, 0)
-        grid.addWidget(edit, row, 1)
-        browse = QPushButton("Browse…")
-        browse.clicked.connect(lambda: self._browse(edit))
-        grid.addWidget(browse, row, 2)
+    def _source(self) -> str:
+        return self.settings.get(SECTION, "source", DEFAULT_CREATOR_SOURCE)
+
+    def _target_folder(self) -> str:
+        return self.settings.get(SECTION, "target", DEFAULT_CREATOR_TARGET)
+
+    def on_shown(self) -> None:
+        """The folders may have changed on the Settings page meanwhile; a new
+        source is read again."""
+        if self.target_field.path() != self._target_folder():
+            self.target_field.set_path(self._target_folder())
+        if self.source_field.path() != self._source():
+            self.source_field.set_path(self._source())
+        if self._scanned_source is not None and self._scanned_source != self._source():
+            self._scan()
 
     # ----- actions ------------------------------------------------------------
-    def _browse(self, edit: QLineEdit):
-        d = QFileDialog.getExistingDirectory(self, "Choose folder", edit.text())
-        if d:
-            edit.setText(os.path.normpath(d))
-
     def _clear_cards(self):
         while self.cards_layout.count():
             w = self.cards_layout.takeAt(0).widget()
@@ -344,7 +358,8 @@ class CreatorTab(QWidget):
             self._scan_now()
 
     def _scan_now(self):
-        source = self.source_edit.text().strip()
+        source = self._source().strip()
+        self._scanned_source = self._source()
         self._clear_cards()
 
         if not os.path.isdir(source):
@@ -379,9 +394,10 @@ class CreatorTab(QWidget):
     def _start(self):
         if self.engine.is_running():
             return
-        target = self.target_edit.text().strip()
+        target = self._target_folder().strip()
         if not target:
-            QMessageBox.warning(self, "Target", "Specify a target folder.")
+            QMessageBox.warning(self, "Target",
+                                "Choose an output folder on the Settings page first.")
             return
         buildable = [it for it in self.items if it.valid]
         if not buildable:
@@ -417,8 +433,6 @@ class CreatorTab(QWidget):
         self.cancel_btn.setEnabled(False)
 
     def _save_settings(self):
-        self.settings.set(SECTION, "source", self.source_edit.text().strip())
-        self.settings.set(SECTION, "target", self.target_edit.text().strip())
         self.settings.set(SECTION, "mode", self.mode_combo.currentText())
         self.settings.set(SECTION, "tags", self.batch_tags)
         self.settings.save()

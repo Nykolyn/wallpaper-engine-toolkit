@@ -1,7 +1,7 @@
 """Copier tab — Qt front-end for the verbatim CopyEngine.
 
 Mirrors the behaviour of the standalone Wallpaper Engine Copier:
-  * editable destination folder (remembered between runs)
+  * the destination folder, set on the Settings page and shown here
   * a table of "folder path" / "copy count" jobs
   * add / paste-from-clipboard / remove / clear, inline count editing
   * drag & drop folders straight into the table
@@ -11,9 +11,9 @@ from __future__ import annotations
 
 import os
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QGroupBox, QLineEdit, QPushButton,
+    QWidget, QVBoxLayout, QHBoxLayout, QGroupBox, QPushButton,
     QLabel, QPlainTextEdit, QTableWidget, QTableWidgetItem,
     QFileDialog, QMessageBox, QHeaderView, QApplication,
 )
@@ -25,7 +25,7 @@ from ..settings import (
     Settings, DEFAULT_COPIER_DEST, DEFAULT_COPIER_COUNT,
 )
 from ..workers import CopierBridge
-from .kit import icon
+from .kit import LinkButton, PathField, icon
 
 SECTION = "copier"
 
@@ -67,6 +67,9 @@ class JobTable(QTableWidget):
 
 
 class CopierTab(QWidget):
+    # "Change in Settings": the window goes to the Settings page.
+    settings_requested = Signal()
+
     def __init__(self, settings: Settings):
         super().__init__()
         self.settings = settings
@@ -98,13 +101,13 @@ class CopierTab(QWidget):
         # --- Destination ---
         dest_box = QGroupBox("Destination folder")
         dest_row = QHBoxLayout(dest_box)
-        self.dest_edit = QLineEdit(
-            self.settings.get(SECTION, "dest", DEFAULT_COPIER_DEST)
-        )
-        browse = QPushButton("Browse…")
-        browse.clicked.connect(self._browse_dest)
-        dest_row.addWidget(self.dest_edit)
-        dest_row.addWidget(browse)
+        # Set on the Settings page; shown here, checked on a worker.
+        self.dest_field = PathField(self._destination(), editable=False,
+                                    placeholder="No destination set")
+        change = LinkButton("Change in Settings")
+        change.clicked.connect(self.settings_requested.emit)
+        dest_row.addWidget(self.dest_field, 1)
+        dest_row.addWidget(change)
         layout.addWidget(dest_box)
 
         # --- List management buttons ---
@@ -160,13 +163,15 @@ class CopierTab(QWidget):
         self.log.setStyleSheet(theme.console_style())
         layout.addWidget(self.log, 1)
 
-    # ----- list actions -------------------------------------------------------
-    def _browse_dest(self):
-        d = QFileDialog.getExistingDirectory(
-            self, "Choose destination folder", self.dest_edit.text())
-        if d:
-            self.dest_edit.setText(os.path.normpath(d))
+    def _destination(self) -> str:
+        return self.settings.get(SECTION, "dest", DEFAULT_COPIER_DEST)
 
+    def on_shown(self) -> None:
+        """The destination may have changed on the Settings page meanwhile."""
+        if self.dest_field.path() != self._destination():
+            self.dest_field.set_path(self._destination())
+
+    # ----- list actions -------------------------------------------------------
     def _add_folder(self):
         d = QFileDialog.getExistingDirectory(self, "Choose folder to copy")
         if d:
@@ -232,17 +237,15 @@ class CopierTab(QWidget):
     def _start(self):
         if self.engine.is_running():
             return
-        dest = self.dest_edit.text().strip()
+        dest = self._destination().strip()
         if not dest:
-            QMessageBox.warning(self, "Destination", "Specify a destination folder.")
+            QMessageBox.warning(self, "Destination",
+                                "Choose a destination folder on the Settings page first.")
             return
         jobs = self._collect_jobs()
         if not jobs:
             QMessageBox.warning(self, "Empty list", "Add at least one folder.")
             return
-
-        self.settings.set(SECTION, "dest", dest)
-        self.settings.save()
 
         try:
             os.makedirs(dest, exist_ok=True)

@@ -5,15 +5,19 @@ outgrown Wallpaper Engine: tens of thousands of wallpapers, a reserve that has
 to be cycled through `myprojects`, clips waiting to become wallpapers, and a
 weekly pile of new items whose authors are the part actually worth tracking.
 
-Five tools in one window, sharing one dark theme and one set of habits.
+Five tools in one window, in the order of the loop they make — rotate, watch
+the playlist run down, review what is new — with a sidebar that says what each
+is doing, a status line for whatever is running, and one Settings page for
+what is set once.
 
-| Tab | What it does |
+| Page | What it does |
 |---|---|
-| **[Copier](docs/copier.md)** | Duplicates wallpaper folders N times each — the weighting Wallpaper Engine's playlists do not have. |
-| **[Creator](docs/creator.md)** | Turns video clips into Wallpaper Engine projects, rendering each preview from the video itself. |
 | **[Rotator](docs/rotator.md)** | Moves folders between a reserve and `myprojects`, with duplicate handling, protected folders and a dead-folder check — and rebuilds Wallpaper Engine's playlist from the new set. |
 | **[Tracker](docs/tracker.md)** | Reports how far Wallpaper Engine has got through the active playlist — `112/208` — so the next rotation is due when it reaches the end. |
 | **[Review](docs/review.md)** | Groups the week's new wallpapers by author, says what each has published since you last looked, and opens a gallery to subscribe from. |
+| **[Creator](docs/creator.md)** | Turns video clips into Wallpaper Engine projects, rendering each preview from the video itself. |
+| **[Copier](docs/copier.md)** | Duplicates wallpaper folders N times each — the weighting Wallpaper Engine's playlists do not have. |
+| **[Settings](docs/settings.md)** | The folders, Wallpaper Engine's settings file, counting in the background, the Steam key. |
 
 **[Full documentation →](docs/)**
 
@@ -37,7 +41,7 @@ The background playlist tracker is the same entry point with a flag:
 ```
 
 It has no window — it lives in the notification area and clicking it opens the
-main window on the Tracker tab.
+main window on the Tracker page.
 
 **[Getting started →](docs/getting-started.md)**
 
@@ -50,7 +54,7 @@ main window on the Tracker tab.
 - **Wallpaper Engine** via Steam. Steam's registry entry and
   `libraryfolders.vdf` are read to locate it, so folder settings arrive already
   filled in.
-- **Optionally, a Steam Web API key** — for the Review tab, which works
+- **Optionally, a Steam Web API key** — for the Review page, which works
   without one but sees less. Its authors database is a local file made on first
   use; there is nothing to install or host.
 

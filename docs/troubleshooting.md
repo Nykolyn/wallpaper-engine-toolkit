@@ -32,13 +32,13 @@ Autostart and a manual `run_tracker.cmd` both started one. A named mutex is
 meant to prevent this; if you see it anyway, close one — they write the same
 state file and merge on save, so nothing is lost either way.
 
-## The Review tab says the authors database is damaged
+## The Review page says the authors database is damaged
 
 The file `data/authors.sqlite` failed SQLite's own integrity check when it was
 opened — a disk error, or the file was cut short by something outside the app.
 Nothing is written to it.
 
-The tab offers the backups straight away; or open **Authors database…**, pick
+The page offers the backups straight away; or open **Authors database…**, pick
 the newest snapshot and press **Restore selected…**. The damaged file is set
 aside as `authors.sqlite.damaged1`, not deleted. A snapshot is taken after
 every change, so the newest one is the database as it was after the last one.
@@ -58,7 +58,7 @@ questionable content, which on one real library was **43%** of it — and for
 some authors the public listing shows *nothing at all*. The author's line in
 the gallery says *list incomplete* when this is why.
 
-Set the key under **Steam key…** in the Review tab and press **Test**. See
+Set the key under **Steam key…** in the Review page and press **Test**. See
 [what the key is for](review.md#what-a-steam-web-api-key-is-for). A key Steam
 refuses stops the scan with a sentence saying so.
 
@@ -114,7 +114,7 @@ Several harmless reasons:
 
 ## The rotation did not rebuild the playlist
 
-The log says which of three it was — the tab's, or the day's file in
+The log says which of three it was — the page's, or the day's file in
 `data/logs/rotator/` once the window is closed:
 
 - **No playlist is made of what is in myprojects.** The playlist is found by
@@ -158,7 +158,7 @@ the GIF nor the still fallback. Its half-built folder is removed and the video
 is left where it was, so nothing is lost; the log says which clip and why.
 
 The usual cause is a file that is not really a video, or one ffmpeg cannot
-decode. Check that ffmpeg is found at all — the tab reports which one it is
+decode. Check that ffmpeg is found at all — the page reports which one it is
 using.
 
 ## The Creator's previews are black

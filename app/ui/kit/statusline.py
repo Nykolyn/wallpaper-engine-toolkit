@@ -9,8 +9,10 @@ toolkit is doing now.
 - warn and error: the glyph in its hue, the words, and a link that does
   something about it ("Open log").
 
-Short of room, the words give way — cut with an ellipsis, whole in the tool
-tip — and the count never does: a count cut to `412 / 1 0…` would lie.
+The bar, the count and the link follow the words, as the design sets them;
+the rest of the line is empty. Short of room, the words give way — cut with
+an ellipsis, whole in the tool tip — and the count never does: a count cut to
+`412 / 1 0…` would lie.
 
 It has a plain API here; binding it to the JobCenter is steps 05 and 06.
 """
@@ -63,7 +65,8 @@ class StatusLine(QWidget):
         self._dot = LiveDot("text.lo", live=False)
         self._glyph = Glyph("warn", "warn", theme.STATUS_ICON)
         self._text = Elided("", "type.label", "mid")
-        self._text.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Fixed)
+        # As wide as the words, and narrower (elided) only when the line is full.
+        self._text.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
         self._bar = ProgressBar(height=4)
         self._bar.setFixedWidth(theme.STATUS_BAR)
         self._count = label("", "type.monoSm", "mid")
@@ -72,10 +75,11 @@ class StatusLine(QWidget):
         self._link.clicked.connect(self._clicked)
         row.addWidget(self._dot, 0, Qt.AlignVCenter)
         row.addWidget(self._glyph, 0, Qt.AlignVCenter)
-        row.addWidget(self._text, 1)
+        row.addWidget(self._text)
         row.addWidget(self._bar, 0, Qt.AlignVCenter)
         row.addWidget(self._count, 0, Qt.AlignVCenter)
         row.addWidget(self._link, 0, Qt.AlignVCenter)
+        row.addStretch(1)
         self.set_idle("")
 
     # -- the four states

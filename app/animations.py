@@ -27,10 +27,11 @@ from contextlib import contextmanager
 
 from PySide6.QtCore import (
     Property, QAbstractAnimation, QElapsedTimer, QEasingCurve, QEvent, QObject,
-    QPointF, QPropertyAnimation, QTimer, QVariantAnimation, Qt,
+    QPoint, QPointF, QPropertyAnimation, QRect, QTimer, QVariantAnimation, Qt,
 )
+from PySide6.QtGui import QPainter, QPixmap
 from PySide6.QtWidgets import (
-    QApplication, QGraphicsOpacityEffect, QProgressBar, QTabWidget, QWidget,
+    QApplication, QProgressBar, QWidget,
 )
 
 from . import theme
@@ -125,40 +126,86 @@ class SmoothProgressBar(QProgressBar):
         self._animation.start()
 
 
-# ---- Arriving ------------------------------------------------------------
+# ---- Changing page ---------------------------------------------------------
 
-def fade_in(widget: QWidget, duration: int = BASE) -> None:
-    """Bring a widget up from transparent, then get out of the way.
+class CrossFade(QWidget):
+    """The page that is leaving, as a still, fading out over the one arriving.
 
-    The opacity effect is removed when the animation ends: leaving one attached
-    routes every later repaint of that widget through an offscreen pixmap, which
-    is a real cost on a tab holding hundreds of cards.
+    Switching pages cross-fades the content only (motion.base): the sidebar,
+    the title bar and the status line are the frame, and never move. The
+    still is taken from `ground` — the widget that paints the window's
+    background under everything — so it holds the gradient and every shadow
+    exactly as they were, and the arriving page underneath is live from the
+    first frame. One pixmap is painted per frame; no page is routed through an
+    opacity effect.
+
+        fade = CrossFade(backdrop, cover=content)
+        fade.switch(lambda: stack.setCurrentIndex(3))
+
+    With motion off (`ENABLED` False) or the window not on screen the switch
+    is instant.
     """
-    if not ENABLED or not widget:
-        return
-    effect = QGraphicsOpacityEffect(widget)
-    widget.setGraphicsEffect(effect)
 
-    animation = QPropertyAnimation(effect, b"opacity", widget)
-    animation.setDuration(duration)
-    animation.setStartValue(0.0)
-    animation.setEndValue(1.0)
-    animation.setEasingCurve(ease())
-    animation.finished.connect(lambda: widget.setGraphicsEffect(None))
-    animation.start(QAbstractAnimation.DeleteWhenStopped)
+    def __init__(self, ground: QWidget, cover: QWidget, duration: int | None = None):
+        super().__init__(ground)
+        self._ground = ground
+        self._cover = cover
+        self._duration = duration
+        self._still: QPixmap | None = None
+        self._opacity = 0.0
+        self.setAttribute(Qt.WA_TransparentForMouseEvents)
+        self.setFocusPolicy(Qt.NoFocus)
+        self._animation = QVariantAnimation(self)
+        self._animation.setStartValue(1.0)
+        self._animation.setEndValue(0.0)
+        self._animation.valueChanged.connect(self._step)
+        self._animation.finished.connect(self._done)
+        self.hide()
 
+    def running(self) -> bool:
+        return self._animation.state() == QAbstractAnimation.Running
 
-class FadingTabWidget(QTabWidget):
-    """Tabs whose pages cross-fade in, so a switch reads as a move, not a flicker."""
+    def switch(self, change) -> None:
+        """Call `change()` — which puts the new page in place — under a fade."""
+        self.stop()
+        if not ENABLED or not self._ground.isVisible() or self._ground.window().isMinimized():
+            change()
+            return
+        area = QRect(self._cover.mapTo(self._ground, QPoint(0, 0)), self._cover.size())
+        if area.isEmpty():
+            change()
+            return
+        self._still = self._ground.grab(area)
+        change()
+        self.setGeometry(area)
+        self._opacity = 1.0
+        self.raise_()
+        self.show()
+        self._animation.setDuration(BASE if self._duration is None else self._duration)
+        self._animation.setEasingCurve(ease())
+        self._animation.start()
 
-    def __init__(self, parent: QWidget | None = None):
-        super().__init__(parent)
-        self.currentChanged.connect(self._fade_current)
+    def stop(self) -> None:
+        """Land at once: the new page, with no still over it."""
+        if self.running():
+            self._animation.stop()
+        self._done()
 
-    def _fade_current(self, index: int) -> None:
-        page = self.widget(index)
-        if page is not None:
-            fade_in(page, BASE)
+    def _step(self, value) -> None:
+        self._opacity = float(value)
+        self.update()
+
+    def _done(self) -> None:
+        self._still = None
+        self._opacity = 0.0
+        self.hide()
+
+    def paintEvent(self, event) -> None:        # noqa: N802 - Qt's name
+        if self._still is None or self._opacity <= 0.0:
+            return
+        painter = QPainter(self)
+        painter.setOpacity(self._opacity)
+        painter.drawPixmap(0, 0, self._still)
 
 
 # ---- Something just changed ----------------------------------------------

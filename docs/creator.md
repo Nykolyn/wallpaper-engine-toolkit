@@ -21,10 +21,13 @@ nothing prepared beforehand.
 
 ## How to use it
 
-1. **Source** — the folder of videos. Starts empty; pick it once and it is
-   remembered.
-2. **Target** — where projects are written. Pre-filled with Wallpaper Engine's
-   `myprojects` folder, [detected from Steam](configuration.md#how-the-detected-ones-are-found).
+1. **Source** — the folder of videos — and **Target** — where projects are
+   written — are set on the [Settings](settings.md#folders) page and shown at
+   the top of the Creator, with **Change in Settings** beside them. The source
+   starts empty; the target is pre-filled with Wallpaper Engine's `myprojects`
+   folder, [detected from Steam](configuration.md#how-the-detected-ones-are-found).
+   A new source is read as soon as you come back to the Creator.
+2. The Creator reads the source when it opens.
 3. **Mode** — `Move` takes each clip out of the source folder; `Copy` leaves it.
 4. Press **Scan**. Each video becomes a card showing its name and size.
 5. Build. Cards turn blue as their projects are created.
@@ -70,7 +73,7 @@ ffmpeg is taken from `PATH` if present, otherwise from the bundled
 ## Tags
 
 Wallpaper Engine writes genre tags into each `project.json` and shows them in
-its own browser. This tab lets you set them at two levels.
+its own browser. The Creator lets you set them at two levels.
 
 **For the whole batch** — the `Tags` button next to the video mode. Whatever is
 chosen there goes into every project built in that run, and is remembered
@@ -105,7 +108,8 @@ written in and wrong everywhere else.
 ## Settings it keeps
 
 Source, target, mode and the batch tags live in `data/suite.json` under
-`creator`. A clip's own tags belong to the scan, not to the settings — rescanning
+`creator`; the source and target are changed on the Settings page, the mode and
+tags on the Creator. A clip's own tags belong to the scan, not to the settings — rescanning
 starts everything following the batch again.
 
 ## Watch out for
@@ -124,7 +128,7 @@ starts everything following the batch again.
 
 ## A note on history
 
-This tab used to be two. The original Creator required a matching preview image
+The Creator used to be two tabs. The original Creator required a matching preview image
 for every clip — `sunset.mp4` took `sunset.jpg` — and skipped any clip without
 one. An Auto Creator was added beside it that rendered the preview instead.
 

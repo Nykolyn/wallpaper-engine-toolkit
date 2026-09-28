@@ -168,6 +168,15 @@ class Snapshot(QObject):
     def refreshing(self) -> bool:
         return self._worker is not None
 
+    def put(self, key: str, value, *, at: float | None = None, error: str = "",
+            reason: str = "") -> None:
+        """Set a reading as if it had just been read, and say so. For fixtures
+        (`tools/ui_snapshot.py`) and tests; the app reads through `refresh()`."""
+        if key not in KEYS:
+            raise KeyError(f"no such snapshot value: {key}")
+        self._readings[key] = Reading(value, time.time() if at is None else at, error, reason)
+        self.refreshed.emit([key])
+
     # -- refreshing
 
     def refresh(self, keys=None) -> None:
