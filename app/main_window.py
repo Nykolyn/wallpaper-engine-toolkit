@@ -5,9 +5,10 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QPainter
 from PySide6.QtWidgets import QMainWindow, QVBoxLayout, QWidget
 
-from . import __version__, theme
+from . import __version__, services, theme
 from .animations import FadingTabWidget
 from .settings import Settings
+from .tracker_feed import TrackerFeed, heartbeat_setting
 from .ui.copier_tab import CopierTab
 from .ui.creator_tab import CreatorTab
 from .ui.rotator_tab import RotatorTab
@@ -53,13 +54,23 @@ class MainWindow(QMainWindow):
         frame.addWidget(self.tabs)
         self.setCentralWidget(backdrop)
 
+        # The window's own look at the tracker: the Tracker tab shows it, the
+        # snapshot and the journal listen to it.
+        self.feed = TrackerFeed(self.settings.get("tracker", "we_config", None),
+                                heartbeat_setting(self.settings), parent=self)
+        # What the tabs report their work to (see app/services). Installed
+        # before the tabs, which find it when they start something.
+        self.services = services.Services(self, settings=self.settings, feed=self.feed)
+        services.install(self.services)
+
         # Shared Settings instance for the two settings-in-UI tabs; the Rotator
         # manages its own verbatim Config/History.
         self.tabs.addTab(CopierTab(self.settings), "Copier")
         self.tabs.addTab(CreatorTab(self.settings), "Creator")
         self.tabs.addTab(RotatorTab(), "Rotator")
-        self.tabs.addTab(TrackerTab(self.settings), "Tracker")
+        self.tabs.addTab(TrackerTab(self.settings, self.feed), "Tracker")
         self.tabs.addTab(ReviewTab(self.settings), "Review")
+        self.services.start()
 
     def show_tab(self, name: str) -> bool:
         """Switch to the tab with this title. False if there is none."""

@@ -85,7 +85,9 @@ def _selfcheck() -> int:
                         ("app.engines.playlist_refresh",
                          "rebuilding Wallpaper Engine's playlist after a rotation"),
                         ("PySide6.QtSvg", "icons"),
-                        ("app.ui.kit", "the redesign's components, and the gallery's previews")):
+                        ("app.ui.kit", "the redesign's components, and the gallery's previews"),
+                        ("app.services",
+                         "the running jobs, the activity journal and the log files")):
         try:
             __import__(module)
             lines.append(f"ok      {module}  ({why})")

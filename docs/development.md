@@ -24,6 +24,13 @@ app/
 ├── tracker_feed.py       one tracker, looked at when Wallpaper Engine writes
 ├── autostart.py          the logon task, and the rename migration
 ├── external.py           starting other programs without the toolkit's own DLLs
+├── services/             what the pages report their work to, and read the loop from:
+│   ├── jobs.py           JobCenter: what is running, which job leads, rate and time left
+│   ├── activity.py       ActivityJournal: data/activity.jsonl; PlaylistWatch
+│   ├── logstore.py       LogStore: data/logs/<tool>/, 30 days
+│   ├── snapshot.py       Snapshot: the reserve, myprojects, the last run, read off the GUI thread
+│   ├── runs.py           begin(): a page's work told to all of them at once
+│   └── textfile.py       reading a file from its end
 ├── engines/
 │   ├── steam_paths.py    where Steam, its libraries and Wallpaper Engine are
 │   ├── copier.py         verbatim  wallpaper_copier/copier.py
@@ -64,6 +71,87 @@ Only the GUI layer is new. The callback-based Copier and Creator engines are
 driven through small Qt signal bridges in `app/workers.py`, so their background
 threads update the UI safely.
 
+## Services
+
+`app/services/` is what the status line, the sidebar and Overview read, and
+what every page reports its work to. The main window makes one `Services`
+(with its own `TrackerFeed`, which it also hands the Tracker tab) and
+installs it; `services.current()` is that one, or None for a tab built on its
+own, as the tests build them.
+
+**A page's work** goes through `begin(tool, title, page=None, activity=None,
+run_id=None)`, which returns a `Run`: `update(phase_text, done, total,
+count_text)`, `log(kind, message)`, `log_text("[WARN]  …")` for the callback
+engines' own lines, `note(kind, title, detail, chip, run)` for a journal entry
+on the way, and `finish(result, summary, title=, detail=, chip=, run=,
+journal=True)` / `fail(message)`. `finish` ends the job, writes the last log
+line, and journals `<activity>.<result>`. With no services installed every
+call does nothing. The old tabs are wired this way, thinly, until their pages
+replace them.
+
+**`JobCenter`** (`jobs.py`). `start(tool, title, page)` → `Job`;
+`Job.update(phase_text, done, total, count_text=None)` (what is left out keeps
+its value), `Job.finish(result, summary)` with result `clean`, `problems`,
+`stopped` or `failed`, `Job.fail(message)`. Signals `changed(job)` and
+`finished(job)`. `current()` is the job the status line leads with: the lowest
+`PRIORITY` (rotator 0, copier 1, creator 2, review 3, tracker 4), then the one
+started last. `running()`, `is_running(tool)`, `last_finished(tool=None)`.
+`Job.rate()` and `Job.eta()` are None until `MIN_SAMPLES` (5) counts in one
+phase over `MIN_SPAN` (2 s); a new phase or total starts them over, and a job
+that stalls shows its rate falling. A count alone is sent at most every 0.1 s
+(the last one always arrives); a new phase and the end at once. Nothing polls.
+
+**`ActivityJournal`** (`activity.py`). `add(tool, kind, title, detail="",
+chip=None, run=None)` appends a line to `data/activity.jsonl` — `{ts, tool,
+kind, title, detail, chip, run}`, `ts` local with its offset — and emits
+`appended(entry)`. `recent(n)` reads the newest `n` from the end of the file,
+across `activity.1.jsonl`; a line it cannot read and a field it does not know
+are skipped, and `Entry.ts` comes back naive and local. Past 2 MB the file is
+renamed to `activity.1.jsonl`. An append measured 0.15 ms (p95 0.23 ms), and
+`recent(8)` 0.1 ms, so both run on the GUI thread.
+
+The kinds: a piece of work ends as `<activity>.<outcome>` (`ACTIVITIES`:
+`run`, `check`, `cleanup`, `duplicates_delete`, `duplicates_return` for the
+Rotator; `scan`, `count`, `database` for Review; `build`; `copy`). `EVENTS`
+are the rest: `run.started`, `duplicates.set_aside`, and the Tracker's
+`playlist.advanced` (the leading monitor only), `playlist.finished` and
+`playlist.restarted`, which `PlaylistWatch` writes from the window's
+`TrackerFeed` — changes seen while the window is open, never the first look.
+`known_kind(kind)` says whether this build writes a kind.
+
+**`LogStore`** (`logstore.py`). `open(tool, run_id=None)` → a `LogWriter` on
+`data/logs/<tool>/YYYY-MM-DD.log` (it moves to the next day's file at
+midnight), or `data/logs/rotator/run-<id>.log` for one rotation.
+`write(kind, message)` adds `HH:MM:SS<TAB>kind<TAB>message`, a line per line
+of the message, line-buffered (7 µs a line, measured); `write_text` turns
+`[TAG]` lines into kinds (`TAG_KINDS`). `tail(tool, n)` gives (time, kind,
+message) tuples for `LogPanel.extend` — from the file written last, reaching
+into older ones when it is short; `tail(None, n)` is any tool's. `folder(tool)`
+and `open_folder(tool)` for "Open log folder". `sweep()` deletes files older
+than 30 days (a day's file by its name, a run's by its last write, nothing
+named otherwise); `sweep_in_background()` is what the window runs at start-up.
+`data/tracker.log` is the tray's and stays outside this.
+
+**`Snapshot`** (`snapshot.py`). `get(key)` → `Reading(value, at, error)`,
+with `age()`; a read that fails keeps the value read before and sets `error`,
+so a page can say "last known", and `reason` — `unset` (the folder is not
+chosen), `missing`, `unreadable` or `error` — for it to pick its empty state
+by. The keys: `RESERVE` (`ReserveCounts`:
+folders, never used, `will_reset`, batch), `ROTATION` (`RotationCounts`:
+folders in myprojects, protected, moved in today), `LAST_RUN` (`RunSummary`,
+with the result and times from step 09's `run_meta.json` beside
+`history.json` when it has the run, `from_side_file`), `PLAYLIST`
+(`PlaylistProgress` of the leading monitor, from the feed) and `REVIEW` (the
+dict in `review_last.json`, or None). `refresh(keys=None)` returns at once:
+the playlist is read from the feed in memory, everything else on one worker
+thread, one refresh at a time (asking during one queues the keys).
+`refreshed(keys)` follows. It refreshes itself when a rotation, a copy, a
+build or a Review job finishes, and when the feed looks. Nothing it reads
+writes: it reads `config.json` without `Config.load()`'s default save, and
+the history through `read_runs()`, never `History.load()`'s repairs. On the
+real reserve (33 619 folders on the W: disk) the worker took 1.0 s cold and
+0.26 s warm.
+
 ## Tests
 
 There is **no test framework**. Each file is a script that runs its own checks
@@ -99,6 +187,7 @@ for %f in (tests\test_*.py) do .venv\Scripts\python.exe %f
 | `test_gallery.py` | every delegate, painted in every state; memory and animation bounds |
 | `test_hang_watch.py` | a stuck GUI thread leaves its stacks in the hang log |
 | `test_window_instance.py` | one window, raised from the tray, in a process of its own |
+| `test_services.py` | which running job leads; rate and time left only once measured; the journal's append, tail and rotation past a damaged line and an unknown field; log files by tool, day and run, their tail and the 30-day sweep; the snapshot read on a worker, never the GUI thread, keeping its age and its last value; each tab's work reaching all three |
 | `test_external.py` | a child cannot load a DLL from the bundle, through the DLL directory or PATH; a quoted URL survives cmd.exe; nothing in `app/` starts a program another way |
 
 Most need **PySide6** (they build real widgets); none need Wallpaper Engine,

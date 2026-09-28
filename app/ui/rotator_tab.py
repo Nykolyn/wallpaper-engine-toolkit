@@ -25,9 +25,43 @@ from ..engines.rotator.core import (
 from ..engines.rotator.worker import (
     RotationWorker, DuplicateActionWorker, ReserveScanWorker, CleanupWorker,
 )
+from ..services import begin
 from .cleanup_dialog import CleanupDialog
 from .kit import icon
 from .widgets import FolderListPanel
+
+# What the status line says a rotation is doing, by the engine's phase.
+_PHASE_TEXT = {
+    "scan": "checking every folder for a project.json",
+    "delete": "deleting the folders you confirmed",
+    "return": "returning folders to the reserve",
+    "select": "drawing folders at random",
+    "move": "moving folders into myprojects",
+    "playlist": "Wallpaper Engine's playlist",
+    "replace": "moving duplicates into the reserve",
+    "done": "finishing",
+    "cancelled": "stopping",
+}
+
+
+def _log_kind(e: ProgressEvent) -> str:
+    """The LogPanel kind of an engine event, for the log file."""
+    message = e.message
+    if message.startswith("DUPLICATE"):
+        return "dupe"
+    if message.startswith(("SKIP", "Skipping")):
+        return "skip"
+    if e.level == "ERROR":
+        return "fail" if message.startswith("Failed") else "error"
+    if e.level == "WARN":
+        return "warn"
+    if message.startswith("Moved"):
+        return "moved"
+    if message.startswith("Returned"):
+        return "returned"
+    if message.startswith("Deleted"):
+        return "deleted"
+    return {"done": "done", "select": "step"}.get(e.phase, "info")
 
 
 class RotatorTab(QWidget):
@@ -41,6 +75,12 @@ class RotatorTab(QWidget):
         self.cleanup_worker: CleanupWorker | None = None
         self._rotate_after_check = False
         self._dup_busy = False
+        # The check, clean-up or rotation under way, and the duplicates action,
+        # as the status line and the log files know them (app/services).
+        self._job = None
+        self._job_phase = ""
+        self._dup_job = None
+        self._cancelled = False
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
@@ -310,10 +350,13 @@ class RotatorTab(QWidget):
                                  "Folder not found:\n" + "\n".join(missing))
             return
         self._rotate_after_check = then_rotate
+        self._cancelled = False
+        self._start_job("Checking folders", "check")
         self.log.clear()
         for problem in unset:
-            self._append_log(ProgressEvent("scan", f"{problem} Not checked.",
-                                           level="WARN"))
+            event = ProgressEvent("scan", f"{problem} Not checked.", level="WARN")
+            self._append_log(event)
+            self._job_event(event)
         self._set_running(True)
         self.phase_label.setText("Step 1 — checking every folder for a project.json")
         self.scan_worker = ReserveScanWorker(roots)
@@ -327,6 +370,18 @@ class RotatorTab(QWidget):
         self._set_running(False)
         self.phase_label.setText(
             f"Checked {scanned} folders — {len(broken)} unusable")
+        if self._cancelled:
+            self._end_job("stopped", "The check was stopped", journal=False)
+        elif broken:
+            count = len(broken)
+            self._end_job("problems", f"{count} of {scanned} folders cannot be shown "
+                                      "by Wallpaper Engine",
+                          title=f"{count} folder{'s' * (count != 1)} Wallpaper Engine "
+                                "cannot show",
+                          detail=f"of {scanned} checked")
+        else:
+            self._end_job("clean", f"All {scanned} folders have a project.json",
+                          journal=False)
         if not broken:
             if self._rotate_after_check:
                 self._confirm_and_rotate()
@@ -347,6 +402,7 @@ class RotatorTab(QWidget):
         self._set_running(True, cancellable=False)
         self.phase_label.setText(
             f"Step 2 — deleting {len(confirmed)} confirmed folder(s)")
+        self._start_job(f"Deleting {len(confirmed)} folders", "cleanup")
         self.cleanup_worker = CleanupWorker(confirmed)
         self.cleanup_worker.progress.connect(self._on_progress)
         self.cleanup_worker.finished_action.connect(self._on_cleanup_finished)
@@ -354,8 +410,15 @@ class RotatorTab(QWidget):
         self.cleanup_worker.start()
 
     def _on_cleanup_finished(self, failed: list):
+        asked = len(self.cleanup_worker.paths) if self.cleanup_worker else len(failed)
         self.cleanup_worker = None
         self._set_running(False)
+        deleted = asked - len(failed)
+        self._end_job("problems" if failed else "clean", f"{deleted} of {asked} folders deleted",
+                      title=f"{deleted} folder{'s' * (deleted != 1)} Wallpaper Engine "
+                            "could not show deleted",
+                      detail=f"{len(failed)} could not be deleted" if failed else "",
+                      chip="Failed" if failed else None)
         self.refresh_all()
         if failed:
             QMessageBox.warning(
@@ -399,6 +462,11 @@ class RotatorTab(QWidget):
             return
 
         self._set_running(True)
+        self._cancelled = False
+        number = len(self.history.runs) + 1
+        job = self._start_job(f"Run {number}", "run")
+        job.note("run.started", f"Run {number} started",
+                 f"{p['returning']} to return · {p['count']} to move into myprojects")
         self.rotation_worker = RotationWorker(self.config, self.history)
         self.rotation_worker.progress.connect(self._on_progress)
         self.rotation_worker.finished_run.connect(self._on_finished)
@@ -418,13 +486,44 @@ class RotatorTab(QWidget):
     def cancel_rotation(self):
         for worker in (self.rotation_worker, self.scan_worker):
             if worker is not None and worker.isRunning():
-                self._append_log(ProgressEvent(
-                    "cancel", "Stop requested — finishing current item...",
-                    level="WARN"))
+                event = ProgressEvent("cancel", "Stop requested — finishing current item...",
+                                      level="WARN")
+                self._append_log(event)
+                self._job_event(event)
+                self._cancelled = True
                 worker.cancel()
         self.cancel_btn.setEnabled(False)
 
+    # ------------------------------------------ reporting (app/services)
+
+    def _start_job(self, title: str, activity: str):
+        self._job = begin("rotator", title, activity=activity)
+        self._job_phase = ""
+        return self._job
+
+    def _job_event(self, e: ProgressEvent) -> None:
+        """Every event goes to the log file; the status line gets the phase
+        and the count. A phase that starts without a count clears the last
+        phase's, which would otherwise stand under the new name."""
+        job = self._job
+        if job is None:
+            return
+        job.log(_log_kind(e), e.message)
+        text = _PHASE_TEXT.get(e.phase)
+        if e.total:
+            job.update(text, e.current, e.total)
+        elif text is not None and e.phase != self._job_phase:
+            job.update(text, 0, 0)
+        if text is not None:
+            self._job_phase = e.phase
+
+    def _end_job(self, result: str, summary: str, **journal) -> None:
+        job, self._job = self._job, None
+        if job is not None:
+            job.finish(result, summary, **journal)
+
     def _on_progress(self, e: ProgressEvent):
+        self._job_event(e)
         phase_names = {
             "scan": "Step 1 — checking every folder for a project.json",
             "delete": "Step 2 — deleting the folders you confirmed",
@@ -456,6 +555,7 @@ class RotatorTab(QWidget):
         self._set_running(False)
         self.phase_label.setText(
             f"Complete — moved {record.moved_count}, duplicates {record.duplicate_count}")
+        self._report_run(record)
         self.refresh_all()
         summary = self.rotation_worker.playlist_summary if self.rotation_worker else []
         QMessageBox.information(
@@ -466,7 +566,44 @@ class RotatorTab(QWidget):
             f"Failed: {len(record.failed)}."
             + "".join(f"\n\n{line}" for line in summary))
 
+    def _report_run(self, record: RunRecord) -> None:
+        """The run to the status line and the journal. A run stopped while
+        returning folders is not in the history, so it has no number yet."""
+        job = self._job
+        if job is None:
+            return
+        runs = self.history.runs
+        recorded = bool(runs) and runs[0] is record
+        number = len(runs) if recorded else len(runs) + 1
+        run_id = record.id if recorded else None
+        failed, dups = len(record.failed), record.duplicate_count
+        if self._cancelled:
+            result = "stopped"
+            title = f"Run {number} stopped" if recorded else "The rotation was stopped"
+        elif failed:
+            result = "problems"
+            title = f"Run {number} finished with {failed} problem{'s' * (failed != 1)}"
+        else:
+            result, title = "clean", f"Run {number} finished"
+        parts = [f"{record.moved_count} moved in", f"{record.returned} returned"]
+        if dups:
+            parts.append(f"{dups} duplicate{'s' * (dups != 1)}")
+            job.note("duplicates.set_aside", f"{dups} duplicate{'s' * (dups != 1)} set aside",
+                     f"moved to {self.config.duplicates}", chip="Duplicated", run=run_id)
+        if failed:
+            parts.append(f"{failed} failed")
+        self._end_job(result, f"Moved {record.moved_count}, returned {record.returned}, "
+                              f"duplicates {dups}, failed {failed}",
+                      title=title, detail=" · ".join(parts),
+                      chip="Failed" if failed else None, run=run_id)
+
     def _on_error(self, msg: str):
+        job, self._job = self._job, None
+        if job is not None:
+            job.fail(msg)
+        self._show_error(msg)
+
+    def _show_error(self, msg: str):
         self._set_running(False)
         self.phase_label.setText("Error")
         QMessageBox.critical(self, "Rotation error", msg)
@@ -524,18 +661,48 @@ class RotatorTab(QWidget):
         self._dup_busy = True
         self._set_dup_buttons(False)
 
+        count = len(names)
+        if action == "delete":
+            self._dup_job = begin("rotator", f"Deleting {count} duplicates",
+                                  activity="duplicates_delete")
+            self._dup_job.update("deleting folders in the duplicates folder", 0, count)
+        else:
+            self._dup_job = begin("rotator", f"Moving {count} duplicates into the reserve",
+                                  activity="duplicates_return")
+            self._dup_job.update("moving duplicates into the reserve", 0, count)
         self.dup_worker = DuplicateActionWorker(action, self.config, names)
         self.dup_worker.progress.connect(self._on_dup_progress)
         self.dup_worker.finished_action.connect(self._on_dup_finished)
-        self.dup_worker.error.connect(self._on_error)
+        self.dup_worker.error.connect(self._on_dup_error)
         self.dup_worker.start()
 
     def _on_dup_progress(self, e: ProgressEvent):
         if e.total:
             self.dup_progress.setMaximum(e.total)
             self.dup_progress.setValue(e.current)
+        if self._dup_job is not None:
+            self._dup_job.log(_log_kind(e), e.message)
+            if e.total:
+                self._dup_job.update(None, e.current, e.total)
+
+    def _on_dup_error(self, msg: str):
+        job, self._dup_job = self._dup_job, None
+        if job is not None:
+            job.fail(msg)
+        self._show_error(msg)
 
     def _on_dup_finished(self, failed: list):
+        job, self._dup_job = self._dup_job, None
+        if job is not None and self.dup_worker is not None:
+            asked = len(self.dup_worker.names)
+            done = asked - len(failed)
+            what = ("deleted" if self.dup_worker.action == "delete"
+                    else "moved back into the reserve")
+            job.finish("problems" if failed else "clean", f"{done} of {asked} duplicates {what}",
+                       title=f"{done} duplicate{'s' * (done != 1)} {what}",
+                       detail=(f"{len(failed)} failed" if failed
+                               else f"from {self.config.duplicates}"),
+                       chip="Failed" if failed else None)
         self._dup_busy = False
         self._set_dup_buttons(True)
         self.dup_progress.setVisible(False)

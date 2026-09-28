@@ -6,6 +6,54 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [3.1.0] - 2026-09-28
+
+The fifth step of the redesign: the services behind the new frame. The tabs
+look as they did, but what they do is now written down as it happens.
+
+### Added
+
+- **An activity journal, and per-tool log files in `data/logs/`, kept for 30
+  days.** Every rotation, folder check, clean-up of broken folders, action on
+  the duplicates, Creator build, Copier run, Review scan, count of what is new
+  and authors database update writes its log to
+  `data/logs/<tool>/YYYY-MM-DD.log` while it runs: a line per event (a line
+  per folder a rotation moves), as time, kind and message. When it ends, one
+  line in `data/activity.jsonl` says how: the rotation's run number, what was
+  moved, returned and set aside, what failed. With the window open, the
+  leading monitor's playlist advancing to a new wallpaper, reaching its end or
+  starting over goes in the journal too. Log files older than 30 days are
+  deleted once at start-up, on a thread of their own, and the journal starts a
+  new file past 2 MB, keeping one before it. `data/tracker.log` stays where it
+  was. See [The journal and the log files](docs/configuration.md#the-journal-and-the-log-files) and
+  [Troubleshooting](docs/troubleshooting.md#where-the-logs-are).
+- `app/services/`, what the status line, the sidebar and Overview of the next
+  steps will read. Nothing shows these yet:
+  - `JobCenter` knows what is running, and which job leads (a rotation, then a
+    copy or a build, then a Review scan). It gives a rate and time left only
+    once the job's own progress has been measured.
+  - `ActivityJournal` writes the journal and reads its newest entries from
+    the end of the file.
+  - `LogStore` writes the log files, reads their tail and sweeps them.
+  - `Snapshot` keeps the counts: the reserve and what in it was never used,
+    myprojects, the last run, the leading monitor, and the last review. They
+    are read on a thread of their own, never on the window's, and each keeps
+    its age, so a page can say "last known".
+- `tests/test_services.py`: 183 checks. `--selfcheck` reports `app.services`.
+
+### Changed
+
+- The window makes its own look at the tracker and hands it to the Tracker
+  tab, so the snapshot and the journal see the same one.
+
+### Fixed
+
+- **The count of never-used folders before a rotation is no longer short.**
+  "Unique not-yet-used available" subtracted every folder the history
+  remembers, including the ones used once and deleted since. So it came out
+  short, and could warn that the history would reset when the rotation then
+  did not. It is now counted by name, the way the rotation draws.
+
 ## [3.0.3] - 2026-09-28
 
 The fourth step of the redesign: the kit's feedback — what reports work while
@@ -594,7 +642,8 @@ restructured yet; the tabs keep their layout and take on the new look.
   was right for one library and wrong for every other. Nothing is tagged now
   unless you ask for it.
 
-[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.0.3...HEAD
+[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.1.0...HEAD
+[3.1.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.0.3...v3.1.0
 [3.0.3]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.0.2...v3.0.3
 [3.0.2]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.0.1...v3.0.2
 [3.0.1]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.0.0...v3.0.1

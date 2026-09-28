@@ -142,6 +142,17 @@ def _read_runs(path: Path) -> list[RunRecord]:
     return [RunRecord.from_dict(r) for r in data["runs"]]
 
 
+def read_runs(path: Path | None = None) -> list[RunRecord]:
+    """The runs in the history file, newest first, for a reader that only counts.
+
+    Unlike `History.load` it never writes: nothing is set aside, restored or
+    saved, and anything wrong with the file is raised (FileNotFoundError when
+    there is none yet). Putting a damaged history right is the Rotator's job,
+    not a counter's that happens to look first.
+    """
+    return _read_runs(HISTORY_PATH if path is None else path)
+
+
 def snapshot_dir() -> Path:
     return HISTORY_PATH.parent / "history_backup"
 

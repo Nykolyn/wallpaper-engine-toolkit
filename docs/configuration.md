@@ -27,6 +27,9 @@ data/
 ├── tracker.json            the live cycle per monitor, plus 40 finished ones
 ├── wallpaper_timer.json    the countdown, saved every 15 seconds
 ├── tracker.log             every tray launch, and any crash
+├── logs/                   each tool's log, a file a day, kept for 30 days
+├── activity.jsonl          a line for each piece of work as it ended
+├── activity.1.jsonl        the lines before the journal last passed 2 MB
 ├── library.json            workshop ids found across the local libraries
 ├── steam_cache.sqlite      what Steam has already been asked
 ├── selfcheck.txt           the last --selfcheck report
@@ -70,6 +73,36 @@ means copying the folder back — see
 
 > `suite.json` keeps its original filename. It is an internal data file, and
 > renaming it would orphan settings for no visible benefit.
+
+## The journal and the log files
+
+Since 3.1.0 the window writes its work down as it goes.
+
+**`logs/<tool>/YYYY-MM-DD.log`**, for `rotator`, `creator`, `copier` and
+`review`: every line the tool logs, a file a day. A line is
+`HH:MM:SS<TAB>kind<TAB>message` — the kind a word for what happened
+(`moved`, `returned`, `dupe`, `skip`, `fail`, `error`, `done`, `step`,
+`start`, `info`, …). A rotation writes a line for every folder. A line takes
+about 7 µs to write, and each one is on the disk before the next, so a crash
+loses nothing already logged. Once at every start of the window, on a thread
+of its own, the files older than 30 days are deleted: a day's file by the day
+in its name, any other by its last change. Only files named that way are
+touched.
+
+**`activity.jsonl`**: a JSON object a line for each piece of work as it
+ended, and for a few things that happened on the way — a rotation starting,
+duplicates set aside, the leading monitor's playlist advancing, finishing or
+starting over. Each has a time, the tool, a kind (`run.clean`,
+`build.problems`, `playlist.finished`, …), a title and a line of detail, and
+for a rotation its run id. Past 2 MB it becomes `activity.1.jsonl`, replacing
+the one before, and a new file is begun. Only the window writes it, so the
+playlist's events are the ones seen while the window is open.
+
+Both are only ever added to. A reader skips a line it cannot read and a field
+it does not know, so an older build and a newer one can share them. Neither
+is worth backing up: nothing reads them to decide anything.
+
+`tracker.log` is not part of this. The tray writes it as before.
 
 ## Folder settings
 

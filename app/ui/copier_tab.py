@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
 
 from .. import animations, theme
 from ..engines.copier import CopyEngine, CopyJob
+from ..services import begin
 from ..settings import (
     Settings, DEFAULT_COPIER_DEST, DEFAULT_COPIER_COUNT,
 )
@@ -69,6 +70,10 @@ class CopierTab(QWidget):
     def __init__(self, settings: Settings):
         super().__init__()
         self.settings = settings
+        # The copy under way, as the status line and the log files know it.
+        self._job = None
+        self._dest = ""
+        self._cancelled = False
 
         # Bridge engine callbacks -> Qt signals (queued onto the UI thread).
         self.bridge = CopierBridge()
@@ -249,10 +254,15 @@ class CopierTab(QWidget):
         self.progress.setValue(0)
         self.start_btn.setEnabled(False)
         self.cancel_btn.setEnabled(True)
+        folders = len(jobs)
+        self._dest, self._cancelled = dest, False
+        self._job = begin("copier", f"Copying {folders} folder{'s' * (folders != 1)}",
+                          activity="copy")
         self.engine.start(jobs, dest)
 
     def _cancel(self):
         self.engine.cancel()
+        self._cancelled = True
         self._log("[CANCEL] Cancellation requested — finishing current file…")
         self.cancel_btn.setEnabled(False)
 
@@ -260,6 +270,8 @@ class CopierTab(QWidget):
     def _on_progress(self, done: int, total: int):
         self.progress.setMaximum(max(total, 1))
         self.progress.setValue(done)
+        if self._job is not None:
+            self._job.update(f"making {total} copies", done, total)
 
     def _on_speed(self, mbps: float):
         self.speed_label.setText(f"{mbps:.1f} MB/s" if mbps else "")
@@ -271,6 +283,23 @@ class CopierTab(QWidget):
         total_ok = sum(e["ok"] for e in report)
         total_req = sum(e["requested"] for e in report)
         self._log(f"\n[FINISH] Done: {total_ok}/{total_req} copies.")
+        self._report(total_ok, total_req, sum(e["failed"] for e in report))
+
+    def _report(self, made: int, asked: int, failed: int) -> None:
+        job, self._job = self._job, None
+        if job is None:
+            return
+        if self._cancelled:
+            result = "stopped"
+        elif failed or made < asked:
+            result = "failed" if made == 0 else "problems"
+        else:
+            result = "clean"
+        summary = f"{made} of {asked} copies made"
+        detail = f"in {self._dest}" + (f" · {failed} failed" if failed else "")
+        job.finish(result, summary, detail=detail, chip="Failed" if failed else None)
 
     def _log(self, text: str):
         self.log.appendPlainText(text)
+        if self._job is not None:
+            self._job.log_text(text)
