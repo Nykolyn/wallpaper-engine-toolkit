@@ -23,8 +23,6 @@ from __future__ import annotations
 
 import atexit
 import queue
-import subprocess
-import webbrowser
 from datetime import datetime
 from pathlib import Path
 
@@ -36,7 +34,7 @@ from PySide6.QtWidgets import (
     QMessageBox, QPushButton, QSplitter, QStyle, QStyledItemDelegate,
     QToolButton, QVBoxLayout, QWidget)
 
-from .. import animations, theme
+from .. import animations, external, theme
 from ..engines import review as rv
 from ..engines.authors_store import AuthorsStore, StoreDamaged
 from ..engines.library import Library
@@ -1174,16 +1172,11 @@ class ReviewTab(QWidget):
 
     def open_in_steam(self, item_id: str) -> None:
         """Steam's own page for this wallpaper — the path that needs no SDK."""
-        url = f"steam://url/CommunityFilePage/{item_id}"
-        try:
-            subprocess.Popen(["cmd", "/c", "start", "", url], shell=False)
-        except OSError:
-            webbrowser.open(
-                f"https://steamcommunity.com/sharedfiles/filedetails/?id={item_id}")
+        external.open_url(f"steam://url/CommunityFilePage/{item_id}")
 
     def open_workshop(self) -> None:
         if self.current:
-            webbrowser.open(workshop_url(self.current.id64))
+            external.open_url(workshop_url(self.current.id64))
 
     # -- writing back -----------------------------------------------------
 

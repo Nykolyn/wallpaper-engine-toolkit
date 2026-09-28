@@ -178,6 +178,11 @@ def launch(tab: str = "") -> subprocess.Popen:
     and the tray runs at the one Task Scheduler gives it. It is also started out
     of the task's job, where Windows allows that, so ending the task — or the
     tray — does not take an open window down with it.
+
+    Not through ``external.popen``, unlike every other program the toolkit
+    starts: this one *is* the toolkit, and wants the DLL folder and PATH that
+    ``external`` keeps from other programs. Its own bootloader sets them up
+    again anyway.
     """
     command = window_command(tab)
     cwd = str(Path(sys.executable).resolve().parent if getattr(sys, "frozen", False)

@@ -18,10 +18,11 @@ from __future__ import annotations
 
 import os
 import re
-import subprocess
 import sys
 import tempfile
 from pathlib import Path
+
+from . import external
 
 RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
 VALUE_NAME = "WallpaperEngineToolkitTracker"
@@ -74,8 +75,8 @@ def _schtasks(*args: str) -> tuple[int, str]:
     for text mode, and on a localised Windows that decode throws.
     """
     try:
-        done = subprocess.run(["schtasks", *args], capture_output=True,
-                              creationflags=_NO_WINDOW)
+        done = external.run(["schtasks", *args], capture_output=True,
+                            creationflags=_NO_WINDOW)
     except OSError as e:
         return 1, str(e)
     output = (done.stdout or b"") + (done.stderr or b"")
@@ -90,8 +91,8 @@ def _schtasks(*args: str) -> tuple[int, str]:
 def _schtasks_raw(*args: str) -> bytes:
     """schtasks output as bytes, for the one call whose output is a document."""
     try:
-        done = subprocess.run(["schtasks", *args], capture_output=True,
-                              creationflags=_NO_WINDOW)
+        done = external.run(["schtasks", *args], capture_output=True,
+                            creationflags=_NO_WINDOW)
     except OSError:
         return b""
     return done.stdout or b"" if done.returncode == 0 else b""

@@ -107,6 +107,19 @@ def _selfcheck() -> int:
         ok = False
         lines.append(f"BROKEN  svg images: {type(err).__name__}: {err}")
 
+    # A build hands the programs it starts its own DLL folder unless it clears
+    # it first. Wallpaper Engine, restarted after a rotation, ran on the build's
+    # VCRUNTIME140.dll because of that. PySide6 is imported by now, so PATH is
+    # as polluted here as it is in the window and the tray.
+    try:
+        from app import external
+        clean, said = external.report()
+        lines.append(f"{'ok     ' if clean else 'BROKEN '} other programs  ({said})")
+        ok = ok and clean
+    except Exception as err:  # noqa: BLE001 — the message is the point
+        ok = False
+        lines.append(f"BROKEN  other programs: {type(err).__name__}: {err}")
+
     # The gallery fetches its previews itself, with urllib on a worker thread,
     # and swallows whatever goes wrong because a missing preview is not worth a
     # traceback. That is fine until every preview fails, which looks exactly

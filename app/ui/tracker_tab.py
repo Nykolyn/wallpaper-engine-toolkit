@@ -11,7 +11,6 @@ started by itself. A separate tray process looks too, and both write the same
 """
 from __future__ import annotations
 
-import subprocess
 from pathlib import Path
 
 from PySide6.QtCore import Qt, Signal
@@ -22,7 +21,7 @@ from PySide6.QtWidgets import (
     QMessageBox, QFileDialog, QFormLayout, QAbstractItemView,
 )
 
-from .. import animations, autostart, theme
+from .. import animations, autostart, external, theme
 from ..engines.tracker import (
     ANCHOR_NONE, Progress, Tracker, elapsed_since, format_minutes, pick_primary,
     title_for)
@@ -309,14 +308,14 @@ class TrackerTab(QWidget):
         try:
             if target.exists():
                 # /select opens the containing folder with the file highlighted.
-                subprocess.Popen(f'explorer /select,"{target}"')
+                external.popen(f'explorer /select,"{target}"')
                 return
             # A playlist outlives its files: a later rotation carries folders back
             # to the reserve, and Wallpaper Engine keeps listing them. Open the
             # nearest folder that is still there instead of a dead end.
             folder = next((p for p in target.parents if p.is_dir()), None)
             if folder is not None:
-                subprocess.Popen(f'explorer "{folder}"')
+                external.popen(f'explorer "{folder}"')
             else:
                 QMessageBox.information(
                     self, "Open folder", f"Nothing of this path is left on disk:\n{target}")

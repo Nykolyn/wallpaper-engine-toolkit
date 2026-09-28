@@ -24,7 +24,6 @@ from __future__ import annotations
 
 import ctypes
 import os
-import subprocess
 import time
 from ctypes import wintypes
 from dataclasses import dataclass, field
@@ -252,31 +251,27 @@ def close(engine: Engine, seconds: float = QUIT_SECONDS) -> bool:
 
 # ---- Starting -----------------------------------------------------------------
 
-def _clean_environment() -> dict[str, str]:
-    """This process's environment without what the frozen toolkit adds for itself."""
-    return {k: v for k, v in os.environ.items()
-            if not k.upper().startswith(("_MEI", "_PYI", "QT_", "PYSIDE"))}
-
-
 def start(engine: Engine, seconds: float = START_SECONDS) -> bool:
     """Start it again as it was started, at normal priority, and wait for it to settle.
 
     Out of this program's job where Windows allows it, so closing the toolkit
     never takes the wallpapers with it; and at normal CPU, disk and memory
     priority whatever this process was given — it streams video from disk.
+    Without the toolkit's own DLLs, too (see ``app/external.py``): started the
+    plain way from a build, it ran on the build's ``VCRUNTIME140.dll``.
     """
+    from .. import external
     from ..window_instance import make_normal_priority
 
     command = engine.restart_command()
     cwd = str(engine.install_dir)
-    env = _clean_environment()
     try:
-        child = subprocess.Popen(command, cwd=cwd, env=env, close_fds=True,
-                                 creationflags=_NORMAL_PRIORITY_CLASS
-                                 | _CREATE_BREAKAWAY_FROM_JOB)
+        child = external.popen(command, cwd=cwd, close_fds=True,
+                               creationflags=_NORMAL_PRIORITY_CLASS
+                               | _CREATE_BREAKAWAY_FROM_JOB)
     except OSError:
-        child = subprocess.Popen(command, cwd=cwd, env=env, close_fds=True,
-                                 creationflags=_NORMAL_PRIORITY_CLASS)
+        child = external.popen(command, cwd=cwd, close_fds=True,
+                               creationflags=_NORMAL_PRIORITY_CLASS)
     handle = _open(child.pid, _SET_INFORMATION)
     if handle:
         try:

@@ -18,7 +18,6 @@ megabyte of gzip is a second or two, and the window must not stop for it.
 from __future__ import annotations
 
 import os
-import subprocess
 from pathlib import Path
 
 from PySide6.QtCore import QThread, Qt, Signal
@@ -27,7 +26,7 @@ from PySide6.QtWidgets import (
     QLabel, QLineEdit, QListWidget, QListWidgetItem, QMessageBox, QPushButton,
     QVBoxLayout)
 
-from .. import theme
+from .. import external, theme
 from ..engines.authors_store import (
     AuthorsStore, DbError, KEEP_DAILY, KEEP_MONTHLY, KEEP_RECENT, KEEP_WEEKLY,
     Snapshot, StoreDamaged)
@@ -356,14 +355,16 @@ class AuthorsDialog(QDialog):
 
     def _reveal(self, path: Path, folder: bool = False) -> None:
         """Explorer at a folder, or at a file with the file selected."""
+        # Explorer by name rather than os.startfile: that opens the folder from
+        # inside this process, and whatever it starts inherits the toolkit's DLLs.
         try:
             if folder:
                 path.mkdir(parents=True, exist_ok=True)
-                os.startfile(str(path))  # noqa: S606
+                external.popen(["explorer", str(path)])
             elif path.exists():
-                subprocess.Popen(f'explorer /select,"{path}"')
+                external.popen(f'explorer /select,"{path}"')
             else:
-                os.startfile(str(path.parent))  # noqa: S606
+                external.popen(["explorer", str(path.parent)])
         except OSError as err:
             self._say(f"Could not open {path}: {err}", "warn")
 
