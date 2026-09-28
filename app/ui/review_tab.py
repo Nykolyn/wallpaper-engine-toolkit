@@ -41,6 +41,7 @@ from ..engines.library import Library
 from ..engines.review import AuthorCard, Review, ReviewResult
 from ..engines.steam_api import SteamAuthError, SteamClient, workshop_url
 from ..engines.steam_ugc import SteamUgc, UgcError
+from ..services import begin
 from ..settings import Settings
 from .. import secrets
 from .authors_dialog import AuthorsDialog, mirror_folder, open_store
@@ -367,6 +368,10 @@ class ReviewTab(QWidget):
         self.result: ReviewResult | None = None
         self.current: AuthorCard | None = None
         self._task: Task | None = None
+        # The scan, count or database update under way, as the status line and
+        # the log files know it (app/services); the stage it last reported.
+        self._job = None
+        self._job_stage = ""
         self._tasks: set[Task] = set()          # author loads in flight
         self._loading: AuthorCard | None = None
         self._watching: Task | None = None      # a look at the workshop folder
@@ -755,12 +760,19 @@ class ReviewTab(QWidget):
 
     # -- running work -----------------------------------------------------
 
-    def _run(self, work, on_done, label: str) -> None:
+    def _run(self, work, on_done, label: str, job: tuple[str, str] | None = None) -> None:
+        """Run `work` on a Task. `job` is (title, activity) for the JobCenter,
+        the log file and the journal (app/services)."""
         if self._task is not None and self._task.isRunning():
             return
         self._say(label)
         self._busy(True)
         self.scan_btn.setEnabled(False)
+        if job is not None:
+            title, activity = job
+            self._job = begin("review", title, activity=activity)
+            self._job_stage = ""
+            self._job.log("step", label)
         task = Task(work, self)
         task.step.connect(self._step)
         task.done.connect(on_done)
@@ -768,6 +780,11 @@ class ReviewTab(QWidget):
         task.finished.connect(self._finished)
         self._task = task
         task.start()
+
+    def _end_job(self, result: str, summary: str, **journal) -> None:
+        job, self._job = self._job, None
+        if job is not None:
+            job.finish(result, summary, **journal)
 
     def _progress_relay(self, stage: str, done: int, total: int) -> None:
         """What the engine reports progress through, for the tab's whole life.
@@ -794,6 +811,11 @@ class ReviewTab(QWidget):
             self.progress.setRange(0, total)
             self.progress.setValue(done)
         self._say(f"{stage}: {done}/{total}" if total else stage)
+        if self._job is not None:
+            if stage != self._job_stage:
+                self._job_stage = stage
+                self._job.log("step", stage)
+            self._job.update(stage, done, total)
 
     def _finished(self) -> None:
         self._busy(False)
@@ -805,6 +827,9 @@ class ReviewTab(QWidget):
             self._task = None
 
     def _failed(self, message: str) -> None:
+        job, self._job = self._job, None
+        if job is not None:
+            job.fail(message)
         self._say(message, "danger")
         if self._damaged:
             answer = QMessageBox.critical(
@@ -857,9 +882,17 @@ class ReviewTab(QWidget):
         # was opened — which is a wallpaper more that was yours before.
         if self.review is not None:
             self.review.forget_owned()
-        self._run(work, self._scanned, f"Reading {rv.scope_label(scope)}…")
+        self._run(work, self._scanned, f"Reading {rv.scope_label(scope)}…",
+                  job=(f"Scanning {rv.scope_label(scope)}", "scan"))
 
     def _scanned(self, result: ReviewResult) -> None:
+        c = result.counts
+        warned = self.db is not None and bool(self.db.warnings)
+        self._end_job("problems" if warned else "clean", result.summary(),
+                      title=f"Scanned {rv.scope_label(result.scope)}",
+                      detail=(f"{c.get('authors', 0)} authors, {c.get('new', 0)} new · "
+                              f"{c.get('queued', 0)} wallpapers"
+                              + (" · " + "; ".join(self.db.warnings) if warned else "")))
         self.result = result
         self._owned_tasks.clear()
         self._owned_pending.clear()
@@ -892,11 +925,24 @@ class ReviewTab(QWidget):
             # hook the review was built with, which is this tab's status line.
             return self.review.fill_all(result)
 
-        self._run(work, self._filled, "Asking Steam what each author has published…")
+        self._run(work, self._filled, "Asking Steam what each author has published…",
+                  job=("Counting what is new", "count"))
 
     def _filled(self, result: ReviewResult) -> None:
         self._refresh_list()
         counts = result.counts
+        new, authors = counts.get("to_review", 0), counts.get("authors", 0)
+        blind = len(result.incomplete)
+        detail = f"from {authors} authors"
+        if counts.get("returning", 0):
+            detail += f" · {counts['returning']} were yours once"
+        if blind:
+            detail += f" · {blind} authors counted without a Steam key"
+        self._end_job("problems" if blind else "clean",
+                      f"{new} wallpapers to look at across {authors} authors",
+                      title=(f"{new} new wallpaper{'s' * (new != 1)} to look at" if new
+                             else "Nothing new to look at"),
+                      detail=detail, chip="New" if new else None)
         # "0 of them yours once" is not information — at this depth only
         # wallpapers newer than the last visit are counted, and none of those
         # can have been owned before. The clause appears when it means something.
@@ -1226,7 +1272,8 @@ class ReviewTab(QWidget):
             self.db.warnings.clear()
             return report
 
-        self._run(work, self._applied, "Writing to the authors database…")
+        self._run(work, self._applied, "Writing to the authors database…",
+                  job=("Updating the authors database", "database"))
 
     def _written_blind(self, changes) -> int:
         """How many of these would set a visit date from an incomplete list."""
@@ -1256,6 +1303,11 @@ class ReviewTab(QWidget):
             line += f"  Backed up as {Path(backup).name}"
             line += " here and in the second folder." if self.db and self.db.mirror else "."
         warnings = report.get("warnings") or []
+        self._end_job("problems" if warnings else "clean", line,
+                      title="Authors database updated",
+                      detail=(f"{report['created']} created · {report['updated']} updated"
+                              + (f" · backup {Path(backup).name}" if backup else "")
+                              + (" · " + "; ".join(warnings) if warnings else "")))
         if warnings:
             self._say(line + "  But " + "; ".join(warnings), "warn")
         else:

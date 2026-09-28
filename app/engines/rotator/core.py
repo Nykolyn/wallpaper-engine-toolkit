@@ -340,7 +340,12 @@ class Rotator:
         # available after the return phase: reserve + the non-duplicate returns
         returning = [n for n in in_dest if n.lower() not in reserve_names]
         projected_reserve = len(in_reserve) + len(returning)
-        available_unique = projected_reserve - len(used)
+        # Counted by name, as run() draws: the history also remembers folders
+        # used once and deleted since, and subtracting those from the total
+        # made the count short, and could announce a reset that run() then
+        # did not do.
+        after_return = reserve_names | {n.lower() for n in returning}
+        available_unique = len(after_return - used)
         return {
             "in_dest": len(in_dest),
             "protected": len(protected),

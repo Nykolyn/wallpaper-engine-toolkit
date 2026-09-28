@@ -21,6 +21,7 @@ from ..engines.creator import (
     BuildEngine, scan_source, find_ffmpeg, human_size, clean_tags, WE_TAGS,
     GIF_SIZE, GIF_FPS, GIF_DURATION, GIF_SKIP,
 )
+from ..services import begin
 from ..settings import (
     Settings, DEFAULT_CREATOR_SOURCE, DEFAULT_CREATOR_TARGET, DEFAULT_CREATOR_MODE,
 )
@@ -195,6 +196,10 @@ class CreatorTab(QWidget):
         # Tags for everything built in this batch. A clip may override them;
         # see TagDialog.
         self.batch_tags = clean_tags(self.settings.get(SECTION, "tags", []))
+        # The build under way, as the status line and the log files know it.
+        self._job = None
+        self._target = ""
+        self._cancelled = False
 
         self.bridge = CreatorBridge()
         self.bridge.log.connect(self._log)
@@ -399,10 +404,15 @@ class CreatorTab(QWidget):
         self.start_btn.setEnabled(False)
         self.cancel_btn.setEnabled(True)
         self.rescan_btn.setEnabled(False)
+        count = len(buildable)
+        self._target, self._cancelled = target, False
+        self._job = begin("creator", f"Building {count} wallpaper{'s' * (count != 1)}",
+                          activity="build")
         self.engine.start(buildable, target, move=move, tags=self.batch_tags)
 
     def _cancel(self):
         self.engine.cancel()
+        self._cancelled = True
         self._log("[CANCEL] Cancellation requested — finishing current video…")
         self.cancel_btn.setEnabled(False)
 
@@ -419,6 +429,8 @@ class CreatorTab(QWidget):
         self.progress.setMaximum(100)
         self.progress.setValue(int(frac * 100))
         self.percent.setText(f"{int(frac * 100)}%")
+        if self._job is not None:
+            self._job.update(f"building {total} wallpapers", done, total)
 
     def _on_item_done(self, name: str, status: str):
         if status == "ok" and name in self.cards:
@@ -429,7 +441,28 @@ class CreatorTab(QWidget):
         self.rescan_btn.setEnabled(True)
         ok = sum(1 for e in report if e["status"] == "ok")
         self._log(f"\n[FINISH] Done. Projects created: {ok}.")
+        self._report(ok, sum(1 for e in report if e["status"] == "failed"), bool(report))
         QTimer.singleShot(300, self._scan)  # source may have changed (move mode)
+
+    def _report(self, made: int, failed: int, ran: bool) -> None:
+        job, self._job = self._job, None
+        if job is None:
+            return
+        if self._cancelled:
+            result = "stopped"
+        elif not ran:
+            # The engine gave up before the first clip: no ffmpeg, or no target.
+            job.fail("Nothing was built: see the log")
+            return
+        elif failed:
+            result = "failed" if made == 0 else "problems"
+        else:
+            result = "clean"
+        summary = f"{made} wallpaper{'s' * (made != 1)} created"
+        detail = f"in {self._target}" + (f" · {failed} failed" if failed else "")
+        job.finish(result, summary, detail=detail, chip="Failed" if failed else None)
 
     def _log(self, text: str):
         self.log.appendPlainText(text)
+        if self._job is not None:
+            self._job.log_text(text)

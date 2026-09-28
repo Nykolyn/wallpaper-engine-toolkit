@@ -4,10 +4,10 @@ One card per monitor showing `seen/total`, and, underneath, the two lists that
 card is made of: what has already been shown and what is still waiting. The
 counting itself lives in ``engines/tracker.py``; this is only its face.
 
-The tab shows a `TrackerFeed`: the tray's own when the tray opened this window,
-so the two never look twice at the same change, or one of its own in a window
-started by itself. A separate tray process looks too, and both write the same
-``data/tracker.json``.
+The tab shows a `TrackerFeed`: the window's, which the snapshot and the
+activity journal also listen to (app/services), or one of its own when the
+tab is built alone. A separate tray process looks too, and both write the
+same ``data/tracker.json``.
 """
 from __future__ import annotations
 

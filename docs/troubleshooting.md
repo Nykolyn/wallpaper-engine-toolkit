@@ -114,7 +114,8 @@ Several harmless reasons:
 
 ## The rotation did not rebuild the playlist
 
-The log says which of three it was:
+The log says which of three it was — the tab's, or the day's file in
+`data/logs/rotator/` once the window is closed:
 
 - **No playlist is made of what is in myprojects.** The playlist is found by
   its contents: at least half of it must be folders the rotation takes back,
@@ -206,8 +207,26 @@ That file is what to look at, or to attach to an issue: it says which line every
 thread was on. Closing a frozen window from Task Manager no longer stops the
 tracker — they are separate programs.
 
+## Where the logs are
+
+- **`data/logs/<tool>/YYYY-MM-DD.log`** — what the Rotator, the Creator, the
+  Copier and Review did, a line per event, a file a day for each (from 3.1.0).
+  A rotation writes every folder it returned, moved or set aside, and every one
+  it could not move, with the reason. The tabs show the same lines, but only
+  until the window is closed; the files are kept for 30 days.
+- **`data/activity.jsonl`** — a line for each piece of work as it ended:
+  clean, with problems, stopped or failed, and its numbers.
+- **`data/tracker.log`** — the tray, as before: every launch, and any crash.
+- **`data/window-hangs.log`** and **`data/tracker-hangs.log`** — see
+  [above](#the-window-stopped-answering).
+
+A line in a log file is the time, a word for what happened (`moved`,
+`returned`, `dupe`, `skip`, `fail`, `error`, `done`, …) and the rest, between
+tabs. See [Where things live](configuration.md#the-journal-and-the-log-files).
+
 ## Nothing above
 
 `data/tracker.log` and `data/selfcheck.txt` are the two files worth reading
-before anything else. Together they answer "is it running?" and "can it reach
+before anything else, then the day's file in `data/logs/` for the tool that
+went wrong. Together they answer "is it running?" and "can it reach
 what it needs?" — which is most failures.
