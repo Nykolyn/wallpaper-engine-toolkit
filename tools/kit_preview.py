@@ -9,12 +9,13 @@ place, and compared with the design's own pictures.
     .venv\\Scripts\\python.exe tools\\kit_preview.py --grab icons icons.png
 
 `--grab <section> <out.png>` renders one section offscreen at 100 % and saves
-it; `--grab all <folder>` saves every section. The sections are the design
+it; `--grab all <folder>` saves every section, and `--grab dialogs <folder>`
+each dialog open over a made-up page. The sections are the design
 system's: color, type, space, motion, icons, controls (Qt's own widgets under
 the stylesheet), then the kit's buttons, inputs, selection, chips and panels,
 each state in a row, and its data display: fields, progress, cards, tables
-(33 000 made-up rows to scroll) and empty states with steps. Each kit step
-adds its own. Nothing shown comes from this machine's library: previews are
+(33 000 made-up rows to scroll) and empty states with steps; and feedback:
+the log, toasts, the status line and the dialogs. Each kit step adds its own. Nothing shown comes from this machine's library: previews are
 painted into a temp folder.
 """
 from __future__ import annotations
@@ -1593,6 +1594,297 @@ def empty_section() -> Section:
     return section
 
 
+# ---- 17 feedback ----------------------------------------------------------------------------
+
+LOG_SAMPLE = (
+    ("13:41:02", "start", "Run 39 · 1 000 folders from W:\\wallpaper_reserve"),
+    ("13:41:03", "step", "Closing Wallpaper Engine"),
+    ("13:41:05", "step", "Returning the previous batch to the reserve"),
+    ("13:43:12", "moved", "1234500998 → W:\\wallpaper_reserve"),
+    ("13:43:12", "skip", "1234500999 is in use by Wallpaper Engine; left where it is"),
+    ("13:43:13", "moved", "1234501000 → W:\\wallpaper_reserve"),
+    ("13:46:40", "done", "998 returned · 2 left behind"),
+    ("13:46:41", "step", "Moving 1 000 new folders in"),
+    ("13:46:41", "moved", "1234567890 → myprojects"),
+    ("13:46:42", "dupe", "1234567891 is already in myprojects; set aside"),
+    ("13:46:42", "moved", "1234567892 → myprojects"),
+    ("13:46:43", "fail", "1234567893: access denied writing to myprojects\\1234567893\\scene.pkg"),
+    ("13:46:43", "moved", "1234567894 → myprojects"),
+    ("13:46:44", "info", "412 of 1 000 moved · ≈6 min left"),
+)
+
+
+def _log(*, live: bool, expanded: bool, file: str = "rotator.log"):
+    from app.ui.kit import LogPanel
+
+    panel = LogPanel("Log", file=file, expanded=expanded, on_open_folder=lambda: None)
+    panel.extend(LOG_SAMPLE)
+    panel.set_live(live)
+    return panel
+
+
+SAFE_ROWS = [(f"12345{n:05d}", "no project.json · empty") for n in (11, 12, 27, 40, 58, 63, 71, 84, 96)]
+MEDIA_ROWS = [("harbour_dusk_wip", "no project.json · holds 3 videos", 214 * 1024 ** 2),
+              ("1234509912", "no project.json · holds scene.pkg", 38 * 1024 ** 2),
+              ("old_tests", "no project.json · holds 12 images", 3 * 1024 ** 2)]
+
+
+def confirm_destructive(parent=None, *, embedded: bool = False):
+    from app.ui.kit import CheckGroup, CheckRow, ConfirmDialog
+
+    return ConfirmDialog(
+        "Delete 9 unusable folders?",
+        "Wallpaper Engine identifies a wallpaper by its project.json, so it can never list "
+        "these. Deleting is permanent: only the ticked folders are removed.",
+        parent, destructive=True, icon="trash", embedded=embedded,
+        groups=[CheckGroup("Safe to delete", [CheckRow(name, why, 0) for name, why in SAFE_ROWS],
+                           tone="ok"),
+                CheckGroup("Hold media — look first",
+                           [CheckRow(name, why, size) for name, why, size in MEDIA_ROWS],
+                           tone="warn", initially_checked=False)],
+        confirm_text=lambda rows: f"Delete {len(rows)} permanently",
+        actions=[("Open folder", lambda: None)])
+
+
+def confirm_neutral(parent=None, *, embedded: bool = False):
+    from app.ui.kit import ConfirmDialog
+
+    return ConfirmDialog(
+        "Start rotation 39?",
+        "The Rotator does this, in this order. Nothing else on disk changes, and the run "
+        "can be stopped between any two folders.",
+        parent, icon="rotator", embedded=embedded, confirm_text="Start rotation",
+        steps=[("Close Wallpaper Engine", "it is showing on 2 monitors"),
+               ("Return the previous batch to the reserve", "1 000 folders → W:\\wallpaper_reserve"),
+               ("Move 1 000 new folders in", "drawn at random from 8 204 never used"),
+               ("Rebuild the playlist and start Wallpaper Engine again", "")])
+
+
+def review_form(parent=None, *, embedded: bool = False):
+    from app.ui.kit import Dropdown, FormDialog, SpinBox, TextInput, Toggle
+
+    form = FormDialog("Review settings", parent, icon="review", embedded=embedded,
+                      body="How often the Review asks Steam what your authors published.")
+    every = Dropdown()
+    for option in ("Every week", "Every two weeks", "Every month"):
+        every.add_item(option)
+    form.add_row("Scan", every, note="The next scan is due Saturday 26 September.")
+    form.add_row("New items per author, at most", SpinBox(minimum=1, maximum=500, value=40))
+    key = TextInput("", placeholder="32 characters from steamcommunity.com/dev/apikey")
+    form.add_row("Steam Web API key", key,
+                 note="Kept in data\\secrets.bin, encrypted for this Windows account.",
+                 check=lambda f: (None if len(f.text().strip()) in (0, 32)
+                                  else "a key is 32 characters"))
+    form.add_row("After a scan", Toggle("Open the Review when it finds new items", checked=True))
+    return form
+
+
+class _Stage(QWidget):
+    """A stand-in for a page, for toasts to stack over."""
+
+    def __init__(self, height: int):
+        super().__init__()
+        self.setFixedHeight(height)
+
+    def paintEvent(self, event) -> None:        # noqa: N802 - Qt's name
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        box = QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5)
+        painter.setBrush(theme.color("surface.subtle"))
+        painter.setPen(QPen(theme.color("border.hairline"), 1))
+        painter.drawRoundedRect(box, theme.R_LG, theme.R_LG)
+        painter.setPen(theme.color("text.lo"))
+        painter.setFont(theme.font("type.monoSm"))
+        painter.drawText(box.adjusted(16, 14, -16, -14), Qt.AlignLeft | Qt.AlignTop,
+                         "the page's content — toasts stack over its bottom-right corner, "
+                         "and every click outside them reaches it")
+
+
+def feedback_section() -> Section:
+    from app.ui.kit import (
+        GhostButton, GlassPanel, SecondaryButton, StatusLine, ToastHost,
+    )
+
+    section = Section(17, "Feedback",
+                      "What reports work and what asks before acting. The log opens over "
+                      "motion.slow; a toast rises in over 180 ms and goes after 6 s, except "
+                      "danger; the status line says what runs now; dialogs appear at once, "
+                      "over a scrim, and name exactly what they will do.")
+
+    section.body.addWidget(overline("LogPanel — expanded, live · collapsed, with its problems"))
+    row = QHBoxLayout()
+    row.setSpacing(14)
+    live = _log(live=True, expanded=True)
+    row.addWidget(live, 3, Qt.AlignTop)
+    closed = _log(live=False, expanded=False, file="copier.log")
+    row.addWidget(closed, 2, Qt.AlignTop)
+    section.body.addLayout(row)
+
+    section.body.addWidget(overline("Toast — ok · info · warn · danger, stacked over a page"))
+    stage = _Stage(318)
+    host = ToastHost(stage)
+    for words, variant, action in (
+            ("37 wallpapers created in myprojects.", "ok", "Open folder"),
+            ("The Tracker is counting again: 201 on the playlist.", "info", None),
+            ("2 folders were in use and stayed in the reserve.", "warn", "Open log"),
+            ("The rotation stopped: access denied writing to myprojects.", "danger", "Open log")):
+        host.show_toast(words, variant, action=action, on_action=lambda: None, timeout=None)
+    section.body.addWidget(stage)
+    fire = QHBoxLayout()
+    fire.setSpacing(10)
+    for variant in ("ok", "info", "warn", "danger"):
+        button = SecondaryButton(f"Fire {variant}", size="sm")
+        button.clicked.connect(lambda _=False, v=variant: host.show_toast(
+            {"ok": "Copied 12 folders.", "info": "A scan is due today.",
+             "warn": "3 duplicates were set aside.",
+             "danger": "Steam did not answer for 30 seconds."}[v], v,
+            action="Undo" if v == "ok" else None, on_action=lambda: None))
+        fire.addWidget(button)
+    fire.addWidget(text("in the app only; a window that is hidden hands this to the tray",
+                        "type.monoSm", "text.lo"))
+    fire.addStretch()
+    section.body.addLayout(fire)
+
+    section.body.addWidget(overline("StatusLine — running · idle · warn · error, then one cycling"))
+    lines = GlassPanel(padding="none")
+    column = QVBoxLayout(lines)
+    column.setContentsMargins(0, 0, 0, 0)
+    column.setSpacing(0)
+    running, idle, warn, error, cycling = (StatusLine() for _ in range(5))
+    running.set_running("Rotating · moving folders into myprojects", 412, 1000, on_show=lambda: None)
+    idle.set_idle("Idle · next rotation Saturday 26 September, 09:00")
+    warn.set_warn("Run 38 finished with 2 problems", "Open log", lambda: None)
+    error.set_error("The rotation stopped: access denied writing to myprojects", "Open log",
+                    lambda: None)
+    for line in (running, idle, warn, error, cycling):
+        column.addWidget(line)
+    section.body.addWidget(lines)
+    states = [lambda n: cycling.set_running("Copying · harbour_dusk.mp4", n, 41,
+                                            on_show=lambda: None),
+              lambda n: cycling.set_idle("Idle · 41 copied at 13:58"),
+              lambda n: cycling.set_warn("Copied with 3 skipped", "Show", lambda: None),
+              lambda n: cycling.set_error("Copier stopped: the destination is full", "Open log",
+                                          lambda: None)]
+    step = {"i": 0}
+
+    def cycle() -> None:
+        i = step["i"]
+        states[(i // 6) % 4](min(41, (i % 6) * 8 + 1))
+        step["i"] = i + 1
+
+    cycle()
+    if not GRAB:
+        clock = QTimer(section)
+        clock.timeout.connect(cycle)
+        clock.start(700)
+        feed = QTimer(section)
+        lines_fed = {"n": 0}
+
+        def more() -> None:
+            n = lines_fed["n"] = lines_fed["n"] + 1
+            kind = "dupe" if n % 11 == 0 else "moved"
+            live.append(None, kind, f"12345{67894 + n:05d} → myprojects")
+
+        feed.timeout.connect(more)
+        feed.start(900)
+
+    section.body.addWidget(overline("ConfirmDialog and FormDialog — the buttons open them over "
+                                    "this window"))
+    opens = QHBoxLayout()
+    opens.setSpacing(10)
+    for words, make in (("Destructive confirmation", confirm_destructive),
+                        ("Neutral confirmation", confirm_neutral), ("Form", review_form)):
+        button = GhostButton(words, outlined=True)
+        button.clicked.connect(lambda _=False, m=make, b=button: m(b.window()).ask())
+        opens.addWidget(button)
+    opens.addStretch()
+    section.body.addLayout(opens)
+    row = QHBoxLayout()
+    row.setSpacing(40)
+    row.addWidget(confirm_destructive(embedded=True), 0, Qt.AlignTop)
+    row.addWidget(confirm_neutral(embedded=True), 0, Qt.AlignTop)
+    row.addStretch()
+    section.body.addLayout(row)
+    row = QHBoxLayout()
+    row.setSpacing(40)
+    row.addWidget(review_form(embedded=True), 0, Qt.AlignTop)
+    note = text("Destructive: Cancel is the default and has focus when it opens; the Danger "
+                "button follows the ticks and is off with none. A group's box ticks or clears "
+                "all of it, including the rows folded under “N more like these”. Esc cancels "
+                "either kind. A form's Save stays off until every field is right, and a "
+                "field says what is wrong once it has been touched.",
+                "type.bodySm", "text.mid", wrap=True)
+    note.setFixedWidth(420)
+    row.addWidget(note, 0, Qt.AlignTop)
+    row.addStretch()
+    section.body.addLayout(row)
+    return section
+
+
+class SampleWindow(QWidget):
+    """A page of the app, made up, for a dialog to open over in a grab."""
+
+    def __init__(self):
+        super().__init__()
+        from app.ui.kit import GlassPanel, StatusLine, StepList
+
+        kit_base.declare(self)
+        self.resize(1180, 760)
+        column = QVBoxLayout(self)
+        column.setContentsMargins(0, 0, 0, 0)
+        column.setSpacing(0)
+        page = QVBoxLayout()
+        page.setContentsMargins(28, 24, 28, 20)
+        page.setSpacing(14)
+        page.addWidget(text("Rotator", "type.h2", "text.hi"))
+        card = GlassPanel(padding="lg")
+        inside = QVBoxLayout(card)
+        inside.addWidget(overline("The four steps"))
+        inside.addWidget(StepList([("Return the previous batch to the reserve", "waiting"),
+                                   ("Move 1 000 new folders in", "waiting"),
+                                   ("Check for duplicates", "waiting"),
+                                   ("Rebuild the playlist in Wallpaper Engine", "waiting")]))
+        page.addWidget(card)
+        page.addWidget(_log(live=False, expanded=False))
+        page.addStretch()
+        column.addLayout(page, 1)
+        status = StatusLine()
+        status.set_idle("Idle · next rotation Saturday 26 September, 09:00")
+        column.addWidget(status)
+
+    def paintEvent(self, event) -> None:        # noqa: N802 - Qt's name
+        painter = QPainter(self)
+        theme.paint_app_background(painter, self.rect())
+        kit_base.paint(painter, self, event.rect())
+
+
+DIALOG_GRABS = {"confirm-neutral": confirm_neutral, "confirm-destructive": confirm_destructive,
+                "form": review_form}
+
+
+def grab_dialogs(folder: Path) -> list[Path]:
+    """Each dialog open over a sample page, as the window would show it."""
+    folder.mkdir(parents=True, exist_ok=True)
+    window = SampleWindow()
+    window.show()
+    QApplication.processEvents()
+    saved = []
+    for name, make in DIALOG_GRABS.items():
+        dialog = make(window)
+        dialog.show()
+        QApplication.processEvents()
+        wait(80)
+        image = window.grab().toImage()
+        painter = QPainter(image)
+        painter.drawPixmap(dialog.geometry().topLeft() - window.geometry().topLeft(), dialog.grab())
+        painter.end()
+        target = folder / f"{name}.png"
+        image.save(str(target))
+        saved.append(target)
+        dialog.done(0)
+    return saved
+
+
 # ---- the page -------------------------------------------------------------------------
 
 # Every section, in the design system's order. Kit steps add theirs here.
@@ -1613,6 +1905,7 @@ SECTIONS = {
     "cards": cards_section,
     "tables": tables_section,
     "empty": empty_section,
+    "feedback": feedback_section,
 }
 
 
@@ -1700,8 +1993,12 @@ def main() -> int:
         except IndexError:
             print("usage: kit_preview.py --grab <section|all> <out.png|folder>")
             return 2
+        if which == "dialogs":
+            for path in grab_dialogs(out):
+                print(f"saved {path}")
+            return 0
         if which != "all" and which not in SECTIONS:
-            print(f"no section {which!r}; there are: {', '.join(SECTIONS)}")
+            print(f"no section {which!r}; there are: {', '.join(SECTIONS)}, and dialogs")
             return 2
         for path in grab(which, out):
             print(f"saved {path}")

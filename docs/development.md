@@ -45,8 +45,9 @@ app/
 └── ui/
     ├── kit/              the redesign's components: icons, the controls
     │                       (base, buttons, inputs, selection, chips, panels),
-    │                       the formats, and data display (paths, tags, progress,
-    │                       cards, tables, thumbs)
+    │                       the formats, data display (paths, tags, progress,
+    │                       cards, tables, thumbs), and feedback (log, toast,
+    │                       statusline, dialogs)
     ├── copier_tab.py, creator_tab.py
     ├── rotator_tab.py, cleanup_dialog.py
     ├── tracker_tab.py
@@ -89,6 +90,7 @@ for %f in (tests\test_*.py) do .venv\Scripts\python.exe %f
 | `test_theme.py` | every token parses, text stays legible on glass, fonts, shadows, the stylesheet fills in and ticks its check boxes |
 | `test_icons.py` | every icon draws, in the colour and at the size asked; unknown names raise |
 | `test_kit_controls.py` | every kit control in every state; the fourteen chips, the Pagination rule, the Toggle with motion off, Dropdown rows that cannot be chosen, a DangerButton that never takes Enter, the ring for the keyboard only |
+| `test_kit_feedback.py` | the log's 5 000-line ring and its Problems filter; the console following the newest line until you scroll up; the panel closing over `motion.slow`; toasts stacking, going after 6 s and danger staying; the status line's four states and a count that never elides; a destructive dialog defaulting to Cancel, its group boxes, summary and Danger text following the ticks, Esc cancelling; a form's Save waiting for valid fields |
 | `test_kit_data.py` | the formats; a PathField checked on a worker; a per-clip TagSelect's three states; MonitorView to card; TableModel groups, sorting and zebra; 33 000 rows built under 100 ms and only visible rows painted; local previews cached by path and time; no file-system call on the GUI thread |
 | `test_animations.py` | motion, by sampling real widgets over real time; the curve, the loops, reduced motion |
 | `test_steam_api.py` | the Web API client and its cache |
@@ -215,6 +217,7 @@ Three durations and one curve carry the whole app:
 | `BASE` | 140 | button fill, toggle knob, the cross-fade between pages |
 | `SLOW` | 220 | progress width, a panel expanding |
 | `FLASH` | 880 | a count that changed by itself, fading back (four `SLOW` beats) |
+| `TOAST_IN` / `TOAST_OUT` | 180 / 120 | a toast rising in, and fading out (`anim.toastIn`) |
 
 `ease()` is the design's `cubic-bezier(.2,.7,.3,1)`, for everything except
 spinners.
@@ -252,19 +255,23 @@ uses the kit, for its preview loader.
 
 | Module | Classes |
 |---|---|
-| `buttons.py` | `AccentButton` (the one action that starts the work), `SecondaryButton`, `DangerButton` (never a dialog's default, so Enter cannot delete), `GhostButton` (`outlined=True` for page headers), `IconButton` (30 px, or 22 px as `size="sm"`; its tool tip is required). Text buttons take a leading `icon=`, a trailing `key="Ctrl+V"` cap, and `size="sm"`/`"md"`/`"lg"`. |
+| `buttons.py` | `AccentButton` (the one action that starts the work), `SecondaryButton`, `DangerButton` (never a dialog's default, so Enter cannot delete), `GhostButton` (`outlined=True` for page headers), `IconButton` (30 px, or 22 px as `size="sm"`; its tool tip is required), `LinkButton` (an action written as a link, for a toast, the status line or a list; never a dialog's default). Text buttons take a leading `icon=`, a trailing `key="Ctrl+V"` cap, and `size="sm"`/`"md"`/`"lg"`. |
 | `inputs.py` | `TextInput` (`search=True`, `set_error(message)`), `SpinBox` (mono, `1 000` with a no-break space), `Dropdown` (`add_item(text, data, count=)`, `add_section`, `add_separator`, `prefix="SORT"`) and its list, `DropdownPopup` |
 | `selection.py` | `Checkbox`, `Toggle` (`knob_position`), `SegmentedControl` (two or three segments, `changed`), `Pagination` (`page_changed`), `page_numbers(pages, current)` |
 | `chips.py` | `Chip(variant, text=None)` in exactly fourteen variants; `chip_pixmap` and `chip_size` for delegates |
 | `panels.py` | `GlassPanel` (`tone=`, `padding=`), `Overline`, `CardTitle`, `Callout` (`tone=`, `title=`, `add_action`), `MetricStrip` |
-| `base.py` | the state model and the surfaces, below; `label(text, type, tone)` and `Glyph` |
-| `format.py` | how every number is written: `count` (`33 421`), `size` (`1.1 GB`), `duration` (`4 min 12 s`), `left` (`≈6 min left`), `approx` / `reconstructed` (`≈`, `~`), `date_table`, `date_activity`, `date_long`, `day`, `ratio` (`4 / 201`, `4/201`, `412 of 1 000`), `percent`. Pages never format numbers themselves. |
+| `base.py` | the state model and the surfaces, below; `label(text, type, tone)`, `Glyph`, `Elided` (one line cut with an ellipsis, whole in its tool tip) and `LiveDot` (the pulse of a running job) |
+| `format.py` | how every number is written: `count` (`33 421`), `size` (`1.1 GB`), `duration` (`4 min 12 s`), `left` (`≈6 min left`), `approx` / `reconstructed` (`≈`, `~`), `clock` (`13:47`, or `13:47:02` for a log line), `date_table`, `date_activity`, `date_long`, `day`, `ratio` (`4 / 201`, `4/201`, `412 of 1 000`), `percent`. Pages never format numbers themselves. |
 | `paths.py` | `PathField`: empty (type, paste or Browse…), compact (path elided from the left, ✓, a folder button), invalid ("folder not found"), disabled; a drop target. `path_changed` for the user's choice, `validity_changed` when a worker has checked the folder. |
 | `tags.py` | `TagSelect` (pills, `3 / 25`, a popup of the Creator's `WE_TAGS` in four columns); `per_file=True` adds the clip's three states — `value()` None follows the batch, a list is its own, `[]` is none. `TagPopup` is the open state. |
 | `progress.py` | `ProgressBar` (3–8 px; determinate, eased over `motion.slow`; indeterminate; error; success; optional caption row) and `ProgressRing` (58, 52, 34 px; percentage, spin, done) |
 | `cards.py` | `StatCard` (default, hover when `clickable`, `set_loading`, empty), `MonitorCard` (compact or `detail=True`) and `MonitorView`, the plain values a page fills it from |
 | `tables.py` | `Table`, `TableModel`, `Column`, `Cell`, `ChipCell`, `Group`, `RowDelegate`, `TableHeader`, `TableBar`, `TableSummary`, `TableFooter`; `ListRow`, `paint_list_row`, `RowList`; `Thumb` and `paint_thumb` |
 | `thumbs.py` | `ThumbLoader`: Steam previews for the gallery (`request`), and a wallpaper folder's own preview (`request_local`), read on a worker and kept in `data/thumbs/local/` |
+| `log.py` | `LogPanel` (a job's log as a card: `append(time, kind, message)`, All / Problems, copy, live dot, "writing to rotator.log", closes to its header with a problem badge), `LogModel` (the last 5 000 lines in a ring), `ProblemsFilter`, `LogView` |
+| `toast.py` | `Toast` (ok, info, warn, danger; an action link; close) and `ToastHost` (stacks a page's toasts bottom-right, at most four) |
+| `statusline.py` | `StatusLine`: `set_running(text, done, total, count_text, on_show)`, `set_idle(text)`, `set_warn(text, action, callback)`, `set_error(...)` |
+| `dialogs.py` | `ConfirmDialog` (neutral or destructive; numbered `steps`; a checklist of `CheckGroup`s of `CheckRow`s; a summary; returns a `ConfirmResult`), `FormDialog` (labelled rows, Save once valid), and their chrome, `OverlayDialog` |
 
 **States.** Every interactive control follows the design's five: default,
 hover (the pointer only), pressed, disabled, and a focus ring that shows when
@@ -318,20 +325,101 @@ twice, an edited one misses its old still, which is then deleted. Nothing on
 the GUI thread touches the disk; `test_kit_data.py` checks it by making every
 file-system call from the GUI thread fail while a table of thumbs is shown.
 
+**The log.** A `LogPanel` is fed a line at a time, `append(time, kind,
+message)` (`time` a datetime, a timestamp, text, or None for now), or
+`extend(lines)` for many at once, which the view hears as one insert. Its
+`LogModel` keeps the last 5 000 lines in a ring: past the cap the oldest line
+leaves the front and nothing behind it moves. Kinds take the console's
+colours: moved and done ok, skip and dupe warn, fail and error err, step,
+start and info mid; any other kind is written as it is, in mid. The console
+follows the newest line while it is at the bottom and stops the moment you
+scroll up, keeping the lines you read where they are even as the oldest leave
+the ring; back at the bottom it follows again. `copy()` (the button, or
+Ctrl+C) takes the selected lines, or every line shown. Measured offscreen:
+30 000 lines appended one by one past the cap, about 80 µs each; 5 000 at
+once, 21 ms; a repaint of the console, 3.7 ms. `set_expanded(False)` closes
+it to its header over `motion.slow`, chevron and height together, where a
+badge counts the problems (danger once an error is among them). "Open log
+folder" is a callback (`on_open_folder`) until the LogStore of step 05.
+
+**Toasts.** `ToastHost(content)` covers the widget whose bottom-right corner
+the toasts stack in — the window's content, not a page that scrolls — and
+lets every click through; `show_toast(text, variant, action=, on_action=,
+timeout=)` adds one at the bottom of the stack. A toast goes after 6 s, the
+pointer resting on it holds it, and danger stays until closed. Four at most:
+a fifth makes the oldest that may go leave. In the app only; a hidden window
+leaves it to the tray.
+
+**The status line.** `StatusLine` has a plain API for now; the JobCenter
+drives it from step 05. Its words elide and its count never does.
+
+**Dialogs.** Both draw a `scrim` over the window they belong to and a
+frameless panel on `surface.overlay` at elev.3, with no motion. `ask()` runs
+one and returns the answer; `embedded=True` makes it an ordinary child, as
+the kit preview shows them.
+
+```python
+result = ConfirmDialog(
+    "Delete 9 unusable folders?", "Deleting is permanent.", window,
+    destructive=True, icon="trash",
+    groups=[CheckGroup("Safe to delete", [CheckRow(name, reason, size, data=folder), ...],
+                       tone="ok"),
+            CheckGroup("Hold media", [...], tone="warn", initially_checked=False)],
+    summary=None,                                  # "9 selected · 0 B" by default
+    confirm_text=lambda rows: f"Delete {len(rows)} permanently",
+    actions=[("Open folder", open_reserve)],       # GhostButtons; they do not close it
+).ask()
+if result:                                         # ConfirmResult: True when confirmed
+    delete(row.data for row in result.checked)     # empty when cancelled
+```
+
+- `destructive=True`: a DangerButton, the warn tile, and Cancel as the
+  default button and first focus, so Enter cancels. Esc cancels either kind.
+- `steps=["Close Wallpaper Engine", ("Move 1 000 new folders in", "caption"), ...]`:
+  the numbered list of what will happen.
+- `groups=[CheckGroup(title, rows, tone=, initially_checked=, noun=, plural=,
+  limit=5)]`: a checklist. The header row's tri-state box ticks or clears the
+  whole group, rows not yet shown included; its title reads "SAFE TO DELETE —
+  9 FOLDERS · 0 B". Past `limit` rows the rest fold under "N more like these".
+  A size not measured (`None`) turns totals into "at least …".
+- `summary(rows) -> str` writes the footer from the ticked rows;
+  `confirm_text` is words or `fn(rows) -> str`, and with a checklist the
+  button is off while nothing is ticked.
+
+```python
+form = FormDialog("Review settings", window)
+form.add_row("Scan", every, note="The next scan is due Saturday.")
+form.add_row("Steam Web API key", TextInput(), required=True,
+             check=lambda f: None if len(f.text()) == 32 else "a key is 32 characters")
+form.set_check(lambda form: None)                  # the form as a whole, if need be
+if form.ask():                                     # True when saved
+    ...
+```
+
+A check returns None when the field is right, a message when it is not
+(shown once the field has been touched; a TextInput shows it as its error),
+or False for "not yet" without one. Save stays off until every row and the
+form's own check pass.
+
 ### The kit preview
 
 ```
 .venv\Scripts\python.exe tools\kit_preview.py
 .venv\Scripts\python.exe tools\kit_preview.py --grab buttons buttons.png
 .venv\Scripts\python.exe tools\kit_preview.py --grab all <folder>
+.venv\Scripts\python.exe tools\kit_preview.py --grab dialogs <folder>
 ```
 
 A development window that draws the design system from the app's own code:
 Colour, Type, Space/Radius/Elevation, Motion (the loops, live), Icons, Qt's
 standard controls, and the kit's Buttons, Inputs, Selection, Chips and Panels
 with every state in a row; then Fields, Progress, Cards, Tables (33 000
-made-up rows, to feel the scroll) and Empty states with steps. Its previews
-are painted into a temp folder, so a grab never shows your library. It is not
+made-up rows, to feel the scroll) and Empty states with steps; then Feedback:
+the log (one live), toasts over a stand-in page, the status line in each state
+and one cycling through them, and the dialogs, open on the page and a button
+each to open them over the window. `--grab dialogs <folder>` saves each dialog
+open over a made-up page. Its previews are painted into a temp folder, so a
+grab never shows your library. It is not
 bundled and nothing in `app/` imports it.
 `--grab` renders a section offscreen at 100 %, which is how a change is
 compared with the design's own pictures. Each step that adds components to the

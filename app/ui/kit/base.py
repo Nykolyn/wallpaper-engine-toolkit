@@ -17,15 +17,22 @@ ground and before its children, which is where CSS puts them too.
 
 A surface repaints only the strip round a widget whose outside changed, so
 nothing here runs per frame.
+
+It also holds the small pieces every module draws with: `label()`, `Glyph`,
+`Elided` (one line cut with an ellipsis, which a QLabel cannot do) and
+`LiveDot` (the pulse of a job that runs).
 """
 from __future__ import annotations
 
+import math
 import weakref
 
 import shiboken6
-from PySide6.QtCore import QEvent, QMargins, QObject, QPoint, QRect, Qt, QVariantAnimation
-from PySide6.QtGui import QColor, QPainter, QRegion
-from PySide6.QtWidgets import QAbstractScrollArea, QLabel, QWidget
+from PySide6.QtCore import (
+    QEvent, QMargins, QObject, QPoint, QRect, QRectF, QSize, Qt, QVariantAnimation,
+)
+from PySide6.QtGui import QColor, QFontMetricsF, QPainter, QRegion
+from PySide6.QtWidgets import QAbstractScrollArea, QLabel, QSizePolicy, QWidget
 
 from ... import animations, theme
 from . import icons
@@ -139,6 +146,130 @@ def set_tone(widget: QLabel, tone: str) -> None:
     if widget.property("tone") != tone:
         widget.setProperty("tone", tone)
         repolish(widget)
+
+
+# The colour behind each label tone, for what paints its words itself; the
+# stylesheet's QLabel[tone] rules say the same.
+TONE_TOKENS = {"hi": "text.hi", "body": "text.body", "mid": "text.mid", "lo": "text.lo",
+               "ok": "ok", "warn": "warn", "danger": "danger", "info": "info",
+               "accent": "accent.hover"}
+
+
+class Elided(QWidget):
+    """One line of words in a type style and a tone, cut with an ellipsis
+    where it runs out of room, and whole in its tool tip then.
+
+    A QLabel cannot do this: it asks for its whole width, and a layout short
+    of room squeezes whatever sits beside it instead — the count in a status
+    line, the size at the end of a row. This one asks for its whole width but
+    takes any it is given.
+    """
+
+    def __init__(self, text: str = "", type_token: str = "type.body", tone: str = "body",
+                 parent: QWidget | None = None, *, mode: Qt.TextElideMode = Qt.ElideRight,
+                 align: Qt.AlignmentFlag = Qt.AlignLeft):
+        super().__init__(parent)
+        self._font = theme.font(type_token)
+        self._metrics = QFontMetricsF(self._font)
+        self._mode, self._align = mode, align
+        self._tone = "body"
+        self._text = ""
+        self.set_tone(tone)
+        self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
+        self.set_text(text)
+
+    def text(self) -> str:
+        return self._text
+
+    def set_text(self, text: str) -> None:
+        self._text = str(text)
+        self.setAccessibleName(self._text)
+        self.updateGeometry()
+        self._tip()
+        self.update()
+
+    def tone(self) -> str:
+        return self._tone
+
+    def set_tone(self, tone: str) -> None:
+        if tone not in TONE_TOKENS:
+            raise KeyError(f"no label tone {tone!r}; there are {', '.join(TONE_TOKENS)}")
+        self._tone = tone
+        self.update()
+
+    def shown_text(self) -> str:
+        """The words as drawn at the current width, ellipsis and all."""
+        return self._metrics.elidedText(self._text, self._mode, self.width())
+
+    def is_elided(self) -> bool:
+        return self.shown_text() != self._text
+
+    def _tip(self) -> None:
+        self.setToolTip(self._text if self.is_elided() else "")
+
+    def sizeHint(self) -> QSize:                # noqa: N802 - Qt's name
+        return QSize(math.ceil(self._metrics.horizontalAdvance(self._text)),
+                     math.ceil(self._metrics.height()))
+
+    def minimumSizeHint(self) -> QSize:         # noqa: N802 - Qt's name
+        return QSize(math.ceil(self._metrics.horizontalAdvance("…")),
+                     math.ceil(self._metrics.height()))
+
+    def resizeEvent(self, event) -> None:       # noqa: N802 - Qt's name
+        super().resizeEvent(event)
+        self._tip()
+
+    def paintEvent(self, event) -> None:        # noqa: N802 - Qt's name
+        painter = QPainter(self)
+        painter.setFont(self._font)
+        painter.setPen(theme.color(TONE_TOKENS[self._tone] if self.isEnabled()
+                                   else "text.disabled"))
+        painter.drawText(QRectF(self.rect()), self._align | Qt.AlignVCenter, self.shown_text())
+
+
+class LiveDot(QWidget):
+    """The dot that says a job is running: it pulses on the shared "pulse"
+    clock while `live`, and stands still in its colour otherwise (and with
+    Windows' animations off, where the words beside it say what is going on)."""
+
+    def __init__(self, colour: str = "accent", parent: QWidget | None = None, *,
+                 live: bool = True, size: int | None = None):
+        super().__init__(parent)
+        self._colour = colour
+        self._live = False
+        side = size or theme.LIVE_DOT
+        self.setFixedSize(side, side)
+        self.set_live(live)
+
+    def colour(self) -> str:
+        return self._colour
+
+    def set_colour(self, colour: str) -> None:
+        theme.color(colour)             # an unknown token fails here, not at paint time
+        self._colour = colour
+        self.update()
+
+    def live(self) -> bool:
+        return self._live
+
+    def set_live(self, on: bool) -> None:
+        self._live = bool(on)
+        driver = animations.loop("pulse")
+        if self._live:
+            driver.subscribe(self)
+        else:
+            driver.unsubscribe(self)
+        self.update()
+
+    def paintEvent(self, event) -> None:        # noqa: N802 - Qt's name
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        dot = theme.color(self._colour)
+        if self._live:
+            dot.setAlphaF(dot.alphaF() * animations.loop("pulse").value())
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(dot)
+        painter.drawEllipse(QRectF(self.rect()))
 
 
 class Glyph(QWidget):

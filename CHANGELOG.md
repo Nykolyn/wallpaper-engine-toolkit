@@ -6,6 +6,54 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [3.0.3] - 2026-09-28
+
+The fourth step of the redesign: the kit's feedback — what reports work while
+it runs, and what asks before anything is written. **Nothing you can see
+changes**; the pages that come next are built from these.
+
+### Added
+
+- **`LogPanel`**, a job's log as a card: a line per event in three mono
+  columns (time · kind · message), coloured by kind as the console is (moved
+  and done ok, skip and dupe warn, fail and error err, the rest mid). It keeps
+  the last 5 000 lines in a ring, filters to the problems (All / Problems),
+  copies the selected lines or all of them, and follows the newest line only
+  while you are at the bottom: scroll up to read and the lines stay put, even
+  as the oldest leave. It closes to its header over 220 ms with the count of
+  problems in a badge, and shows a live dot while its job runs.
+- **`Toast`** and **`ToastHost`**: ok, info, warn and danger, with an action
+  link and a close button, stacked in the page's bottom-right corner, at most
+  four. A toast rises in over 180 ms and goes after 6 s; a danger toast stays
+  until it is closed, and the pointer resting on any toast holds it.
+- **`StatusLine`**, the line at the foot of every frame: running (a pulsing
+  dot, a 150 px bar, the count and "Show"), idle, warn and error (with a link
+  that does something about it). Short of room its words elide; its count
+  never does.
+- **`ConfirmDialog`** and **`FormDialog`**, over a scrim that covers the
+  window, with no motion. A confirmation lists the steps it will take, or the
+  very rows it will act on, grouped under headers whose box ticks or clears
+  the whole group ("SAFE TO DELETE — 9 FOLDERS · 0 B"), long groups folded
+  under "N more like these". Its footer counts what is ticked, the Danger
+  button says the same number ("Delete 9 permanently") and is off with none,
+  and a size that was not measured makes the total "at least …". In a
+  destructive one Cancel is the default and has focus when it opens, so
+  Enter cancels; Esc cancels either kind, and a cancelled one returns no rows.
+  A form's Save stays off until every field is right, and a field says what
+  is wrong once it has been touched. See
+  [the kit](docs/development.md#the-kit).
+- `LinkButton`, `Elided` (one line cut with an ellipsis) and `LiveDot`, which
+  these share; `format.clock(..., seconds=True)` for a log line's time.
+- The kit preview gains Feedback, and `--grab dialogs <folder>` saves each
+  dialog open over a made-up page.
+- `tests/test_kit_feedback.py`: 114 checks.
+
+### Changed
+
+- `theme.py` gains a 14 px type style for dialog titles and the component
+  sizes of the log, toasts, the status line and dialogs; `animations.py`
+  gains the toast's 180 / 120 ms.
+
 ## [3.0.2] - 2026-09-28
 
 ### Fixed
@@ -546,7 +594,8 @@ restructured yet; the tabs keep their layout and take on the new look.
   was right for one library and wrong for every other. Nothing is tagged now
   unless you ask for it.
 
-[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.0.2...HEAD
+[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.0.3...HEAD
+[3.0.3]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.0.2...v3.0.3
 [3.0.2]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.0.1...v3.0.2
 [3.0.1]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.0.0...v3.0.1
 [3.0.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v2.2.3...v3.0.0
