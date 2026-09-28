@@ -19,6 +19,16 @@ and SHA-256), and only then does the staging folder become the data folder and
 the old one go to the Recycle Bin. If any step fails, nothing is deleted and
 the old folder stays in use; the next start tries again. A named mutex keeps
 the tracker and the window from moving it at the same time.
+
+**Inside another app's sandbox** nothing is moved or created. A Store app's
+child processes — a terminal in the Claude desktop app, and anything started
+from it — have the files and folders they create under ``%LOCALAPPDATA%`` put in
+that app's private copy in ``%LOCALAPPDATA%\\Packages\\<app>\\LocalCache\\Local``,
+while reading as if they had gone where they were meant to. (A file that
+already exists is changed in place.) On 2026-09-26 the first start of
+3.0.0 was a ``--selfcheck`` run from there: it moved the data into Claude's
+copy, and the tray tracker, started by Task Scheduler, found the real folder
+empty and began a new one.
 """
 from __future__ import annotations
 
@@ -74,8 +84,47 @@ def _decide() -> Resolved:
     if not getattr(sys, "frozen", False):
         source = Path(__file__).resolve().parent.parent / "data"
         return Resolved(source, f"{source} (a source run keeps its data beside run_app.py)")
+    sandbox = redirected_into()
     with _exclusive():
-        return settle(legacy_dir(), installed_dir())
+        return settle(legacy_dir(), installed_dir(), sandbox=sandbox)
+
+
+def redirected_into() -> str:
+    """The app whose private copy takes what this process creates in %LOCALAPPDATA%.
+
+    "" when it lands where it says. Such a process need not have a package
+    identity of its own — GetCurrentPackageFullName says a terminal in the
+    Claude desktop app has none — so this finds out by trying: a folder is
+    made, looked for in every app's private copy, and removed again.
+    """
+    if sys.platform != "win32":
+        return ""
+    local = installed_dir().parent
+    name = f"{APP_FOLDER}.write-probe-{os.getpid()}"
+    probe = local / name
+    try:
+        probe.mkdir()
+    except OSError:
+        return ""
+    try:
+        with os.scandir(local / "Packages") as apps:
+            for app in apps:
+                if os.path.isdir(os.path.join(app.path, "LocalCache", "Local", name)):
+                    return app.name
+    except OSError:
+        pass
+    finally:
+        try:
+            probe.rmdir()
+        except OSError:
+            pass
+    return ""
+
+
+def sandbox_copy(new: Path, sandbox: str) -> Path:
+    """Where ``new`` really is for a process whose writes ``sandbox`` takes."""
+    local = new.parent
+    return local / "Packages" / sandbox / "LocalCache" / "Local" / new.name
 
 
 def installed_dir() -> Path:
@@ -90,15 +139,19 @@ def legacy_dir() -> Path:
 
 # ---- The move ---------------------------------------------------------------
 
-def settle(old: Path, new: Path, recycle=None) -> Resolved:
+def settle(old: Path, new: Path, recycle=None, sandbox: str = "") -> Resolved:
     """Make ``new`` the data folder, carrying ``old`` over first if it has data.
 
     Returns the folder to use: ``new`` once it is safe to, ``old`` whenever the
     move could not be finished and verified. ``recycle`` disposes of the old
     folder after a verified move; the Recycle Bin unless a test says otherwise.
+    ``sandbox`` names the app whose private copy takes this process's writes,
+    if one does: then nothing is moved, created or marked.
     """
     recycle = recycle or _to_recycle_bin
     marker = new / MARKER
+    if sandbox:
+        return _sandboxed(old, new, sandbox)
     if marker.exists():
         if _has_files(old):
             # Recycling it failed last time, or an older build ran since and
@@ -132,6 +185,27 @@ def settle(old: Path, new: Path, recycle=None) -> Resolved:
                          f"{size / 1_048_576:.1f} MB, each one verified; {left})")
 
 
+def _sandboxed(old: Path, new: Path, sandbox: str) -> Resolved:
+    """Pick a folder without writing a thing the real app could not see."""
+    note = (f"this process runs inside {sandbox}'s sandbox, where files and folders "
+            f"it creates under %LOCALAPPDATA% land in that app's private copy, so "
+            f"nothing was moved or marked")
+    copy = sandbox_copy(new, sandbox)
+    # A selfcheck run from there may leave its report in that copy, if there
+    # was none to overwrite in place. Anything more is data the real app will
+    # never see — and what this process reads may come from that copy.
+    if _has_files(copy, besides=("selfcheck.txt",)):
+        return Resolved(new, f"{new} — WARNING: {sandbox} holds a copy of the data "
+                             f"folder at {copy}, which the app started outside it "
+                             f"never sees; {note}")
+    if (new / MARKER).exists():
+        return Resolved(new, f"{new} ({note}; files it changes are changed in place, "
+                             f"files it creates stay in that copy)")
+    if _has_files(old):
+        return Resolved(old, f"{old} (not moved: {note}; the next start outside it moves it)")
+    return Resolved(new, f"{new} (not set up yet: {note})")
+
+
 def _copy_verified(old: Path, new: Path) -> tuple[int, int]:
     """Copy ``old`` to ``new`` through a staging folder, checking every file."""
     staging = new.with_name(new.name + STAGING_SUFFIX)
@@ -162,9 +236,11 @@ def _copy_verified(old: Path, new: Path) -> tuple[int, int]:
     return files, size
 
 
-def _has_files(folder: Path) -> bool:
+def _has_files(folder: Path, besides: tuple[str, ...] = ()) -> bool:
     try:
-        return folder.is_dir() and any(p.is_file() for p in folder.rglob("*"))
+        return folder.is_dir() and any(
+            p.is_file() and p.relative_to(folder).as_posix() not in besides
+            for p in folder.rglob("*"))
     except OSError:
         return False
 
