@@ -1,4 +1,5 @@
-"""Buttons: AccentButton, SecondaryButton, DangerButton, GhostButton, IconButton.
+"""Buttons: AccentButton, SecondaryButton, DangerButton, GhostButton, IconButton,
+LinkButton.
 
 Each variant's five states are the design system's Buttons section, value for
 value. Buttons are painted rather than left to the stylesheet for three things
@@ -14,6 +15,8 @@ ring only when the keyboard brought focus there.
   variant the page headers use ("Skip for now", "Run settings").
 - IconButton: a glyph in a 30 px square (22 px in a Pagination). It says what
   it does in a tool tip, which it requires.
+- LinkButton: an action written as a link, for a toast, the status line or a
+  line inside a list. Never a dialog's default.
 
 A text button can lead with an icon (`icon="folder"`) and end with a key cap
 (`key="Ctrl+V"`). Sizes: "sm" for inline actions in a card header, "md" (the
@@ -26,7 +29,9 @@ import math
 
 from PySide6.QtCore import QMargins, QPointF, QRectF, QSize, Qt
 from PySide6.QtGui import QFontMetricsF, QPainter, QPainterPath, QPen
-from PySide6.QtWidgets import QPushButton, QStyle, QToolButton, QWidget
+from PySide6.QtWidgets import (
+    QAbstractButton, QPushButton, QSizePolicy, QStyle, QToolButton, QWidget,
+)
 
 from ... import theme
 from . import icons
@@ -306,6 +311,63 @@ class GhostButton(_TextButton):
     @property
     def outlined(self) -> bool:
         return self._variant == "outlined"
+
+
+class LinkButton(Interactive, Caster, QAbstractButton):
+    """An action written as a link — "Show", "Undo", "3 more like these" —
+    where a button's box would outweigh the words round it: a toast, the
+    status line, a line inside a list. Accent text, underlined under the
+    pointer, and the ring round the words for the keyboard.
+
+    It is a QAbstractButton, not a QPushButton, so a dialog never makes it
+    the button Enter presses.
+    """
+
+    def __init__(self, text: str = "", parent: QWidget | None = None, *,
+                 font: str = "type.labelStrong"):
+        QAbstractButton.__init__(self, parent)
+        self._font = font
+        theme.font(font)                # an unknown token fails here
+        self.setText(text)
+        self.setFocusPolicy(Qt.StrongFocus)
+        self.setCursor(Qt.PointingHandCursor)
+        self.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        self.pressed.connect(self.state_changed)
+        self.released.connect(self.state_changed)
+
+    def is_down(self) -> bool:
+        return self.isDown()
+
+    def setText(self, text: str) -> None:       # noqa: N802 - Qt's name
+        QAbstractButton.setText(self, text)
+        self.setAccessibleName(_plain(text))
+        self.updateGeometry()
+
+    def sizeHint(self) -> QSize:                # noqa: N802 - Qt's name
+        metrics = QFontMetricsF(theme.font(self._font))
+        return QSize(math.ceil(metrics.horizontalAdvance(_plain(self.text()))) + 2 * theme.SP_2,
+                     math.ceil(metrics.height()) + 2)
+
+    def minimumSizeHint(self) -> QSize:         # noqa: N802 - Qt's name
+        return self.sizeHint()
+
+    def outside_margins(self) -> QMargins:
+        return elevation_margins("elev.0")
+
+    def paint_outside(self, painter: QPainter) -> None:
+        if self.focus_visible():
+            theme.paint_focus_ring(painter, QRectF(self.rect()), theme.R_SM)
+
+    def paintEvent(self, event) -> None:        # noqa: N802 - Qt's name
+        follow(self)
+        painter = QPainter(self)
+        state = self.visual_state()
+        colour = {"disabled": "text.disabled", "pressed": "accent"}.get(state, "accent.hover")
+        font = theme.font(self._font)
+        font.setUnderline(state in ("hover", "pressed"))
+        painter.setFont(font)
+        painter.setPen(token(colour))
+        painter.drawText(QRectF(self.rect()), Qt.AlignCenter | Qt.TextHideMnemonic, self.text())
 
 
 class IconButton(_Painted, QToolButton):

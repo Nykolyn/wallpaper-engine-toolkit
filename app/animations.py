@@ -7,6 +7,7 @@ something just changed. The frame, table rows, dialogs and numbers never move.
 - `FAST` (90 ms): hover tint, icon colour.
 - `BASE` (140 ms): button fill, toggle knob, the cross-fade between pages.
 - `SLOW` (220 ms): progress width, a panel expanding.
+- `TOAST_IN` / `TOAST_OUT` (180 / 120 ms): a toast arriving and leaving.
 - `ease()`: the design's cubic-bezier(.2,.7,.3,1), used by everything except
   the spinners.
 
@@ -44,6 +45,10 @@ SLOW = 220        # motion.slow
 # not the number it is looking at now. At SLOW alone it is over before a
 # glance lands; at four it reads as "just changed" without nagging.
 FLASH = 4 * SLOW
+
+# anim.toastIn: a toast fades in rising over 180 ms, and fades out over 120.
+TOAST_IN = 180
+TOAST_OUT = 120
 
 # Set from Windows' "Show animations in Windows" by theme.apply().
 ENABLED = True

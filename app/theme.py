@@ -335,6 +335,9 @@ TYPE: dict[str, TypeSpec] = {
     "type.tableHead": TypeSpec(10, 1.3, 600, mono=True, upper=True, tracking=0.09),
     "type.step": TypeSpec(12, 1.35),                       # a StepList title
     "type.lead": TypeSpec(12, 1.6),                        # an EmptyState's body
+    # A dialog's title: type.h3's weight at the 14 px the confirmation (frame 09)
+    # draws it at, a step up from a card's title in the panel over the scrim.
+    "type.dialog": TypeSpec(14, 1.35, 600),
 }
 
 
@@ -796,6 +799,52 @@ ACTIVITY_SPINNER = 14
 ACTIVITY_SPINNER_STROKE = 2
 ACTIVITY_SPIN_ARC = 0.5  # two of the ring's four sides, as the CSS draws it
 
+# -- feedback: the log, toasts, the status line, dialogs
+
+LIVE_DOT = 7             # the pulsing dot of a job that runs (log header, status line)
+
+LOG_HEAD_PAD = (9, 13)   # the header row: vertical, horizontal
+LOG_ROW_PAD = 13         # a console line's sides
+LOG_COLUMN_GAP = 12      # time · kind · message
+LOG_BODY = 232           # the console's height, expanded
+LOG_CAP = 5_000          # lines a LogPanel keeps; the file keeps the rest
+LOG_BADGE_PAD = (2, 7)   # the problem count on a collapsed panel
+
+TOAST_WIDTH = 344
+TOAST_PAD = (11, 12)
+TOAST_ICON = 15
+TOAST_GAP = 10           # icon, text, link and close, side by side
+TOAST_STACK_GAP = 8      # one toast to the next
+TOAST_MARGIN = 16        # the stack to the page's bottom-right corner
+TOAST_RISE = 8           # how far a toast rises while it fades in
+TOAST_TIMEOUT = 6000     # ms before a toast that is not danger goes by itself
+TOAST_LIMIT = 4          # shown at once; the oldest that may go makes room
+
+STATUS_HEIGHT = 34
+STATUS_PAD = 14          # the line's sides
+STATUS_GAP = 10
+STATUS_BAR = 150         # a running job's bar, 4 px tall
+STATUS_ICON = 13         # the warn and error glyphs
+
+DIALOG_WIDTH = 440       # a confirmation or a form
+DIALOG_WIDE = 540        # a confirmation with a checklist
+DIALOG_PAD = (18, 20)    # vertical, horizontal
+DIALOG_GAP = 14          # between the head, the body's parts and the footer
+DIALOG_TILE = 34         # the icon tile beside the title
+DIALOG_TILE_RADIUS = 9
+DIALOG_ICON = 17
+DIALOG_HEAD_GAP = 13     # the tile to the words
+DIALOG_FOOTER_PAD = (12, 20)
+DIALOG_STEP = 18         # a numbered step's disc
+DIALOG_STEP_GAP = 10     # the disc to its text
+DIALOG_ROW_GAP = 12      # a form's labelled rows
+DIALOG_SCREEN_MARGIN = 24  # the panel to the window's edge, at the least
+CHECK_ROW_PAD = (5, 10)  # a checklist row: vertical, horizontal
+CHECK_ROW_GAP = 10
+CHECK_SIZE_WIDTH = 64    # the right-aligned size column
+CHECK_LIMIT = 5          # rows a group shows before "N more like these"
+CHECKLIST_MAX = 300      # the checklist's height before it scrolls
+
 
 # ---- Semantic colours the old tabs ask for ---------------------------------
 
@@ -1215,8 +1264,12 @@ PathField QLineEdit:disabled {
     selection-background-color: $(console.selection);
     $(font:type.monoSm)
 }
-/* A Table and a RowList paint their own rows, on the card they sit in. */
-Table, RowList { background: transparent; border: none; border-radius: 0; }
+/* A Table and a RowList paint their own rows, on the card they sit in; the
+   log's lines are painted on its console well. */
+Table, RowList, LogView { background: transparent; border: none; border-radius: 0; }
+/* A kit dialog paints its scrim and its panel itself; the bg.solid every
+   QDialog takes above would lay an opaque sheet over the window it covers. */
+OverlayDialog { background: transparent; }
 
 /* Kit labels name their colour, so no label carries a stylesheet of its own. */
 QLabel[tone="hi"] { color: $(text.hi); }

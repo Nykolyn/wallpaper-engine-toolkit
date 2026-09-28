@@ -13,7 +13,8 @@ is marked the same way wherever it appears.
 - `approx("21 Sep")` → `≈21 Sep` (estimated); `reconstructed("12:44")` →
   `~12:44` (rebuilt after a restart). `split_qualifier` takes the mark back
   off, for a painter that draws it in `text.lo`.
-- Dates: `date_table` → `19 Sep 12:44`; `date_activity` → `13:47` today,
+- Dates: `clock` → `13:47`, or `13:47:02` for a log line; `date_table` →
+  `19 Sep 12:44`; `date_activity` → `13:47` today,
   `Fri 09:10` within the week; `date_long` → `Saturday 19 September, 13:44`;
   `day` → `19 Sep`; `estimate_day` → `≈21 Sep`.
 - `ratio(4, 201)` → `4 / 201` in a card, `4/201` in the nav (`style="nav"`),
@@ -154,9 +155,11 @@ def _now(now) -> datetime:
     return datetime.now() if now is None else _local(now)
 
 
-def clock(value) -> str:
-    """`13:47`."""
+def clock(value, *, seconds: bool = False) -> str:
+    """`13:47`; `13:47:02` with `seconds=True`, as a log line is stamped."""
     dt = _local(value)
+    if seconds:
+        return f"{dt.hour:02d}:{dt.minute:02d}:{dt.second:02d}"
     return f"{dt.hour:02d}:{dt.minute:02d}"
 
 
