@@ -1,19 +1,22 @@
 """Rotator tab — the standalone Wallpaper Rotator re-hosted as a QWidget.
 
-This is the original MainWindow, adapted from a QMainWindow to a plain QWidget
-so it can live inside the toolkit's top-level tab strip. The five inner tabs
-(Rotate / Reserve / Transferred / History / Duplicates) and all behaviour are
-unchanged; the Rotator/Config/History/worker logic is used verbatim.
+This is the original MainWindow, adapted to a plain QWidget, and hosted as a
+page of the window until the Rotator page (redesign step 10) replaces it. The
+five inner tabs (Rotate / Reserve / Transferred / History / Duplicates) and
+all behaviour are unchanged; the Rotator/Config/History/worker logic is used
+verbatim. Its folders and batch size are set on the Settings page, which
+shares this tab's `Config`; the tab shows them, and says where to change them.
 """
 from __future__ import annotations
 
 from pathlib import Path
 
+from PySide6.QtCore import Signal
 from PySide6.QtGui import QTextCursor
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QTabWidget, QPushButton,
-    QLabel, QPlainTextEdit, QFormLayout, QLineEdit, QSpinBox,
-    QGroupBox, QMessageBox, QTreeWidget, QTreeWidgetItem, QFileDialog, QCheckBox,
+    QLabel, QPlainTextEdit, QFormLayout,
+    QGroupBox, QMessageBox, QTreeWidget, QTreeWidgetItem, QCheckBox,
 )
 
 from .. import animations, theme
@@ -27,7 +30,7 @@ from ..engines.rotator.worker import (
 )
 from ..services import begin
 from .cleanup_dialog import CleanupDialog
-from .kit import icon
+from .kit import LinkButton, PathField, format as fmt, icon
 from .widgets import FolderListPanel
 
 # What the status line says a rotation is doing, by the engine's phase.
@@ -65,9 +68,13 @@ def _log_kind(e: ProgressEvent) -> str:
 
 
 class RotatorTab(QWidget):
-    def __init__(self):
+    # "Change in Settings": the window goes to the Settings page.
+    settings_requested = Signal()
+
+    def __init__(self, config: Config | None = None):
         super().__init__()
-        self.config = Config.load()
+        # The window hands in the Config the Settings page edits too.
+        self.config = config if config is not None else Config.load()
         self.history = History.load()
         self.rotation_worker: RotationWorker | None = None
         self.dup_worker: DuplicateActionWorker | None = None
@@ -84,7 +91,8 @@ class RotatorTab(QWidget):
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
-        self.tabs = animations.FadingTabWidget()
+        self.tabs = QTabWidget()
+        self.tabs.setObjectName("rotatorTabs")      # the stylesheet's rules for them
         outer.addWidget(self.tabs)
 
         self._build_rotate_tab()
@@ -100,19 +108,26 @@ class RotatorTab(QWidget):
         w = QWidget()
         layout = QVBoxLayout(w)
 
-        settings = QGroupBox("Configuration")
+        settings = QGroupBox("Next run")
         form = QFormLayout(settings)
-        self.in_source = QLineEdit(self.config.source)
-        self.in_dest = QLineEdit(self.config.destination)
-        self.in_dup = QLineEdit(self.config.duplicates)
-        self.in_count = QSpinBox()
-        self.in_count.setRange(1, 100000)
-        self.in_count.setValue(self.config.count)
-
-        form.addRow("Reserve (source):", self._path_row(self.in_source))
-        form.addRow("myprojects (dest):", self._path_row(self.in_dest))
-        form.addRow("Duplicates folder:", self._path_row(self.in_dup))
-        form.addRow("Folders per run:", self.in_count)
+        # Set on the Settings page; shown here, checked on a worker.
+        self.show_source = PathField(self.config.source, editable=False,
+                                     placeholder="Reserve not set")
+        self.show_dest = PathField(self.config.destination, editable=False,
+                                   placeholder="myprojects not set")
+        self.show_dup = PathField(self.config.duplicates, editable=False,
+                                  placeholder="Duplicates folder not set")
+        self.count_label = QLabel()
+        change = LinkButton("Change in Settings")
+        change.clicked.connect(self.settings_requested.emit)
+        count_row = QHBoxLayout()
+        count_row.addWidget(self.count_label)
+        count_row.addStretch()
+        count_row.addWidget(change)
+        form.addRow("Reserve:", self.show_source)
+        form.addRow("myprojects:", self.show_dest)
+        form.addRow("Duplicates:", self.show_dup)
+        form.addRow("Folders per run:", count_row)
         self.in_refresh = QCheckBox(
             "Rebuild the playlist from the new set and start it over")
         self.in_refresh.setChecked(self.config.refresh_playlist)
@@ -120,11 +135,10 @@ class RotatorTab(QWidget):
             "Wallpaper Engine is closed for the move and started again afterwards —\n"
             "a few seconds without wallpapers. The playlist is the one made of what\n"
             "is in myprojects now, found by its contents whatever it is called.")
+        self.in_refresh.toggled.connect(self._set_refresh)
         form.addRow("Wallpaper Engine:", self.in_refresh)
-        save_btn = QPushButton("Save settings")
-        save_btn.clicked.connect(self._save_settings)
-        form.addRow("", save_btn)
         layout.addWidget(settings)
+        self._show_config()
 
         btn_row = QHBoxLayout()
         self.start_btn = QPushButton(icon("play", "text.onAccent"), "Start Rotation")
@@ -163,31 +177,18 @@ class RotatorTab(QWidget):
 
         self.tabs.addTab(w, "Rotate")
 
-    def _path_row(self, line_edit: QLineEdit) -> QWidget:
-        row = QWidget()
-        h = QHBoxLayout(row)
-        h.setContentsMargins(0, 0, 0, 0)
-        h.addWidget(line_edit)
-        browse = QPushButton("...")
-        browse.setMaximumWidth(36)
-        browse.clicked.connect(lambda: self._browse_into(line_edit))
-        h.addWidget(browse)
-        return row
+    def _show_config(self) -> None:
+        """What the Settings page set, as this tab shows it."""
+        self.show_source.set_path(self.config.source)
+        self.show_dest.set_path(self.config.destination)
+        self.show_dup.set_path(self.config.duplicates)
+        self.count_label.setText(fmt.count(self.config.count))
 
-    def _browse_into(self, line_edit: QLineEdit):
-        d = QFileDialog.getExistingDirectory(self, "Choose folder", line_edit.text())
-        if d:
-            line_edit.setText(d.replace("/", "\\"))
-
-    def _save_settings(self):
-        self.config.source = self.in_source.text().strip()
-        self.config.destination = self.in_dest.text().strip()
-        self.config.duplicates = self.in_dup.text().strip()
-        self.config.count = self.in_count.value()
-        self.config.refresh_playlist = self.in_refresh.isChecked()
+    def _set_refresh(self, on: bool) -> None:
+        if self.rotation_worker is not None and self.rotation_worker.isRunning():
+            return      # the run has its answer already; the box is off meanwhile
+        self.config.refresh_playlist = on
         self.config.save()
-        self.refresh_all()
-        QMessageBox.information(self, "Saved", "Settings saved.")
 
     # --------------------------------------------------------------- Reserve
     def _build_reserve_tab(self):
@@ -255,6 +256,7 @@ class RotatorTab(QWidget):
 
     # ------------------------------------------------------------- Refreshing
     def refresh_all(self):
+        self._show_config()
         self.refresh_reserve()
         self.refresh_transferred()
         self.refresh_history()
@@ -320,7 +322,6 @@ class RotatorTab(QWidget):
 
     def check_folders(self):
         """The check on its own, without rotating afterwards."""
-        self._save_settings_silent()
         self._begin_check(then_rotate=False)
 
     def _begin_check(self, then_rotate: bool):
@@ -432,7 +433,6 @@ class RotatorTab(QWidget):
 
     # --------------------------------------------------------------- Rotation
     def start_rotation(self):
-        self._save_settings_silent()
         rotator = Rotator(self.config, self.history)
         err = rotator.validate()
         if err:
@@ -611,23 +611,16 @@ class RotatorTab(QWidget):
     def _set_running(self, running: bool, cancellable: bool = True):
         self.start_btn.setEnabled(not running)
         self.check_btn.setEnabled(not running)
+        self.in_refresh.setEnabled(not running)
         self.cancel_btn.setEnabled(running and cancellable)
         if running:
             self.phase_label.setText("Starting...")
             self.progress.setMaximum(0)
 
-    def _save_settings_silent(self):
-        self.config.source = self.in_source.text().strip()
-        self.config.destination = self.in_dest.text().strip()
-        self.config.duplicates = self.in_dup.text().strip()
-        self.config.count = self.in_count.value()
-        self.config.refresh_playlist = self.in_refresh.isChecked()
-        self.config.save()
-
     # ---------------------------------------------------- Duplicate actions
     def _dup_action(self, action: str, all_items: bool):
-        # The buttons are off while a folder is unset, but the settings can be
-        # saved by Check folders or Start without this tab being refreshed.
+        # The buttons are off while a folder is unset, but the Settings page
+        # can change a folder without this tab being refreshed in between.
         problem = folder_problem("duplicates", self.config.duplicates)
         if problem is None and action == "replace":
             problem = folder_problem("reserve", self.config.source)

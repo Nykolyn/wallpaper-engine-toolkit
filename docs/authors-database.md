@@ -1,9 +1,9 @@
 # Authors database
 
-**The file behind the [Review](review.md) tab: one row per author, and when you
+**The file behind the [Review](review.md) page: one row per author, and when you
 last looked at their work.**
 
-Only the Review tab uses it. Every other tab in this app works without it.
+Only the Review page uses it. Every other page in this app works without it.
 
 ## What it is for
 
@@ -18,8 +18,8 @@ the nine published since you were last here".
 with the other things the toolkit keeps — `%LOCALAPPDATA%\WallpaperEngineToolkit`
 in a built copy, the project folder's `data\` when run from source.
 
-There is nothing to set up. The file is made the first time the Review tab
-needs it, and **Authors database…** in the tab says how many authors it holds,
+There is nothing to set up. The file is made the first time the Review page
+needs it, and **Authors database…** in the page says how many authors it holds,
 where the file is, and what backups there are.
 
 It is a SQLite database: one file, no server, and read by the Python standard
@@ -84,7 +84,7 @@ well, verified, and pruned by the same rules.
 
 It is off until you choose one, and the dialog says what that risks. If the
 folder cannot be reached when a change is written — an unplugged drive — the
-change still happens and is still backed up in `data/`; the tab says the copy
+change still happens and is still backed up in `data/`; the page says the copy
 was not made, and the next change makes it.
 
 ### Restoring
@@ -94,7 +94,7 @@ one and press **Restore selected…**: the dialog says how many authors are ther
 now and how many the backup holds, and asks. The current state is snapshotted
 first, so a restore is undone the same way it is done.
 
-If the database file is ever damaged, the tab says so when it opens it and
+If the database file is ever damaged, the page says so when it opens it and
 offers the backups straight away. The damaged file is set aside as
 `authors.sqlite.damaged1`, never deleted.
 

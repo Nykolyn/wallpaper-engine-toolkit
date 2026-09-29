@@ -6,6 +6,80 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [3.2.0] - 2026-09-29
+
+The sixth step of the redesign, and the first you can see all at once: the
+window's new frame. The tools themselves still look as they did, inside it.
+
+### Changed
+
+- **Navigation moves to a sidebar ordered by the loop; a status line shows
+  running work from any page; settings live on one Settings page.**
+  - The sidebar lists the pages in the order of the loop: Overview, Rotator,
+    Tracker, Review, then the Creator and the Copier, and Settings at the
+    foot. **Ctrl+1 … Ctrl+7** go to each. It is live: the Rotator's progress
+    while it runs (`41%`) or `ready · run 39`, the leading monitor's count
+    (`4/201`), `idle` or `working`, and **Next in the loop** under them
+    (`197 left on Monitor1 — rotate again ≈21 Sep`). Below 1 200 px wide it
+    folds into a rail of icons, their names in the tool tips.
+  - The status line at the foot says what is running from any page — the
+    tool, what it is doing, a bar and `412 / 1 000 · 41%` — with **Show** to go
+    to it; afterwards "Nothing running · last run finished 13:58". A job that
+    ends with problems or fails says so in warn or danger, with the way to it,
+    until its page has been looked at.
+  - The **Settings** page holds what is set once: the Rotator's reserve,
+    myprojects, duplicates folder and folders per run; the Copier's
+    destination; the Creator's source and output; Wallpaper Engine's
+    `config.json` and "Also check every"; counting in the background; the
+    monitor that leads; the Steam key and the authors database; and the data
+    folder, the log folder and the selfcheck. Each change is saved as it is
+    made, into the same files as before (`config.json` for the Rotator,
+    `suite.json` for the rest). The Rotator's fields are read-only while it
+    runs. See [Settings](docs/settings.md).
+  - The Rotator, Copier, Creator and Tracker show their folders instead of
+    editing them, with **Change in Settings** beside them. The Rotator's
+    "Save settings" box is gone; its "Rebuild the playlist" switch stays on
+    the Rotator and saves when changed. The Creator reads a new source as soon
+    as you come back to it.
+  - The old tabs sit in the frame as they were. Where the window is smaller
+    than one of them needs, its page scrolls rather than squeezing it, and
+    the window opens wide enough for the widest (the Review), within the
+    screen.
+  - The window opens on **Overview**, which says it is coming in the next
+    release; the sidebar carries its numbers meanwhile. `--tab` takes the page
+    names as well as the old tab names, in any case; a name that is no page
+    opens Overview.
+  - Switching pages cross-fades the page only (140 ms), and is instant with
+    Windows' animations off. The sidebar and the status line never move.
+- **The window draws its own title bar** (32 px, the app's mark and
+  "Toolkit"), and Windows still does the window's work: dragging, Aero Snap,
+  the snap layouts over the maximise button, resizing from every edge,
+  double-clicking to maximise, Alt+Space. Maximised, it fills the screen's
+  work area exactly. It opens at 1280 × 860, and goes no smaller than
+  1040 × 720.
+- **The window, the tray and its notifications say "Toolkit"**; About says
+  "Toolkit for Wallpaper Engine". The program, the logon task and the data
+  folder keep their names.
+- The window and the tray read `suite.json` again when the other has written
+  it, before they rely on or change the monitor that leads, so the Settings
+  page's choice reaches the tray, and the tray's **Show on the icon** does not
+  write back what the window changed.
+- A second launch or the tray can send the window a command (`show:<page>`)
+  besides the plain request every version understands.
+
+### Removed
+
+- The tab bar.
+
+### Added
+
+- `tools/ui_snapshot.py`: the real window, offscreen, in a made-up state from
+  `tests/fixtures/ui/`, saved as a PNG at a size and scale — for comparing
+  with the design. It reads nothing of this machine's. See
+  [Snapshots](docs/development.md#snapshots).
+- **Run selfcheck** on the Settings page: `--selfcheck` from the window.
+- `tests/test_shell.py`.
+
 ## [3.1.0] - 2026-09-28
 
 The fifth step of the redesign: the services behind the new frame. The tabs
@@ -642,7 +716,8 @@ restructured yet; the tabs keep their layout and take on the new look.
   was right for one library and wrong for every other. Nothing is tagged now
   unless you ask for it.
 
-[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.1.0...HEAD
+[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.2.0...HEAD
+[3.2.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.1.0...v3.2.0
 [3.1.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.0.3...v3.1.0
 [3.0.3]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.0.2...v3.0.3
 [3.0.2]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.0.1...v3.0.2

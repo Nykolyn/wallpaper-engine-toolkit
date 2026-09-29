@@ -17,7 +17,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from PySide6.QtWidgets import QApplication, QLabel, QTabWidget  # noqa: E402
+from PySide6.QtWidgets import QApplication  # noqa: E402
 
 app = QApplication.instance() or QApplication([])
 
@@ -62,6 +62,20 @@ check("with the tab it was asked for", wait_for(lambda: asked == ["Tracker"]))
 wi.ask_to_show("", wait=0, name=NAME)
 check("or with none, when it was launched without one",
       wait_for(lambda: asked == ["Tracker", ""]))
+
+commands: list[tuple[str, str]] = []
+first.command_received.connect(lambda verb, argument: commands.append((verb, argument)))
+check("a request in the command form reaches it too",
+      wi.send(wi.command("show", "rotator"), wait=0, name=NAME)
+      and wait_for(lambda: commands == [("show", "rotator")]))
+check("and a show in that form is a show", wait_for(lambda: asked[-1:] == ["rotator"]))
+wi.send("rotate:confirm", wait=0, name=NAME)
+check("a verb the window may not know is still handed on",
+      wait_for(lambda: commands[-1:] == [("rotate", "confirm")]) and asked[-1:] == ["rotator"])
+wi.send("hello there", wait=0, name=NAME)
+wi.ask_to_show("Review", wait=0, name=NAME)
+check("a line in neither form is dropped, and the next one still read",
+      wait_for(lambda: asked[-1:] == ["Review"]) and commands[-1] == ("show", "Review"))
 
 first.release()
 check("once the window is gone, nothing answers",
@@ -153,21 +167,12 @@ check("a window that exists but does not answer is not stacked with another",
 
 # ---- The window's side ----------------------------------------------------------
 
-from app.main_window import MainWindow  # noqa: E402
+from app.main_window import page_for  # noqa: E402
 
-
-class WindowStandIn:
-    def __init__(self):
-        self.tabs = QTabWidget()
-        for name in ("Copier", "Tracker", "Review"):
-            self.tabs.addTab(QLabel(name), name)
-
-
-window = WindowStandIn()
-check("a tab is found by its title", MainWindow.show_tab(window, "review")
-      and window.tabs.currentIndex() == 2)
-check("and a title that is not there changes nothing",
-      not MainWindow.show_tab(window, "Nowhere") and window.tabs.currentIndex() == 2)
+check("an old tab name finds its page, whatever its case",
+      [page_for(n) for n in ("Tracker", "review", "COPIER")] == ["tracker", "review", "copier"])
+check("and so does a page that was never a tab", page_for("settings") == "settings")
+check("a name that is no page finds nothing, so nothing changes", page_for("Nowhere") is None)
 
 print()
 print("PASSED %d/%d" % (sum(results), len(results)))

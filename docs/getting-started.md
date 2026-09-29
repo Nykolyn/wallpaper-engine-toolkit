@@ -35,7 +35,13 @@ The background playlist tracker is the same entry point with a flag:
 ```
 
 …or `run_tracker.cmd`. It has no window: it lives in the notification area, and
-clicking its icon opens the main window on the Tracker tab.
+clicking its icon opens the main window on the Tracker page.
+
+`--tab <page>` opens the window on a page — `overview`, `rotator`, `tracker`,
+`review`, `creator`, `copier` or `settings`, in any case, the old tab names
+included. The window opens on Overview otherwise, and on Overview for a name
+that is no page. How to get around once it is open:
+[Getting around](README.md#getting-around).
 
 ## What the first run already knows
 
@@ -52,33 +58,35 @@ Wallpaper Engine (app `431960`), and from there the layout is fixed:
 | Wallpaper Engine `config.json` (Tracker) | `…/steamapps/common/wallpaper_engine/config.json` |
 
 If Steam is not installed, or Wallpaper Engine is in a library Steam has not
-recorded, these arrive empty and each tab offers a folder picker. Nothing is
-filled in with a path that does not exist.
+recorded, these arrive empty and the [Settings](settings.md) page asks for
+them. Nothing is filled in with a path that does not exist.
 
 The folders that **cannot** be derived start empty on purpose: where you keep
-video clips, where you keep previews, your rotation reserve, and the folder
-duplicates are moved to. A blank field that asks is better than a filled one
-that is wrong, in a tab whose next action is moving files.
+video clips, your rotation reserve, and the folder duplicates are moved to. A
+blank field that asks is better than a filled one that is wrong, for a tool
+whose next action is moving files. All of them are set once, on the
+[Settings](settings.md) page; the pages show them, and **Change in Settings**
+goes there.
 
-## What needs setting up, and for which tab
+## What needs setting up, and for which page
 
-Every tab works immediately. Two have something worth knowing:
+Every page works immediately. Two have something worth knowing:
 
-| Tab | What | Where |
+| Page | What | Where |
 |---|---|---|
 | Creator | ffmpeg — taken from `PATH`, otherwise the bundled `imageio-ffmpeg` | automatic |
-| Review | a **Steam Web API key** — optional, but without it author lists leave out mature wallpapers | **Steam key…** in the tab |
+| Review | a **Steam Web API key** — optional, but without it author lists leave out mature wallpapers | **Steam key…** on the Review page or in Settings |
 
 A Steam Web API key is free from
 [steamcommunity.com/dev/apikey](https://steamcommunity.com/dev/apikey). Without
-one the Review tab says so in a banner, marks every author it counted without
+one the Review page says so in a banner, marks every author it counted without
 it, and warns before writing a visit date from such a list — see
 [what the key is for](review.md#what-a-steam-web-api-key-is-for). It is stored
 DPAPI-encrypted in `data/secrets.json` — readable only by the Windows account
 that wrote it, and useless if the file is copied off the machine. See
 [Configuration](configuration.md#secrets).
 
-The Review tab's authors database is a file, `data/authors.sqlite`, made the
+The Review page's authors database is a file, `data/authors.sqlite`, made the
 first time it is needed and backed up after every change. Nothing to install or
 host. See [Authors database](authors-database.md).
 
@@ -90,8 +98,9 @@ host. See [Authors database](authors-database.md).
 
 This reports what the app can actually import and reach, and writes the same
 report to `data/selfcheck.txt`. It exists because a windowed build has no
-console, and the libraries the Review tab needs are imported lazily — exactly
-the shape of dependency a packaged build drops silently.
+console, and the libraries the Review page needs are imported lazily — exactly
+the shape of dependency a packaged build drops silently. **Run selfcheck** on
+the Settings page does the same from the window.
 
 ## Next
 

@@ -2,7 +2,9 @@
 
 Run:
     python run_app.py                  # the toolkit window (or bring it forward)
-    python run_app.py --tab Review     # ... on a given tab
+    python run_app.py --tab Review     # ... on a given page: overview, rotator,
+                                       #   tracker, review, creator, copier or
+                                       #   settings, in any case
     python run_app.py --tracker        # the background playlist tracker, tray only
     python run_app.py --autostart on   # install / remove / report autostart:
                                        #   on | off | status
@@ -55,97 +57,13 @@ def _autostart(action: str) -> int:
 
 
 def _selfcheck() -> int:
-    """Say whether this build has everything the tabs need, and exit.
+    """Say whether this build has everything the pages need, and exit.
 
-    A windowed build has no console, and a module that imports lazily is
-    exactly the shape of dependency PyInstaller misses. The failure then looks
-    like a tab quietly not working, hours after the build. This makes it a line
-    in a file instead.
+    The checks are in app/selfcheck.py, which the Settings page runs too.
     """
-    from app.settings import app_data_dir
-    from app.data_location import resolve
+    from app import selfcheck
 
-    from app import __version__
-
-    lines = [f"version: {__version__}",
-             f"frozen: {bool(getattr(sys, 'frozen', False))}",
-             # Where the data is, and whether it was just moved there.
-             f"data: {resolve().report}"]
-    ok = True
-    for module, why in (("PySide6.QtWidgets", "the window"),
-                        ("sqlite3", "the authors database and the Steam cache"),
-                        ("app.engines.authors_store", "the authors database"),
-                        ("app.ui.authors_dialog", "its backups and restoring one"),
-                        ("app.engines.review", "the review itself"),
-                        ("app.ui.review_tab", "the Review tab"),
-                        ("app.engines.steam_ugc", "subscribing from the gallery"),
-                        ("app.secrets", "the stored Steam key"),
-                        ("PySide6.QtNetwork", "one window, raised from the tray"),
-                        ("app.window_instance", "starting the window on its own"),
-                        ("app.engines.playlist_refresh",
-                         "rebuilding Wallpaper Engine's playlist after a rotation"),
-                        ("PySide6.QtSvg", "icons"),
-                        ("app.ui.kit", "the redesign's components, and the gallery's previews"),
-                        ("app.services",
-                         "the running jobs, the activity journal and the log files")):
-        try:
-            __import__(module)
-            lines.append(f"ok      {module}  ({why})")
-        except Exception as err:  # noqa: BLE001 — the message is the point
-            ok = False
-            lines.append(f"MISSING {module}  ({why}): {err}")
-
-    # The stylesheet draws check marks and spin arrows from SVG files, through
-    # Qt's svg image plugin. A build without it still starts — it just shows
-    # check boxes that never tick, which is exactly what nobody reports.
-    try:
-        from PySide6.QtGui import QImageReader
-        if b"svg" in [bytes(f) for f in QImageReader.supportedImageFormats()]:
-            lines.append("ok      svg images  (check marks and arrows)")
-        else:
-            ok = False
-            lines.append("MISSING svg images  (check marks and arrows): no svg image plugin")
-    except Exception as err:  # noqa: BLE001 — the message is the point
-        ok = False
-        lines.append(f"BROKEN  svg images: {type(err).__name__}: {err}")
-
-    # A build hands the programs it starts its own DLL folder unless it clears
-    # it first. Wallpaper Engine, restarted after a rotation, ran on the build's
-    # VCRUNTIME140.dll because of that. PySide6 is imported by now, so PATH is
-    # as polluted here as it is in the window and the tray.
-    try:
-        from app import external
-        clean, said = external.report()
-        lines.append(f"{'ok     ' if clean else 'BROKEN '} other programs  ({said})")
-        ok = ok and clean
-    except Exception as err:  # noqa: BLE001 — the message is the point
-        ok = False
-        lines.append(f"BROKEN  other programs: {type(err).__name__}: {err}")
-
-    # The gallery fetches its previews itself, with urllib on a worker thread,
-    # and swallows whatever goes wrong because a missing preview is not worth a
-    # traceback. That is fine until every preview fails, which looks exactly
-    # like a gallery of empty tiles and says nothing at all. So the fetch is
-    # tried once here, where it is allowed to explain itself.
-    try:
-        import urllib.error
-        import urllib.request
-        request = urllib.request.Request(
-            "https://images.steamusercontent.com/",
-            headers={"User-Agent": "Mozilla/5.0"})
-        try:
-            urllib.request.urlopen(request, timeout=15).close()
-        except urllib.error.HTTPError as err:
-            # An answer of any kind means the connection itself is sound.
-            lines.append(f"ok      preview downloads (HTTP {err.code} from the host)")
-        else:
-            lines.append("ok      preview downloads")
-    except Exception as err:  # noqa: BLE001 — the message is the point
-        ok = False
-        lines.append(f"BROKEN  preview downloads: {type(err).__name__}: {err}")
-
-    report = "\n".join(lines)
-    (app_data_dir() / "selfcheck.txt").write_text(report + "\n", encoding="utf-8")
+    ok, report = selfcheck.run()
     print(report)
     return 0 if ok else 1
 
@@ -232,10 +150,9 @@ def main():
     watch = HangWatch(app_data_dir() / "window-hangs.log", "the toolkit window").start()
 
     theme.apply(app)
-    win = MainWindow()
-    if tab:
-        win.show_tab(tab)
-    instance.show_requested.connect(win.bring_forward)
+    # A name that is no page (a typo, an old script) opens on Overview.
+    win = MainWindow(initial=tab)
+    instance.command_received.connect(win.handle_command)
     win.show()
     code = app.exec()
     watch.stop()

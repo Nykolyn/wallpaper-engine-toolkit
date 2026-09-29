@@ -17,15 +17,16 @@ from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGroupBox, QLabel,
-    QPushButton, QLineEdit, QSpinBox, QComboBox, QCheckBox, QSplitter,
-    QMessageBox, QFileDialog, QFormLayout, QAbstractItemView,
+    QPushButton, QComboBox, QSplitter,
+    QMessageBox, QFormLayout, QAbstractItemView,
 )
 
-from .. import animations, autostart, external, theme
+from .. import animations, external, theme
 from ..engines.tracker import (
     ANCHOR_NONE, Progress, Tracker, elapsed_since, format_minutes, pick_primary,
     title_for)
 from ..tracker_feed import TrackerFeed, heartbeat_setting
+from .kit import LinkButton
 from .widgets import FolderListPanel
 
 
@@ -152,6 +153,9 @@ class MonitorCard(QGroupBox):
 
 
 class TrackerTab(QWidget):
+    # "Change in Settings": the window goes to the Settings page.
+    settings_requested = Signal()
+
     def __init__(self, settings, feed: TrackerFeed | None = None):
         super().__init__()
         self.settings = settings
@@ -175,9 +179,9 @@ class TrackerTab(QWidget):
 
         layout.addWidget(self._build_lists(), 1)
 
-        self._show_autostart_method()
-
         self.feed.updated.connect(self._show)
+        # A config.json chosen on the Settings page: the old monitors go first.
+        self.feed.config_changed.connect(self._clear_cards)
         if self.feed.results:
             self._show()          # the tray's feed has looked already
 
@@ -190,49 +194,19 @@ class TrackerTab(QWidget):
         box = QGroupBox("Source")
         form = QFormLayout(box)
 
-        self.in_config = QLineEdit(self.tracker.config_path)
-        browse = QPushButton("...")
-        browse.setMaximumWidth(36)
-        browse.clicked.connect(self._browse_config)
-        row = QWidget()
-        h = QHBoxLayout(row)
-        h.setContentsMargins(0, 0, 0, 0)
-        h.addWidget(self.in_config)
-        h.addWidget(browse)
-        form.addRow("Wallpaper Engine config.json:", row)
-
         controls = QWidget()
         c = QHBoxLayout(controls)
         c.setContentsMargins(0, 0, 0, 0)
-        self.in_heartbeat = QSpinBox()
-        self.in_heartbeat.setRange(1, 60)
-        self.in_heartbeat.setSuffix(" min")
-        self.in_heartbeat.setValue(heartbeat_setting(self.settings) // 60)
-        self.in_heartbeat.valueChanged.connect(self._apply_heartbeat)
-        heartbeat_tip = (
-            "Every wallpaper change is picked up within a second or so of Wallpaper\n"
-            "Engine writing it down. This is only the safety check in between, for what\n"
-            "nothing announces — a wallpaper deleted from disk, say.")
-        label = QLabel("Also check every")
-        for widget in (label, self.in_heartbeat):
-            widget.setToolTip(heartbeat_tip)
-        c.addWidget(label)
-        c.addWidget(self.in_heartbeat)
+        # config.json, how often to look, and counting in the background are
+        # set on the Settings page.
+        where = QLabel("Wallpaper Engine's config.json, how often to check, and counting "
+                       "in the background are on the Settings page.")
+        where.setWordWrap(True)
+        c.addWidget(where, 1)
+        change = LinkButton("Change in Settings")
+        change.clicked.connect(self.settings_requested.emit)
+        c.addWidget(change)
         c.addSpacing(16)
-
-        self.chk_autostart = QCheckBox("Keep counting in the background (tray, starts with Windows)")
-        self.chk_autostart.setToolTip(
-            "The count only moves while something is polling Wallpaper Engine.\n"
-            "With this on, the tray tracker starts with Windows and keeps counting\n"
-            "even when the Wallpaper Engine Toolkit window is closed.")
-        self.chk_autostart.setChecked(autostart.is_enabled())
-        self.chk_autostart.toggled.connect(self._toggle_autostart)
-        c.addWidget(self.chk_autostart)
-
-        self.autostart_method = QLabel("")
-        self.autostart_method.setStyleSheet(theme.label_style("faint", size=11))
-        c.addWidget(self.autostart_method)
-        c.addStretch()
 
         self.rebuild_btn = QPushButton("Rebuild from file times")
         self.rebuild_btn.setToolTip(
@@ -323,47 +297,6 @@ class TrackerTab(QWidget):
             QMessageBox.warning(self, "Open folder", f"Could not open Explorer:\n{e}")
 
     # -------------------------------------------------------------- actions
-    def _browse_config(self):
-        path, _ = QFileDialog.getOpenFileName(
-            self, "Wallpaper Engine config.json", self.in_config.text(),
-            "config.json (config.json)")
-        if path:
-            path = path.replace("/", "\\")
-            self.in_config.setText(path)
-            self.settings.set("tracker", "we_config", path)
-            self.settings.save()
-            self._clear_cards()
-            self.feed.use_config(path)
-
-    def _apply_heartbeat(self, minutes: int):
-        seconds = int(minutes) * 60
-        tracker = self.settings.section("tracker")
-        tracker["heartbeat"] = seconds
-        # The old 30-second poll interval means nothing now; left in place it
-        # would only suggest otherwise to whoever reads the file.
-        tracker.pop("interval", None)
-        self.settings.save()
-        self.feed.set_heartbeat(seconds)
-
-    def _toggle_autostart(self, on: bool):
-        try:
-            autostart.set_enabled(on)
-        except OSError as e:
-            QMessageBox.warning(self, "Autostart", f"Could not change autostart:\n{e}")
-            self.chk_autostart.setChecked(autostart.is_enabled())
-            return
-        self._show_autostart_method()
-        if on:
-            QMessageBox.information(
-                self, "Autostart",
-                f"The background tracker will start with Windows ({autostart.method()}).\n\n"
-                f"To start it right now, run run_tracker.cmd (or "
-                f"WallpaperEngineToolkit.exe --tracker) — it lives in the tray.\n\n"
-                f"Command: {autostart.command()}")
-
-    def _show_autostart_method(self):
-        self.autostart_method.setText(f"autostart: {autostart.method()}")
-
     def _reset(self, monitor: str):
         answer = QMessageBox.question(
             self, "New cycle",

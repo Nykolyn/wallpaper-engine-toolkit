@@ -126,6 +126,10 @@ TOKENS: dict[str, str] = {
     "tray.light.ring": "#2C6BD8",
     "tray.light.glyph": "#1A1A1A",
 
+    # The app's mark (Branding): a grey outline and an accent fill on a dark
+    # tile (`brand.tile`); the fill is cut out of the outline by this edge.
+    "brand.edge": "#222A3B",
+
     # One hue per kind of wallpaper, which the gallery's cards still use. The
     # design shows the kind as plain text instead; these go with the gallery
     # rewrite.
@@ -147,6 +151,8 @@ GRADIENTS: dict[str, tuple[tuple[float, str], ...]] = {
     # linear-gradient(180deg, ...), the sidebar
     "nav.gradient": ((0.0, "rgba(255,255,255,.115)"), (0.48, "rgba(255,255,255,.05)"),
                      (1.0, "rgba(255,255,255,.015)")),
+    # linear-gradient(180deg, ...), the tile behind the app's mark
+    "brand.tile": ((0.0, "#34425F"), (1.0, "#151A24")),
 }
 
 # The app background's ellipse, as the design writes it.
@@ -254,7 +260,7 @@ def gradient(name: str, rect: QRectF) -> QLinearGradient:
         half = (abs(rect.width() * dx) + abs(rect.height() * dy)) / 2
         c = rect.center()
         grad = QLinearGradient(c - QPointF(dx, dy) * half, c + QPointF(dx, dy) * half)
-    elif name == "nav.gradient":
+    elif name in ("nav.gradient", "brand.tile"):
         grad = QLinearGradient(rect.topLeft(), rect.bottomLeft())
     else:
         raise KeyError(f"no linear gradient {name!r}")
@@ -333,6 +339,8 @@ TYPE: dict[str, TypeSpec] = {
     "type.ring": TypeSpec(12, 1.0, 600, mono=True),        # the % in a 58 or 52 px ring
     "type.ringSm": TypeSpec(10, 1.0, 600, mono=True),      # the % in a 34 px ring
     "type.tableHead": TypeSpec(10, 1.3, 600, mono=True, upper=True, tracking=0.09),
+    "type.badge": TypeSpec(10, 1.2, 600, mono=True),       # a count on a nav item
+    "type.nav": TypeSpec(12.5, 1.3),                       # a page's name in the sidebar
     "type.step": TypeSpec(12, 1.35),                       # a StepList title
     "type.lead": TypeSpec(12, 1.6),                        # an EmptyState's body
     # A dialog's title: type.h3's weight at the 14 px the confirmation (frame 09)
@@ -845,6 +853,48 @@ CHECK_SIZE_WIDTH = 64    # the right-aligned size column
 CHECK_LIMIT = 5          # rows a group shows before "N more like these"
 CHECKLIST_MAX = 300      # the checklist's height before it scrolls
 
+# -- the frame: title bar, sidebar, page header (the status line is above)
+
+WINDOW_SIZE = (1280, 860)     # at first start
+WINDOW_MIN = (1040, 720)
+
+TITLE_BAR_HEIGHT = 32
+TITLE_BAR_PAD = (11, 4)       # before the mark, after the buttons
+TITLE_BAR_GAP = 8             # the mark to the name
+TITLE_MARK = 16
+CAPTION_BUTTON = (42, 32)     # minimise, maximise, close
+CAPTION_GLYPH = 10
+RESIZE_BORDER = 6             # how close to the edge the pointer resizes the window
+
+SIDEBAR_WIDTH = 246
+SIDEBAR_PAD = (12, 10)        # vertical, horizontal
+RAIL_WIDTH = 56               # the sidebar as icons only
+RAIL_BELOW = 1200             # a window narrower than this shows the rail
+NAV_PAD = (8, 9)              # an item: vertical, horizontal
+NAV_PAD_TWO_LINES = 7         # the vertical padding of an item with a second line
+NAV_GAP = 10                  # the icon to the label
+NAV_SPACING = 2               # one item to the next
+NAV_ICON = 16
+NAV_BAR = 3                   # an item's progress or count bar
+NAV_LINE_GAP = 3              # the label to its second line
+NAV_META_GAP = 6              # a bar to the percentage beside it
+NAV_BADGE_PAD = (2, 6)
+NAV_BADGE_RADIUS = 8
+NAV_SECTION_PAD = (8, 8)      # an overline's sides, and below it
+NAV_SECTION_GAP = 18          # above the second section's overline
+NAV_FOOTER_PAD = 10           # the footer's divider to what is under it
+NEXT_PAD = (4, 9, 9)          # "Next in the loop": top, sides, bottom
+NEXT_GAP = 5                  # its overline to its sentence
+RAIL_ITEM = 36                # an item in the rail, square
+RAIL_DOT = 6                  # what stands for a badge or a bar in the rail
+
+HEADER_HEIGHT = 52
+HEADER_PAD = 16
+HEADER_GAP = 12               # the title, the subtitle and the actions
+HEADER_ACTION_GAP = 8
+BODY_PAD = (14, 16)           # a page's body: vertical, horizontal
+PANEL_GAP = 12                # between a page's panels
+
 
 # ---- Semantic colours the old tabs ask for ---------------------------------
 
@@ -928,15 +978,15 @@ QWidget {
 }
 QMainWindow, QDialog, QMessageBox { background: $(bg.solid); }
 
-/* ---- the old tab strip, until the sidebar replaces it ---- */
-QTabWidget::pane {
+/* ---- the Rotator tab's own five tabs, until its page replaces them ---- */
+QTabWidget#rotatorTabs::pane {
     border: none;
     border-top: 1px solid $(border.hairline);
     background: transparent;
     top: -1px;
 }
-QTabBar { qproperty-drawBase: 0; }
-QTabBar::tab {
+QTabWidget#rotatorTabs > QTabBar { qproperty-drawBase: 0; }
+QTabWidget#rotatorTabs > QTabBar::tab {
     background: transparent;
     color: $(text.mid);
     border: 1px solid transparent;
@@ -946,8 +996,8 @@ QTabBar::tab {
     $(font:type.bodySm)
     font-weight: 600;
 }
-QTabBar::tab:hover { background: $(surface.wash); color: $(text.body); }
-QTabBar::tab:selected {
+QTabWidget#rotatorTabs > QTabBar::tab:hover { background: $(surface.wash); color: $(text.body); }
+QTabWidget#rotatorTabs > QTabBar::tab:selected {
     background: $(nav.selected);
     border-color: $(nav.selectedSheen);
     color: $(text.hi);

@@ -24,8 +24,9 @@ touching the original.
 
 ## How to use it
 
-1. Set **Destination** — where the copies are written. It arrives pre-filled
-   with Wallpaper Engine's `myprojects` folder.
+1. The **destination** — where the copies are written — is set on the
+   [Settings](settings.md#folders) page and shown at the top of the Copier.
+   It arrives pre-filled with Wallpaper Engine's `myprojects` folder.
 2. Add source folders. Drop them onto the list, or use the button. Each row is
    one folder plus a count.
 3. Set the count per row. The default is 3.
@@ -52,7 +53,7 @@ what you edit when the point is forking.
 ## Settings it keeps
 
 The destination is remembered in `data/suite.json` under `copier`. The per-row
-counts are not remembered — they belong to the job, not the tab.
+counts are not remembered — they belong to the job, not the page.
 
 ## Watch out for
 

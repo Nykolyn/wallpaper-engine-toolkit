@@ -15,7 +15,8 @@ import sys
 from pathlib import Path
 
 from PySide6.QtCore import QEventLoop, QTimer
-from PySide6.QtWidgets import QApplication, QLabel, QWidget
+from PySide6.QtGui import QColor, QPainter
+from PySide6.QtWidgets import QApplication, QLabel, QStackedWidget, QWidget
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -107,30 +108,46 @@ hidden.setValue(90)
 check("a bar nobody can see is set outright", hidden.value() == 90)
 
 
-# ---- fading in cleans up after itself
+# ---- a page change cross-fades the content, and cleans up after itself
 
-page = QWidget(host)
-page.resize(200, 100)
-page.show()
+class Ground(QWidget):
+    """The window's ground, as the Backdrop is: it paints a colour."""
+
+    def paintEvent(self, event):         # noqa: N802 - Qt's name
+        QPainter(self).fillRect(self.rect(), QColor(30, 40, 60))
+
+
+ground = Ground(host)
+ground.resize(300, 200)
+content = QStackedWidget(ground)
+content.setGeometry(40, 30, 200, 120)
+first_page, second_page = QLabel("one"), QLabel("two")
+content.addWidget(first_page)
+content.addWidget(second_page)
+ground.show()
+wait(30)
 
 # Deliberately slow, so a check on what the fade is doing mid-flight cannot be
 # missed just because the machine stalled for a moment under load.
 SLOW_FADE = 400
-animations.fade_in(page, duration=SLOW_FADE)
+fade = animations.CrossFade(ground, cover=content, duration=SLOW_FADE)
+fade.switch(lambda: content.setCurrentIndex(1))
+check("the new page is in place at once, under the fade", content.currentIndex() == 1)
+check("and a still of the old one covers exactly the content",
+      fade.isVisible() and fade.geometry() == content.geometry())
 opacities = []
-for _ in range(8):
-    effect = page.graphicsEffect()
-    opacities.append(effect.opacity() if effect else None)
-    wait(SLOW_FADE // 10)
-
-check("a fade attaches an opacity effect", any(o is not None for o in opacities))
-seen_values = [o for o in opacities if o is not None]
-check("and it comes up from transparent", bool(seen_values) and min(seen_values) < 1.0)
-check("rising as it goes",
-      all(b >= a for a, b in zip(seen_values, seen_values[1:])))
+for _ in range(6):
+    opacities.append(fade._opacity)
+    wait(SLOW_FADE // 8)
+check("the still fades out", opacities[0] > opacities[-1] > 0.0)
+check("falling as it goes", all(b <= a for a, b in zip(opacities, opacities[1:])))
 wait(SLOW_FADE)
-check("the effect is dropped once the fade ends, so later repaints stay cheap",
-      page.graphicsEffect() is None)
+check("and is dropped once the fade ends, so it holds no pixmap",
+      not fade.isVisible() and fade._still is None)
+fade.switch(lambda: content.setCurrentIndex(0))
+fade.stop()
+check("a fade stopped half way lands on the new page at once",
+      content.currentIndex() == 0 and not fade.isVisible())
 
 
 # ---- a flash settles back to the resting colour
@@ -144,28 +161,6 @@ wait(500)
 settled = label.styleSheet()
 check("and it fades back to the resting text colour",
       theme.css("text.body").lower() in settled.lower())
-
-
-# ---- tabs fade their pages in
-
-was_base = animations.BASE
-animations.BASE = SLOW_FADE          # same reason: a window wide enough to see
-try:
-    tabs = animations.FadingTabWidget()
-    first, second = QWidget(), QWidget()
-    tabs.addTab(first, "one")
-    tabs.addTab(second, "two")
-    tabs.resize(300, 200)
-    tabs.show()
-    wait(60)
-    tabs.setCurrentIndex(1)
-    wait(SLOW_FADE // 8)
-    check("switching tabs fades the page that arrives",
-          second.graphicsEffect() is not None)
-    wait(SLOW_FADE * 2)
-    check("and that effect is cleaned up too", second.graphicsEffect() is None)
-finally:
-    animations.BASE = was_base
 
 
 # ---- loops share one clock, and only run while seen
@@ -260,10 +255,9 @@ try:
     plain.setValue(100)
     check("with motion off the bar jumps straight there", plain.value() == 100)
 
-    quiet = QWidget(host)
-    quiet.show()
-    animations.fade_in(quiet)
-    check("with motion off nothing is faded", quiet.graphicsEffect() is None)
+    fade.switch(lambda: content.setCurrentIndex(1))
+    check("with motion off a page change is instant: no still, nothing running",
+          content.currentIndex() == 1 and not fade.isVisible() and not fade.running())
 
     still = Watcher(host)
     still.show()

@@ -15,7 +15,7 @@ workshop, find the first wallpaper published after that date, and browse
 forward. Measured on one real week: 39 wallpapers, **26 distinct authors**,
 seven of whom had never been added.
 
-This tab is that, done for you.
+This page is that, done for you.
 
 ## When to reach for it
 
@@ -31,9 +31,9 @@ This tab is that, done for you.
 Nothing. Press **Scan**.
 
 - The **authors database** is a file, `data/authors.sqlite`, made the first
-  time the tab needs it and backed up after every change. See
+  time the page needs it and backed up after every change. See
   [Authors database](authors-database.md).
-- A **Steam Web API key** is optional, and worth having. Without one the tab
+- A **Steam Web API key** is optional, and worth having. Without one the page
   works, with less — see [what the key is for](#what-a-steam-web-api-key-is-for).
   It is free from
   [steamcommunity.com/dev/apikey](https://steamcommunity.com/dev/apikey) and
@@ -43,7 +43,7 @@ Nothing. Press **Scan**.
 ## How to use it
 
 1. Put wallpapers in Wallpaper Engine's `new` folder during the week.
-2. Open the tab, pick what to **look at**, and press **Scan**. The left list
+2. Open the page, pick what to **look at**, and press **Scan**. The left list
    fills with one card per author: their name, whether the database has heard
    of them, and a badge counting what they have published since your last
    visit that you are **not** subscribed to.
@@ -57,7 +57,7 @@ Nothing. Press **Scan**.
 ### What gets reviewed
 
 The **Look at** box holds Wallpaper Engine's own folders, read out of its
-`config.json` every time the tab opens, so a folder you made this morning is
+`config.json` every time the page opens, so a folder you made this morning is
 in the list this afternoon. Under them are three that cross folders:
 
 | Choice | What it reviews |
@@ -83,7 +83,7 @@ entries with nothing behind them. On one real folder: **2 155 ids remembered,
 39 still on disk**.
 
 Wallpaper Engine shows the 39, because those are the ones it has files for, and
-so does this tab. The difference is stated rather than hidden. Reading the
+so does this page. The difference is stated rather than hidden. Reading the
 folder literally would mean re-reviewing every wallpaper ever put aside and
 since deleted, turning a week's 26 authors into 453.
 
@@ -150,7 +150,7 @@ Mature and questionable content is invisible to a signed-out client, and it was
 **43%** of that library. The Web API has no such gate, so with a key everything
 is read through it and the lists are whole.
 
-The key is still optional, because the tab is useful without it — but going
+The key is still optional, because the page is useful without it — but going
 without is said, not discovered:
 
 - A **banner** under the toolbar says what is missing, with **Add a key…** next

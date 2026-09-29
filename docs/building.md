@@ -44,7 +44,7 @@ this replaced.)
 ## Checking a build
 
 A windowed build has no console, and a module imported lazily is exactly the
-shape of dependency PyInstaller misses — the failure looks like a tab quietly
+shape of dependency PyInstaller misses — the failure looks like a page quietly
 not working, hours after the build.
 
 So run the selfcheck once after building:
@@ -65,7 +65,7 @@ ok      sqlite3  (the authors database and the Steam cache)
 ok      app.engines.authors_store  (the authors database)
 ok      app.ui.authors_dialog  (its backups and restoring one)
 ok      app.engines.review  (the review itself)
-ok      app.ui.review_tab  (the Review tab)
+ok      app.ui.review_tab  (the Review page)
 ok      app.engines.steam_ugc  (subscribing from the gallery)
 ok      app.secrets  (the stored Steam key)
 ok      PySide6.QtNetwork  (one window, raised from the tray)

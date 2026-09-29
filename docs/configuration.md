@@ -23,7 +23,7 @@ data/
 ├── history.json            one record per rotation run
 ├── history_backup/         the history as it was after each of the last 30 saves
 ├── secrets.json            the Steam API key, DPAPI-encrypted
-├── authors.sqlite          the Review tab's authors database
+├── authors.sqlite          the Review page's authors database
 ├── tracker.json            the live cycle per monitor, plus 40 finished ones
 ├── wallpaper_timer.json    the countdown, saved every 15 seconds
 ├── tracker.log             every tray launch, and any crash
@@ -106,20 +106,29 @@ is worth backing up: nothing reads them to decide anything.
 
 ## Folder settings
 
-| Setting | Tab | Default |
-|---|---|---|
-| Destination | [Copier](copier.md) | Wallpaper Engine's `myprojects`, detected |
-| Source | [Creator](creator.md) | empty — pick it |
-| Target | [Creator](creator.md) | `myprojects`, detected |
-| Mode | [Creator](creator.md) | `Move` |
-| Tags | [Creator](creator.md) | none — nothing is tagged unless you say so |
-| Source (reserve) | [Rotator](rotator.md) | empty — pick it |
-| Destination | [Rotator](rotator.md) | `myprojects`, detected |
-| Duplicates | [Rotator](rotator.md) | empty — pick it |
-| Count | [Rotator](rotator.md) | 1000 |
-| Rebuild Wallpaper Engine's playlist | [Rotator](rotator.md#wallpaper-engines-playlist) | on |
-| Safety check ("Also check every") | [Tracker](tracker.md) | 5 min — changes themselves are picked up as Wallpaper Engine writes them |
-| `config.json` path | [Tracker](tracker.md) | Wallpaper Engine's, detected |
+What is set once is set on the [Settings](settings.md) page; what belongs to
+one run of a tool stays on its page. Two files hold them: the Rotator's own
+`config.json`, and `suite.json` for everything else. The Settings page writes
+each through its own code, and they stay two files.
+
+| Setting | Set on | File (key) | Default |
+|---|---|---|---|
+| Reserve | [Settings](settings.md#folders) | `config.json` (`source`) | empty — pick it |
+| myprojects | [Settings](settings.md#folders) | `config.json` (`destination`) | detected |
+| Duplicates | [Settings](settings.md#folders) | `config.json` (`duplicates`) | empty — pick it |
+| Folders per run | [Settings](settings.md#folders) | `config.json` (`count`) | 1000 |
+| Rebuild Wallpaper Engine's playlist | [Rotator](rotator.md#wallpaper-engines-playlist) | `config.json` (`refresh_playlist`) | on |
+| Copier destination | [Settings](settings.md#folders) | `suite.json` (`copier.dest`) | `myprojects`, detected |
+| Creator source | [Settings](settings.md#folders) | `suite.json` (`creator.source`) | empty — pick it |
+| Creator output | [Settings](settings.md#folders) | `suite.json` (`creator.target`) | `myprojects`, detected |
+| Creator mode | [Creator](creator.md) | `suite.json` (`creator.mode`) | `Move` |
+| Creator tags | [Creator](creator.md) | `suite.json` (`creator.tags`) | none — nothing is tagged unless you say so |
+| `config.json` path | [Settings](settings.md#wallpaper-engine) | `suite.json` (`tracker.we_config`) | Wallpaper Engine's, detected |
+| Safety check ("Also check every") | [Settings](settings.md#wallpaper-engine) | `suite.json` (`tracker.heartbeat`, seconds) | 5 min — changes themselves are picked up as Wallpaper Engine writes them |
+| Lead monitor | [Settings](settings.md#tracker-and-tray), or the tray's **Show on the icon** | `suite.json` (`tracker.primary`) | automatic |
+
+The window and the tray both keep `suite.json`. Each reads it again when the
+other has written it, before it relies on or changes the lead monitor.
 
 ### How the detected ones are found
 

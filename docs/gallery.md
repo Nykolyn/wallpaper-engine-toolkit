@@ -1,6 +1,6 @@
 # Gallery
 
-**The wall of previews the [Review](review.md) tab opens when you click an author.**
+**The wall of previews the [Review](review.md) page opens when you click an author.**
 
 ## What it is for
 
@@ -21,7 +21,7 @@ Across the top of the picture, where they read before it does:
 
 **"was yours" is the one that saves the most work.** Wallpapers come back
 around, so they are shown rather than hidden — but re-reviewing them blind is
-exactly the work this tab removes. For one author, 11 of 29 were in this state.
+exactly the work this page removes. For one author, 11 of 29 were in this state.
 
 Two records answer it: the `project.json` of every copy kept across the
 Rotator's libraries, where a workshop wallpaper names itself with a
@@ -73,7 +73,7 @@ renderer — loads it and asks for `STEAMUGC_INTERFACE_VERSION020`. A subscripti
 is a local call into the running Steam client, which performs it for whoever is
 signed in.
 
-So the tab offers two routes, switched in its toolbar:
+So the page offers two routes, switched in its toolbar:
 
 - **Steam directly** — the same call, from this window. One click and the
   wallpaper is on its way. The process declares app id 431960 while the API is
@@ -87,7 +87,7 @@ So the tab offers two routes, switched in its toolbar:
 - **Opening Steam's page** — `steam://url/CommunityFilePage/<id>`, where
   Subscribe is one click. Nothing unsupported, one more click.
 
-Either way the tab watches the workshop folder and marks a wallpaper as taken
+Either way the page watches the workshop folder and marks a wallpaper as taken
 when it arrives, so subscribing in Wallpaper Engine itself is noticed too.
 
 Steam must be running for either route.

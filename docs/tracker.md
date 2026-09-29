@@ -16,12 +16,12 @@ shuffle, and its playlists are ordered `random`. The Tracker reconstructs it.
 ## When to reach for it
 
 - Continuously, in the background, as a tray icon — that is its normal mode.
-- Open the tab when you want the detail: what has been shown, what has not,
+- Open the page when you want the detail: what has been shown, what has not,
   when the cycle started, and the projected finish.
 
 ## How to use it
 
-Open the tab, or run the tray-only tracker:
+Open the Tracker page, or run the tray-only tracker:
 
 ```
 python run_app.py --tracker
@@ -31,12 +31,12 @@ python run_app.py --tracker
 middle; the tooltip carries `seen/total` per monitor. A balloon fires once a
 playlist has been shown end to end — that is the cue to rotate.
 
-Clicking the icon opens the main window on this tab — as a **program of its
+Clicking the icon opens the main window on this page — as a **program of its
 own**, at normal priority, and clicking again brings the same window forward
 rather than opening another. The window used to be built inside the tray; when
 it froze during a Review, ending it ended the count as well, and it ran at the
 below-normal priority the logon task gives the tray. Now either can stop
-without the other. The tab in it looks for itself, on the same schedule as the
+without the other. The page in it looks for itself, on the same schedule as the
 tray — a look is about 4 ms, taken only when Wallpaper Engine writes — and the
 two write the same state file and merge on save, so running both is fine. A
 named mutex keeps autostart and a manual `run_tracker.cmd` from becoming two
@@ -47,7 +47,8 @@ icons both looking, and another keeps the window to one.
 
 ## Starting with Windows
 
-The tab's checkbox, or without a window:
+**Keep counting in the background** on the [Settings](settings.md#tracker-and-tray)
+page, or without a window:
 
 ```
 python run_app.py --autostart on
@@ -57,7 +58,7 @@ python run_app.py --autostart status
 
 It installs a **scheduled task** triggered at logon with a 30-second delay, and
 falls back to the `HKCU\...\CurrentVersion\Run` key if Task Scheduler refuses.
-Only one of the two is ever installed, and the tab shows which.
+Only one of the two is ever installed, and the Settings page shows which.
 
 The task is preferred because a Run entry is launched by Explorer during shell
 startup, when the notification area may not exist yet and a tray icon has
@@ -117,7 +118,7 @@ about 50 ms on the tray's GUI thread plus a rewrite of the 200 KB
 written only when something in it changed.
 
 A slower **safety check** stays, every five minutes by default ("Also check
-every" on the tab), for what no write announces — chiefly a wallpaper deleted
+every" on the [Settings](settings.md#wallpaper-engine) page), for what no write announces — chiefly a wallpaper deleted
 from disk. Where there is no readable `playliststate.bin` at all, the tracker
 goes back to looking every 30 seconds, because then nothing else will tell it;
 `data/tracker.log` says which of the two it is doing.
@@ -199,7 +200,7 @@ So the tracker is a **reconciler**, not a counter. It re-reads those stamps when
 it adopts a playlist it has not been watching, when a look finds more than five
 minutes passed since the last, and in any case every ten minutes. Recovered
 entries are marked `~` and counted separately, so observation and reconstruction
-are never confused. Where last-access updates are off, the tab says so and falls
+are never confused. Where last-access updates are off, the page says so and falls
 back to counting only what it sees.
 
 An access time is not proof of a display, though. Plenty of things read the

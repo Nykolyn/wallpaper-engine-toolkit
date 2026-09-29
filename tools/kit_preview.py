@@ -15,7 +15,9 @@ system's: color, type, space, motion, icons, controls (Qt's own widgets under
 the stylesheet), then the kit's buttons, inputs, selection, chips and panels,
 each state in a row, and its data display: fields, progress, cards, tables
 (33 000 made-up rows to scroll) and empty states with steps; and feedback:
-the log, toasts, the status line and the dialogs. Each kit step adds its own. Nothing shown comes from this machine's library: previews are
+the log, toasts, the status line and the dialogs; and the frame: the title
+bar, the sidebar's items in each state, the rail, the page header. Each kit
+step adds its own. Nothing shown comes from this machine's library: previews are
 painted into a temp folder.
 """
 from __future__ import annotations
@@ -40,7 +42,7 @@ from PySide6.QtGui import QBrush, QColor, QLinearGradient, QPainter, QPen  # noq
 from PySide6.QtWidgets import (  # noqa: E402
     QApplication, QCheckBox, QComboBox, QFrame, QGridLayout, QGroupBox,
     QHBoxLayout, QLabel, QLineEdit, QListWidget, QProgressBar, QPushButton,
-    QScrollArea, QSizePolicy, QSpinBox, QTableWidget, QTableWidgetItem, QTabBar,
+    QScrollArea, QSizePolicy, QSpinBox, QTableWidget, QTableWidgetItem,
     QVBoxLayout, QWidget,
 )
 
@@ -626,12 +628,6 @@ def controls_section() -> Section:
         bars.append(bar)
     section.body.addLayout(_row("QProgressBar", *bars))
 
-    tabs = QTabBar()
-    for name in ("Rotate", "Reserve", "History"):
-        tabs.addTab(name)
-    tabs.setCurrentIndex(1)
-    section.body.addLayout(_row("QTabBar", tabs))
-
     items = QListWidget()
     items.addItems([f"folder {n:04d}" for n in range(1, 30)])
     items.setCurrentRow(2)
@@ -1164,6 +1160,7 @@ def playlist_model():
 # Folders every Windows 11 machine has, so a grab shows a found folder
 # without showing anyone's own.
 FOUND = r"C:\Windows\Web\Wallpaper"
+FOUND_FILE = r"C:\Windows\win.ini"
 FOUND_DEEP = r"C:\Windows\Web\Wallpaper\Windows"
 MISSING = r"Z:\old_reserve"
 
@@ -1190,6 +1187,16 @@ def fields_section() -> Section:
     table.add("PathField read-only", "a page shows what Settings holds",
               field(FOUND, editable=False), field(FOUND_DEEP, editable=False, width=170),
               field(MISSING, editable=False), in_state(field(FOUND, editable=False), "disabled"))
+
+    def file_field(path: str = ""):
+        widget = PathField(path, placeholder="Choose config.json", kind="file",
+                           file_filter="config.json (config.json)")
+        widget.setFixedWidth(232)
+        return widget
+
+    table.add("PathField kind=file", "Wallpaper Engine's config.json",
+              file_field(), file_field(FOUND_FILE), file_field(MISSING + r"\config.json"),
+              in_state(file_field(FOUND_FILE), "disabled"))
 
     def tags(value=("Game", "Nature", "Girls"), *, per_file=False, batch=()):
         widget = TagSelect(per_file=per_file)
@@ -1821,6 +1828,102 @@ def feedback_section() -> Section:
     return section
 
 
+# ---- 18 the frame ---------------------------------------------------------------------------
+
+def shell_section() -> Section:
+    from app.ui.kit import GhostButton, NavItem, NavState, PageHeader, Sidebar, TitleBar
+
+    section = Section(18, "The frame",
+                      "The title bar, the sidebar and the page header: they never move. A nav "
+                      "item says what its page is doing — a bar and a percentage, a count and a "
+                      "mini bar, a warn badge, or a word — and in the rail, below 1200 px, a "
+                      "dot stands for the bar and the badge.")
+    states = (
+        ("Overview", "overview", NavState(), "nothing"),
+        ("Rotator", "rotator", NavState.progress(412, 1000), "progress"),
+        ("Tracker", "tracker", NavState.count(4, 201), "count"),
+        ("Review", "review", NavState.badge(12), "badge"),
+        ("Creator", "creator", NavState.status("idle"), "status"),
+        ("Rotator", "rotator", NavState.status("ready · run 39", below=True), "status below"),
+        ("Rotator", "rotator", NavState.status("clean · run 39", "ok", below=True), "ok"),
+        ("Rotator", "rotator", NavState.status("2 problems", "warn", below=True), "warn"),
+    )
+    table = StateTable(section, ("DEFAULT", "HOVER", "SELECTED", "FOCUS", "RAIL"))
+
+    def item(name: str, glyph: str, state: NavState, how: str | None = None,
+             rail: bool = False) -> NavItem:
+        widget = NavItem(name.casefold(), name, glyph)
+        widget.set_state(state)
+        if rail:
+            widget.set_rail(True)
+        else:
+            widget.setFixedWidth(theme.SIDEBAR_WIDTH - 2 * theme.SIDEBAR_PAD[1])
+        if how == "selected":
+            widget.set_selected(True)
+        elif how:
+            in_state(widget, how)
+        return widget
+
+    for name, glyph, state, note in states:
+        table.add("NavItem", note, item(name, glyph, state), item(name, glyph, state, "hover"),
+                  item(name, glyph, state, "selected"), item(name, glyph, state, "focus"),
+                  item(name, glyph, state, "selected" if note == "progress" else None, rail=True))
+
+    section.body.addSpacing(8)
+    row = QHBoxLayout()
+    row.setSpacing(28)
+    for rail in (False, True):
+        sidebar = Sidebar()
+        sidebar.add_section("The loop")
+        for key, name, state in (("overview", "Overview", NavState()),
+                                 ("rotator", "Rotator", NavState.progress(412, 1000)),
+                                 ("tracker", "Tracker", NavState.count(4, 201)),
+                                 ("review", "Review", NavState.badge(12))):
+            sidebar.add_item(key, name, key).set_state(state)
+        sidebar.add_section("Utilities")
+        for key, name in (("creator", "Creator"), ("copier", "Copier")):
+            sidebar.add_item(key, name, key).set_state(NavState.status("idle"))
+        sidebar.add_item("settings", "Settings", "settings", footer=True)
+        sidebar.next_in_loop.set_text(f"197 left on Monitor1 — rotate again ≈21{chr(0xA0)}Sep")
+        sidebar.set_current("rotator")
+        sidebar.set_rail(rail)
+        sidebar.setFixedHeight(560)
+        row.addWidget(sidebar, 0, Qt.AlignTop)
+
+    column = QVBoxLayout()
+    column.setSpacing(18)
+    bar = TitleBar("Toolkit")
+    bar.setFixedWidth(760)
+    column.addWidget(bar)
+    header = PageHeader()
+    header.setFixedWidth(760)
+    header.set_title("Rotator")
+    header.set_subtitle("Nothing running · last run finished 13:58")
+    header.set_actions([GhostButton("Run history", outlined=True)])
+    column.addWidget(header)
+    caption = text("Caption buttons: 42 × 32, the glyph in text.lo; close turns danger.solid "
+                   "under the pointer. Maximise belongs to Windows (its snap layouts).",
+                   "type.bodySm", "text.mid", wrap=True)
+    caption.setFixedWidth(760)
+    column.addWidget(caption)
+    buttons = QHBoxLayout()
+    buttons.setSpacing(18)
+    from app.ui.kit import CaptionButton
+    for kind, how in (("minimise", "hover"), ("maximise", None), ("maximise", "hover"),
+                      ("close", "hover"), ("close", "pressed")):
+        button = in_state(CaptionButton(kind), how)
+        if kind == "maximise" and how is None:
+            button.set_maximised(True)
+        buttons.addWidget(button)
+    buttons.addStretch()
+    column.addLayout(buttons)
+    column.addStretch()
+    row.addLayout(column)
+    row.addStretch()
+    section.body.addLayout(row)
+    return section
+
+
 class SampleWindow(QWidget):
     """A page of the app, made up, for a dialog to open over in a grab."""
 
@@ -1906,6 +2009,7 @@ SECTIONS = {
     "tables": tables_section,
     "empty": empty_section,
     "feedback": feedback_section,
+    "shell": shell_section,
 }
 
 

@@ -4,7 +4,7 @@
 
 The three original tools were each written against a different GUI toolkit
 (tkinter, CustomTkinter, PySide6). This project unifies the **user interface**
-onto one — PySide6/Qt with the *Fusion* style — so every tab shares the same
+onto one — PySide6/Qt with the *Fusion* style — so every page shares the same
 widgets, progress bars and dialogs, painted from one theme.
 
 The **implementation is deliberately unchanged**. Each original feature's core
@@ -13,7 +13,15 @@ engine is the original source, reused as-is:
 ```
 app/
 ├── run_app.py is the entry point (one level up)
-├── main_window.py        the QMainWindow and the tab strip, on the app's gradient
+├── main_window.py        the frame: title bar, sidebar, page header, the pages, the status line
+├── window_frame.py       the title bar's Windows side: hit testing, snap, DWM
+├── window_instance.py    one window; the requests a second launch or the tray send it
+├── selfcheck.py          what a build can import and reach (--selfcheck, Settings)
+├── pages/                the window's pages, in the order of the loop:
+│   ├── base.py           Page, and LegacyPage (an old tab in the frame)
+│   ├── overview.py       the loop at a glance (a placeholder until its own step)
+│   ├── settings.py       what is set once
+│   └── legacy.py         what the old tabs' sidebar items say
 ├── theme.py              the design tokens: colour, type, space, radius, shadows, the stylesheet
 ├── animations.py         motion tokens, the easing curve, reduced motion, the shared loops
 ├── data_location.py      where the data folder is, and moving it out of the program folder
@@ -53,8 +61,8 @@ app/
     ├── kit/              the redesign's components: icons, the controls
     │                       (base, buttons, inputs, selection, chips, panels),
     │                       the formats, data display (paths, tags, progress,
-    │                       cards, tables, thumbs), and feedback (log, toast,
-    │                       statusline, dialogs)
+    │                       cards, tables, thumbs), feedback (log, toast,
+    │                       statusline, dialogs), and the frame (shell)
     ├── copier_tab.py, creator_tab.py
     ├── rotator_tab.py, cleanup_dialog.py
     ├── tracker_tab.py
@@ -64,18 +72,82 @@ app/
     └── widgets.py        verbatim  wallpaper_rotator/app/ui/widgets.py
 ```
 
-`tools/kit_preview.py` sits outside the app: a window that draws the design
-system from the app's own code (see [Look and feel](#look-and-feel)).
+`tools/kit_preview.py` and `tools/ui_snapshot.py` sit outside the app: a
+window that draws the design system from the app's own code, and a picture of
+the real window in a made-up state (see [Look and feel](#look-and-feel) and
+[Snapshots](#snapshots)).
 
 Only the GUI layer is new. The callback-based Copier and Creator engines are
 driven through small Qt signal bridges in `app/workers.py`, so their background
 threads update the UI safely.
 
+## The frame and its pages
+
+`MainWindow` is a fixed frame: the `TitleBar`, the `Sidebar`, a `PageHeader`
+over a `QStackedWidget` of pages, and the `StatusLine`. Pages are in the order
+of the loop — `overview`, `rotator`, `tracker`, `review`, `creator`,
+`copier`, `settings` (`main_window.PAGE_ORDER`) — and Ctrl+1…7 go to each.
+Changing page cross-fades the content only (`animations.CrossFade`: a still
+of the page that leaves, fading over the live one that arrives, over
+`motion.base`; instant with motion off); the sidebar, title bar and status
+line never move. Below `theme.RAIL_BELOW` (1 200 px) the sidebar is a 56 px
+rail.
+
+A page is an `app.pages.Page`:
+
+| | |
+|---|---|
+| `key`, `title`, `icon` | which page, its name, its sidebar glyph |
+| `subtitle()`, `set_subtitle()`, `subtitle_changed` | the line beside the title |
+| `make_header_actions()` → `header_actions()` | the header's buttons, made once, kept |
+| `nav_state()`, `set_nav_state()`, `nav_state_changed` | its sidebar item: a `NavState` |
+| `navigate` | asks the window for another page, by key |
+| `on_shown()`, `on_hidden()` | it came on screen, or went |
+| `FIXTURES`, `load_fixture(state)` | made-up states for `tools/ui_snapshot.py` |
+
+A `NavState` is one of the design's: `NavState.progress(done, total)` (a bar
+and `41%` under the name), `count(done, total)` (`4/201` and a mini bar),
+`badge(n)` (warn), `status(text, tone, below=)` (`idle`; `2 problems` in warn
+under the name), or nothing. In the rail each is an icon with a dot for the
+bar, the badge and a warn or danger word.
+
+`LegacyPage(key, title, icon, tab, subtitle)` hosts one of the old tabs until
+its page step replaces it, and `app/pages/legacy.py` works out its sidebar
+item from the services (a job running, the Rotator's last run, the leading
+monitor's count). A tab with a `settings_requested` signal gets its
+**Change in Settings** wired to the Settings page. `build_pages(window)` makes
+them all: one Rotator `Config` is shared by the Rotator tab and the Settings
+page, whose Rotator fields are read-only while a Rotator job runs.
+
+The status line reads the `JobCenter` (`StatusBinding`): the job that leads,
+its phase, bar and `412 / 1 000 · 41%`, and **Show**, which goes to
+`job.page`; otherwise "Nothing running · last run finished 13:58"; a job that
+ended with problems or failed is said in warn or danger until its page has
+been looked at. **Next in the loop** is the Snapshot's `PLAYLIST`.
+
+**The title bar is the window's own** (gate G1): the window is frameless to
+Qt and keeps its caption and resizable frame as far as Windows knows.
+`app/window_frame.py` answers `WM_NCCALCSIZE` (no frame) and `WM_NCHITTEST`:
+the edges resize, the title bar is the caption (drag, Aero Snap, double-click,
+the system menu), the maximise button is `HTMAXBUTTON` (Windows 11's snap
+layouts; its hover and click are handed back to the button), and the rest is
+Qt's. Maximised, the content pads itself in by however far Windows puts the
+frame off the screen. Offscreen there is no native frame, and the title bar
+moves the window through `startSystemMove()`.
+
+**Window requests** (`window_instance`): a second launch or the tray sends one
+line — `show <page>`, which every version understands, or the command form
+`<verb>:<argument>` (`show:rotator`; `rotate:confirm` is the tray's, to
+come). `WindowInstance.command_received(verb, argument)` hands each to
+`MainWindow.handle_command`; a verb this version does not know still brings
+the window forward. `--tab <page>` takes the old tab names and the page keys,
+in any case; anything else opens Overview.
+
 ## Services
 
 `app/services/` is what the status line, the sidebar and Overview read, and
 what every page reports its work to. The main window makes one `Services`
-(with its own `TrackerFeed`, which it also hands the Tracker tab) and
+(with its own `TrackerFeed`, which it also hands the Tracker page) and
 installs it; `services.current()` is that one, or None for a tab built on its
 own, as the tests build them.
 
@@ -186,7 +258,8 @@ for %f in (tests\test_*.py) do .venv\Scripts\python.exe %f
 | `test_review.py` | the weekly walk |
 | `test_gallery.py` | every delegate, painted in every state; memory and animation bounds |
 | `test_hang_watch.py` | a stuck GUI thread leaves its stacks in the hang log |
-| `test_window_instance.py` | one window, raised from the tray, in a process of its own |
+| `test_window_instance.py` | one window, raised from the tray, in a process of its own; the plain request and the command form on the socket |
+| `test_shell.py` | pages in the loop's order, the sidebar and Ctrl+number; `--tab` names; the window command parser; the rail below 1 200 px; the status line bound to the JobCenter (Show, problems until seen); the cross-fade, and none with motion off; the Settings page writing `config.json` and `suite.json`, read-only while the Rotator works; the window and the tray reading each other's `suite.json`; the title bar's hit testing; `ui_snapshot` at a size and scale |
 | `test_services.py` | which running job leads; rate and time left only once measured; the journal's append, tail and rotation past a damaged line and an unknown field; log files by tool, day and run, their tail and the 30-day sweep; the snapshot read on a worker, never the GUI thread, keeping its age and its last value; each tab's work reaching all three |
 | `test_external.py` | a child cannot load a DLL from the bundle, through the DLL directory or PATH; a quoted URL survives cmd.exe; nothing in `app/` starts a program another way |
 
@@ -351,7 +424,7 @@ uses the kit, for its preview loader.
 | `panels.py` | `GlassPanel` (`tone=`, `padding=`), `Overline`, `CardTitle`, `Callout` (`tone=`, `title=`, `add_action`), `MetricStrip` |
 | `base.py` | the state model and the surfaces, below; `label(text, type, tone)`, `Glyph`, `Elided` (one line cut with an ellipsis, whole in its tool tip) and `LiveDot` (the pulse of a running job) |
 | `format.py` | how every number is written: `count` (`33 421`), `size` (`1.1 GB`), `duration` (`4 min 12 s`), `left` (`≈6 min left`), `approx` / `reconstructed` (`≈`, `~`), `clock` (`13:47`, or `13:47:02` for a log line), `date_table`, `date_activity`, `date_long`, `day`, `ratio` (`4 / 201`, `4/201`, `412 of 1 000`), `percent`. Pages never format numbers themselves. |
-| `paths.py` | `PathField`: empty (type, paste or Browse…), compact (path elided from the left, ✓, a folder button), invalid ("folder not found"), disabled; a drop target. `path_changed` for the user's choice, `validity_changed` when a worker has checked the folder. |
+| `paths.py` | `PathField`: empty (type, paste or Browse…), compact (path elided from the left, ✓, a folder button), invalid ("folder not found"), disabled; a drop target. `path_changed` for the user's choice, `validity_changed` when a worker has checked the folder. `kind="file"` (with `file_filter=`) holds one file instead: Wallpaper Engine's `config.json`. |
 | `tags.py` | `TagSelect` (pills, `3 / 25`, a popup of the Creator's `WE_TAGS` in four columns); `per_file=True` adds the clip's three states — `value()` None follows the batch, a list is its own, `[]` is none. `TagPopup` is the open state. |
 | `progress.py` | `ProgressBar` (3–8 px; determinate, eased over `motion.slow`; indeterminate; error; success; optional caption row) and `ProgressRing` (58, 52, 34 px; percentage, spin, done) |
 | `cards.py` | `StatCard` (default, hover when `clickable`, `set_loading`, empty), `MonitorCard` (compact or `detail=True`) and `MonitorView`, the plain values a page fills it from |
@@ -361,6 +434,7 @@ uses the kit, for its preview loader.
 | `toast.py` | `Toast` (ok, info, warn, danger; an action link; close) and `ToastHost` (stacks a page's toasts bottom-right, at most four) |
 | `statusline.py` | `StatusLine`: `set_running(text, done, total, count_text, on_show)`, `set_idle(text)`, `set_warn(text, action, callback)`, `set_error(...)` |
 | `dialogs.py` | `ConfirmDialog` (neutral or destructive; numbered `steps`; a checklist of `CheckGroup`s of `CheckRow`s; a summary; returns a `ConfirmResult`), `FormDialog` (labelled rows, Save once valid), and their chrome, `OverlayDialog` |
+| `shell.py` | the frame: `TitleBar` (the mark, the name, `CaptionButton`s), `Sidebar` (`add_section`, `add_item`, `set_current`, `set_state`, `set_rail`, `page_requested`), `NavSection`, `NavItem`, `NavState`, `NextInLoop`, `PageHeader` (`set_title`, `set_subtitle`, `set_actions`), `BrandMark` — see [The frame and its pages](#the-frame-and-its-pages) |
 
 **States.** Every interactive control follows the design's five: default,
 hover (the pointer only), pressed, disabled, and a focus ring that shows when
@@ -439,8 +513,9 @@ pointer resting on it holds it, and danger stays until closed. Four at most:
 a fifth makes the oldest that may go leave. In the app only; a hidden window
 leaves it to the tray.
 
-**The status line.** `StatusLine` has a plain API for now; the JobCenter
-drives it from step 05. Its words elide and its count never does.
+**The status line.** `StatusLine` has a plain API; the window binds it to the
+JobCenter (`StatusBinding`). The bar, count and link follow its words; the
+words elide and the count never does.
 
 **Dialogs.** Both draw a `scrim` over the window they belong to and a
 frameless panel on `surface.overlay` at elev.3, with no motion. `ask()` runs
@@ -512,7 +587,30 @@ grab never shows your library. It is not
 bundled and nothing in `app/` imports it.
 `--grab` renders a section offscreen at 100 %, which is how a change is
 compared with the design's own pictures. Each step that adds components to the
-kit adds their section here.
+kit adds their section here; `shell` shows the frame's: every nav item state,
+the rail beside the full sidebar, the title bar and its buttons, the header.
+
+### Snapshots
+
+```
+.venv\Scripts\python.exe tools\ui_snapshot.py --page rotator --state running --out rotator.png
+.venv\Scripts\python.exe tools\ui_snapshot.py --page settings --size 1040x720 --scale 1.5 --out s.png
+.venv\Scripts\python.exe tools\ui_snapshot.py --list
+```
+
+The real `MainWindow`, offscreen, in a made-up state, saved as a PNG — what a
+page step compares with the design's `screen-NN` pictures. It never reads this
+machine's data: it runs in a data folder of its own under `%TEMP%`, with no
+TrackerFeed and services that never start, and the old tabs are not built
+(building them reads the library, Steam and Wallpaper Engine); a stand-in says
+where each goes. The fixtures are in `tests/fixtures/ui/`: `shell.json` holds
+the frame's states (`--list`: idle, running, clean, problems, scanning,
+building, copying, failed, empty) as jobs put in the JobCenter, a reading put
+in the Snapshot (`Snapshot.put`), sidebar items pinned to a state and the
+line under Next in the loop; `MainWindow.load_fixture(state)` applies one,
+then the page's own `load_fixture` (its state of that name, or its first).
+Folders in fixtures are on a drive `X:` the tool reports as present. `--scale
+1.5` is the user's 150 %; the PNG is then 1.5 × the size.
 
 ## Conventions
 

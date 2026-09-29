@@ -23,13 +23,19 @@ a duplicate, and what should never move at all.
 
 ## How to use it
 
-1. **Source** — the reserve. The library. Starts empty; pick it once.
-2. **Destination** — `myprojects`. Pre-filled from Steam.
-3. **Duplicates** — where folders that turn out to be duplicates are moved.
-   Starts empty.
-4. **Count** — how many folders to bring across. Default 1000.
+1. On the [Settings](settings.md#folders) page, once:
+   - **Reserve** — the library. Starts empty; pick it once.
+   - **myprojects** — Wallpaper Engine's projects folder. Pre-filled from Steam.
+   - **Duplicates** — where folders that turn out to be duplicates are moved.
+     Starts empty.
+   - **Folders per run** — how many folders to bring across. Default 1000.
+
+   The Rotator page shows all four under **Next run**, each with a ✓ once it
+   has been found, and **Change in Settings** beside them. While a rotation
+   runs they are read-only on the Settings page.
 5. **Wallpaper Engine** — rebuild the playlist from the new set and start it
-   over. On by default; see [below](#wallpaper-engines-playlist).
+   over. On by default, and on the Rotator page itself; see
+   [below](#wallpaper-engines-playlist).
 6. **Check folders** first if it has been a while — see below.
 7. Rotate. The confirmation dialog states exactly what will move, and which
    playlist will be rebuilt, before anything does.

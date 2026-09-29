@@ -11,6 +11,7 @@ preview (`tools/kit_preview.py`).
 - paths, tags, progress, cards, tables, thumbs: data display.
 - log, toast, statusline, dialogs: feedback — what reports work, and what
   asks before acting.
+- shell: the frame — the title bar, the sidebar and its items, the page header.
 """
 from . import format
 from .base import Elided, Glyph, LiveDot, declare as declare_surface, label
@@ -31,6 +32,10 @@ from .panels import (
 from .paths import PathField
 from .progress import ProgressBar, ProgressRing
 from .selection import Checkbox, Pagination, SegmentedControl, Toggle, page_numbers
+from .shell import (
+    BrandMark, CaptionButton, NavItem, NavSection, NavState, NextInLoop, PageHeader, Sidebar,
+    TitleBar,
+)
 from .statusline import StatusLine
 from .tables import (
     Cell, ChipCell, Column, Group, ListRow, ListRowDelegate, RowDelegate, RowList, Table,
@@ -58,5 +63,7 @@ __all__ = [
     "paint_list_row", "Thumb", "paint_thumb", "ThumbLoader",
     "LogPanel", "LogModel", "LogView", "LogLine", "ProblemsFilter",
     "Toast", "ToastHost", "StatusLine",
+    "TitleBar", "CaptionButton", "BrandMark", "Sidebar", "NavSection", "NavItem", "NavState",
+    "NextInLoop", "PageHeader",
     "OverlayDialog", "ConfirmDialog", "FormDialog", "CheckGroup", "CheckRow", "ConfirmResult",
 ]

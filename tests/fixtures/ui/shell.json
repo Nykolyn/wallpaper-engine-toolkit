@@ -1,0 +1,124 @@
+{
+  "//": "Made-up states of the frame for tools/ui_snapshot.py: jobs in the JobCenter, the leading monitor's count, the sidebar items, the line under 'Next in the loop'. Nothing here is anyone's data. An 'ended' of HH:MM means today at that time.",
+  "empty": {
+    "nav": {
+      "creator": {"kind": "status", "text": "idle"},
+      "copier": {"kind": "status", "text": "idle"}
+    },
+    "next": "No playlist counted yet"
+  },
+  "idle": {
+    "jobs": [
+      {"tool": "rotator", "title": "Run 38", "phase": "finishing", "done": 1000, "total": 1000,
+       "result": "clean", "summary": "Moved 1000, returned 998", "ended": "13:58"}
+    ],
+    "playlist": {"monitor": "Monitor1", "seen": 4, "total": 201, "remaining": 197, "percent": 2,
+                 "started": "2026-09-19 13:41", "finish_estimate": "21 Sep 09:10", "live": true},
+    "nav": {
+      "rotator": {"kind": "status", "text": "ready · run 39", "below": true},
+      "tracker": {"kind": "count", "done": 4, "total": 201},
+      "review": {"kind": "badge", "value": 12},
+      "creator": {"kind": "status", "text": "idle"},
+      "copier": {"kind": "status", "text": "idle"}
+    },
+    "next": "197 left on Monitor1 — rotate again ≈21 Sep"
+  },
+  "running": {
+    "jobs": [
+      {"tool": "rotator", "title": "Run 39",
+       "phase": "step 2 of 4 — moving 1 000 folders into myprojects", "done": 412, "total": 1000}
+    ],
+    "nav": {
+      "rotator": {"kind": "progress", "done": 412, "total": 1000},
+      "tracker": {"kind": "count", "done": 4, "total": 201},
+      "review": {"kind": "badge", "value": 12},
+      "creator": {"kind": "status", "text": "idle"},
+      "copier": {"kind": "status", "text": "idle"}
+    },
+    "next": "197 left on Monitor1 — rotate again ≈21 Sep"
+  },
+  "clean": {
+    "jobs": [
+      {"tool": "rotator", "title": "Run 39", "phase": "finishing", "done": 1000, "total": 1000,
+       "result": "clean", "summary": "Moved 1000, returned 998", "ended": "09:18"}
+    ],
+    "nav": {
+      "rotator": {"kind": "status", "text": "clean · run 39", "tone": "ok", "below": true},
+      "tracker": {"kind": "count", "done": 0, "total": 1000},
+      "review": {"kind": "badge", "value": 12},
+      "creator": {"kind": "status", "text": "idle"},
+      "copier": {"kind": "status", "text": "idle"}
+    },
+    "next": "1 000 left on Monitor1"
+  },
+  "problems": {
+    "jobs": [
+      {"tool": "rotator", "title": "Run 38", "phase": "finishing", "done": 1000, "total": 1000,
+       "result": "problems", "summary": "2 folders could not be moved", "ended": "13:58"}
+    ],
+    "nav": {
+      "rotator": {"kind": "status", "text": "2 problems", "tone": "warn", "below": true},
+      "tracker": {"kind": "count", "done": 4, "total": 201},
+      "review": {"kind": "badge", "value": 12},
+      "creator": {"kind": "status", "text": "idle"},
+      "copier": {"kind": "status", "text": "idle"}
+    },
+    "next": "197 left on Monitor1 — rotate again ≈21 Sep"
+  },
+  "scanning": {
+    "jobs": [
+      {"tool": "review", "title": "Scan", "phase": "scanning 34 of 118 authors",
+       "done": 34, "total": 118}
+    ],
+    "nav": {
+      "rotator": {"kind": "status", "text": "ready · run 39", "below": true},
+      "tracker": {"kind": "count", "done": 4, "total": 201},
+      "review": {"kind": "progress", "done": 34, "total": 118},
+      "creator": {"kind": "status", "text": "idle"},
+      "copier": {"kind": "status", "text": "idle"}
+    },
+    "next": "197 left on Monitor1 — rotate again ≈21 Sep"
+  },
+  "building": {
+    "jobs": [
+      {"tool": "creator", "title": "Building 38 wallpapers", "phase": "building 22 of 38 wallpapers",
+       "done": 22, "total": 38}
+    ],
+    "nav": {
+      "rotator": {"kind": "status", "text": "ready · run 39", "below": true},
+      "tracker": {"kind": "count", "done": 4, "total": 201},
+      "review": {"kind": "badge", "value": 12},
+      "creator": {"kind": "status", "text": "working"},
+      "copier": {"kind": "status", "text": "idle"}
+    },
+    "next": "197 left on Monitor1 — rotate again ≈21 Sep"
+  },
+  "copying": {
+    "jobs": [
+      {"tool": "copier", "title": "Copying 4 folders", "phase": "2 of 4 jobs · 148 MB/s",
+       "done": 35, "total": 97, "count_text": "3.5 GB / 9.7 GB"}
+    ],
+    "nav": {
+      "rotator": {"kind": "status", "text": "ready · run 39", "below": true},
+      "tracker": {"kind": "count", "done": 4, "total": 201},
+      "review": {"kind": "badge", "value": 12},
+      "creator": {"kind": "status", "text": "idle"},
+      "copier": {"kind": "status", "text": "working"}
+    },
+    "next": "197 left on Monitor1 — rotate again ≈21 Sep"
+  },
+  "failed": {
+    "jobs": [
+      {"tool": "copier", "title": "Copying 4 folders", "phase": "3 of 4 jobs", "done": 46,
+       "total": 49, "result": "failed", "summary": "access denied", "ended": "14:02"}
+    ],
+    "nav": {
+      "rotator": {"kind": "status", "text": "ready · run 39", "below": true},
+      "tracker": {"kind": "count", "done": 4, "total": 201},
+      "review": {"kind": "badge", "value": 12},
+      "creator": {"kind": "status", "text": "idle"},
+      "copier": {"kind": "status", "text": "idle"}
+    },
+    "next": "197 left on Monitor1 — rotate again ≈21 Sep"
+  }
+}

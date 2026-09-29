@@ -14,6 +14,10 @@ small. So the field has the design's four looks:
 
 It is also a drop target: a folder dragged from Explorer onto it is taken.
 
+`kind="file"` makes it hold one file instead (Wallpaper Engine's config.json):
+the picker asks for a file, the check asks for a file, and the invalid line
+says "file not found".
+
 **Nothing here touches the disk on the GUI thread.** Whether the folder
 exists is asked on a worker (`os.stat` on W:, a hard disk that may be asleep,
 can take seconds), and the answer arrives as `validity_changed`. Until it
@@ -38,6 +42,7 @@ from .base import Caster, Interactive, follow
 from .buttons import IconButton
 
 PATH_STATES = ("empty", "checking", "valid", "invalid")
+PATH_KINDS = ("folder", "file")
 
 _pool: QThreadPool | None = None
 
@@ -59,18 +64,26 @@ def is_folder(path: str) -> bool:
         return False
 
 
+def is_file(path: str) -> bool:
+    """Whether `path` is a file that is there. Touches the disk: workers only."""
+    try:
+        return stat.S_ISREG(os.stat(path).st_mode)
+    except (OSError, ValueError):
+        return False
+
+
 class _Answer(QObject):
     """Carries a check's answer back to the GUI thread."""
     done = Signal(int, bool)
 
 
 class _Check(QRunnable):
-    def __init__(self, answer: _Answer, generation: int, path: str):
+    def __init__(self, answer: _Answer, generation: int, path: str, kind: str = "folder"):
         super().__init__()
-        self.answer, self.generation, self.path = answer, generation, path
+        self.answer, self.generation, self.path, self.kind = answer, generation, path, kind
 
     def run(self) -> None:
-        ok = is_folder(self.path)
+        ok = is_file(self.path) if self.kind == "file" else is_folder(self.path)
         try:
             self.answer.done.emit(self.generation, ok)
         except RuntimeError:
@@ -113,8 +126,13 @@ class PathField(Interactive, Caster, QWidget):
 
     def __init__(self, path: str = "", parent: QWidget | None = None, *,
                  placeholder: str = "Choose a folder", editable: bool = True,
-                 dialog_title: str = "Choose a folder"):
+                 dialog_title: str = "Choose a folder", kind: str = "folder",
+                 file_filter: str = ""):
         QWidget.__init__(self, parent)
+        if kind not in PATH_KINDS:
+            raise ValueError(f"no path kind {kind!r}; there are {', '.join(PATH_KINDS)}")
+        self._kind = kind
+        self._file_filter = file_filter
         self._path = ""
         self._valid: bool | None = None
         self._generation = 0
@@ -135,7 +153,7 @@ class PathField(Interactive, Caster, QWidget):
         self._edit.installEventFilter(self)
         self._browse = _Link("Browse…", self)
         self._browse.clicked.connect(self.browse)
-        self._change = IconButton("folder", "Choose another folder", self, size="sm")
+        self._change = IconButton("folder", f"Choose another {kind}", self, size="sm")
         self._change.clicked.connect(self.browse)
         self._layout()
         self.set_path(path)
@@ -144,6 +162,10 @@ class PathField(Interactive, Caster, QWidget):
 
     def path(self) -> str:
         return self._path
+
+    def kind(self) -> str:
+        """"folder" or "file": what the field holds."""
+        return self._kind
 
     def valid(self) -> bool | None:
         return self._valid
@@ -167,7 +189,7 @@ class PathField(Interactive, Caster, QWidget):
         self._edit.clear()
         self._set_valid(None, announce=bool(path))
         if path:
-            _checks().start(_Check(self._answer, self._generation, path))
+            _checks().start(_Check(self._answer, self._generation, path, self._kind))
         self.setToolTip(path)
         self._layout()
 
@@ -180,8 +202,8 @@ class PathField(Interactive, Caster, QWidget):
         self._valid = valid
         height = theme.CONTROL_HEIGHT + (theme.FIELD_ERROR_HEIGHT if valid is False else 0)
         self.setFixedHeight(height)
-        self.setAccessibleDescription({None: "", True: "folder found",
-                                       False: "folder not found"}[valid])
+        self.setAccessibleDescription({None: "", True: f"{self._kind} found",
+                                       False: f"{self._kind} not found"}[valid])
         self._layout()
         self.update()
         if changed and announce:
@@ -193,7 +215,11 @@ class PathField(Interactive, Caster, QWidget):
         """Open the folder picker (the user asked; the dialog is Windows')."""
         if not self._editable or not self.isEnabled():
             return
-        chosen = QFileDialog.getExistingDirectory(self.window(), self._dialog_title, self._path)
+        if self._kind == "file":
+            chosen, _ = QFileDialog.getOpenFileName(self.window(), self._dialog_title,
+                                                    self._path, self._file_filter)
+        else:
+            chosen = QFileDialog.getExistingDirectory(self.window(), self._dialog_title, self._path)
         if chosen:
             self._chosen(os.path.normpath(chosen))
 
@@ -362,7 +388,7 @@ class PathField(Interactive, Caster, QWidget):
             self._paint_error(painter, box)
 
     def _paint_error(self, painter: QPainter, box: QRectF) -> None:
-        """⚠ folder not found, in danger, under the field."""
+        """⚠ folder (or file) not found, in danger, under the field."""
         size = theme.PATH_MARK
         top = box.bottom() + theme.FIELD_ERROR_GAP
         line = self.height() - top
@@ -372,4 +398,4 @@ class PathField(Interactive, Caster, QWidget):
         painter.setPen(theme.color("danger"))
         left = 1 + size + theme.SP_4 + 1
         painter.drawText(QRectF(left, top, self.width() - left, line),
-                         Qt.AlignLeft | Qt.AlignVCenter, "folder not found")
+                         Qt.AlignLeft | Qt.AlignVCenter, f"{self._kind} not found")
