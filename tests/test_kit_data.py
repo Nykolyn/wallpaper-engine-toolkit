@@ -46,7 +46,7 @@ from app.ui import kit                                                         #
 from app.ui.kit import (                                                       # noqa: E402
     ActivityLine, Cell, ChipCell, Column, EmptyState, Group, MonitorCard, MonitorView,
     PathField, ProgressBar, ProgressRing, StatCard, StepList, Table, TableFooter, TableModel,
-    TableSummary, TagSelect, Thumb, ThumbLoader,
+    TableSummary, TagSelect, Thumb, ThumbLoader, ToolTile,
 )
 from app.ui.kit import base, thumbs                                            # noqa: E402
 from app.ui.kit import format as fmt                                           # noqa: E402
@@ -369,6 +369,56 @@ check("a value can take a tone", warn._value.property("tone") == "warn"
       and raises(lambda: warn.set_value(3, "loud"), KeyError))
 for c in (card, empty_card, warn):
     check(f"a StatCard in state {c.card_state()} draws", drawn(c))
+stale = StatCard("Playlist", "4 / 201", "last known", tone="lo")
+check("a value no longer read live takes the lo tone", stale._value.property("tone") == "lo")
+linked = StatCard("Reserve", clickable=True)
+host.column.addWidget(linked)
+linked.set_empty("set the reserve folder in Settings", link=True)
+check("an empty card can say why as a link", linked.caption_is_link()
+      and linked._caption.property("tone") == "accent" and linked.card_state() == "empty")
+linked.force_state = "hover"
+check("and, opening a page, it shows so under the pointer though it has no number",
+      linked.card_state() == "hover")
+linked.force_state = None
+linked.set_value(12)
+check("a value ends the link", not linked.caption_is_link()
+      and linked._caption.property("tone") == "mid")
+
+tile = ToolTile("Rotator", "rotator")
+host.column.addWidget(tile)
+tile.set_status("Step 2 of 4 — moving folders in", "accent")
+tile.set_progress(0.41, "accent")
+tile.set_meta(f"412 / 1{NB}000")
+check("a ToolTile says what its tool is doing, with a bar and a meta line",
+      tile.texts() == {"name": "Rotator", "status": "Step 2 of 4 — moving folders in",
+                       "status_tone": "accent", "meta": f"412 / 1{NB}000", "bar": 0.41,
+                       "bar_tone": "accent", "active": False, "dot": False}
+      and tile.tile_state() == "default")
+tile.set_active(True)
+check("active: its edge and fill, and the pulsing dot", tile.tile_state() == "active"
+      and tile.texts()["dot"] and tile._name.property("tone") == "hi"
+      and tile._dot.live())
+tile.force_state = "hover"
+check("hovered while active, it brightens", tile.tile_state() == "active-hover")
+tile.force_state = None
+tile.set_progress(None)
+check("no bar when there is nothing to measure", tile.texts()["bar"] is None)
+tile.set_progress(None, "accent", indeterminate=True)
+check("or a sweep for a job not counted yet", tile.texts()["bar"] == "indeterminate")
+tile_clicks: list = []
+tile.clicked.connect(lambda: tile_clicks.append(1))
+QTest.mouseClick(tile, Qt.LeftButton)
+QTest.keyClick(tile, Qt.Key_Return)
+check("a click, or Enter, says it was clicked", tile_clicks == [1, 1])
+tile.force_state = "focus"
+check("with the keyboard on it, it shows the ring", tile.focus_visible())
+tile.force_state = None
+tile.set_active(False)
+check("inactive again: no dot, plain name", not tile.texts()["dot"]
+      and tile._name.property("tone") == "body" and not tile._dot.live())
+for state in (False, True):
+    tile.set_active(state)
+    check(f"a ToolTile {'active' if state else 'at rest'} draws", drawn(tile))
 
 started = datetime(2026, 9, 19, 12, 44)
 leading = MonitorView("Monitor1", "leading", resolution="2560×1440", title="Harbour Lights Loop",

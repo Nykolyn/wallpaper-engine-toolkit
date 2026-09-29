@@ -28,7 +28,7 @@ from PySide6.QtWidgets import QHBoxLayout, QMainWindow, QStackedWidget, QVBoxLay
 
 from . import animations, services, theme
 from .pages.base import Page
-from .services.snapshot import PLAYLIST
+from .services.snapshot import PLAYLIST, parse_estimate
 from .settings import Settings
 from .tracker_feed import TrackerFeed, heartbeat_setting
 from .ui.kit import NavState, PageHeader, Sidebar, StatusLine, TitleBar, ToastHost
@@ -164,15 +164,8 @@ def next_in_loop(playlist, now: datetime | None = None) -> str:
 
 def _estimate_day(estimate: str | None, now: datetime) -> str:
     """The day in the tracker's estimate ("21 Sep 09:10"), as the design writes it."""
-    if not estimate:
-        return ""
-    try:
-        when = datetime.strptime(estimate, "%d %b %H:%M").replace(year=now.year)
-    except ValueError:
-        return ""
-    if (now - when).days > 180:
-        when = when.replace(year=now.year + 1)      # an estimate past New Year
-    return fmt.day(when, now)
+    when = parse_estimate(estimate, now)
+    return fmt.day(when, now) if when is not None else ""
 
 
 # ---- the window ----------------------------------------------------------------------

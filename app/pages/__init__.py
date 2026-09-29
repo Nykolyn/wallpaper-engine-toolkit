@@ -2,7 +2,7 @@
 
 - base: `Page`, what the frame needs from a page, and `LegacyPage`, an old
   tab in the new frame.
-- overview: the loop at a glance (a placeholder until its own step).
+- overview: the loop at a glance.
 - settings: what is set once.
 - legacy: what the old tabs' sidebar items say, until their pages say it.
 
@@ -59,4 +59,4 @@ def build_pages(window) -> list[Page]:
 
     settings_page.changed.connect(changed)
     window._legacy_nav = LegacyNav(legacy, services, window)
-    return [OverviewPage(services, feed), *legacy, settings_page]
+    return [OverviewPage(services, feed, settings=settings), *legacy, settings_page]

@@ -9,9 +9,11 @@ A development tool, not part of the app: it is not bundled and nothing in
 
 It builds `MainWindow` offscreen with **fabricated fixtures only**: a data
 folder of its own under %TEMP% (nothing is read from or written to this
-machine's), no TrackerFeed, services that are never started, made-up
-folders on a drive `X:` that it reports as present, and the frame's state
-from `tests/fixtures/ui/shell.json`. Pages that have a page of their own
+machine's), no TrackerFeed, services that are never started and a Snapshot
+that reads nothing (a fixture's finished job would otherwise have it count
+the Rotator's folders, and with no config that is this machine's own
+myprojects), made-up folders on a drive `X:` that it reports as present, and
+the frame's state from `tests/fixtures/ui/shell.json`. Pages that have a page of their own
 (Overview, Settings) are the real ones, and `load_fixture(state)` puts them in
 the state asked for; the old tabs are not built at all — a stand-in says
 where each one goes — because building them reads the library, Steam and
@@ -19,8 +21,9 @@ Wallpaper Engine.
 
 - `--page`: overview, rotator, tracker, review, creator, copier, settings.
 - `--state`: a state of the frame (`--list` shows them: idle, running, clean,
-  problems, scanning, building, copying, failed, empty). A page with a
-  fixture of the same name shows it; otherwise its first.
+  problems, scanning, building, copying, failed, empty, we-off). A page with
+  a fixture of the same name shows it (Overview's are in
+  `tests/fixtures/ui/overview.json`); otherwise its first.
 - `--size WxH` (default 1280x860) and `--scale 1|1.5` (the user's screen is
   at 150 %; the picture is then 1.5 × the size in pixels).
 """
@@ -105,6 +108,7 @@ def build_window(page_key: str):
     app = QApplication.instance() or QApplication(sys.argv)
     from app import services, theme
     from app.engines.rotator.config import Config
+    from app.services import snapshot as snapshot_module
     from app.main_window import MainWindow, page_for
     from app.pages.base import Page
     from app.pages.overview import OverviewPage
@@ -113,6 +117,8 @@ def build_window(page_key: str):
     from app.ui.kit import label, paths
 
     theme.apply(app)
+    # The Snapshot's worker reads nothing here: only a fixture puts readings.
+    snapshot_module.compute = lambda keys, data_dir: {}
     # The fixtures' folders are on a drive this machine does not have; the
     # fields are told they are there, so they draw as a set-up machine's would.
     paths.is_folder = lambda path: str(path).startswith(FAKE_DRIVE)
@@ -154,7 +160,7 @@ def build_window(page_key: str):
     svc = services.Services(data_dir=Path(os.environ["WALLPAPER_TOOLKIT_DATA"]),
                             settings=settings)
     config = Config(source="", destination="", duplicates="", count=1000)
-    pages = [OverviewPage(svc, feed),
+    pages = [OverviewPage(svc, feed, settings=settings),
              StandIn("rotator", "Rotator", "rotator"),
              StandIn("tracker", "Tracker", "tracker"),
              StandIn("review", "Review", "review"),

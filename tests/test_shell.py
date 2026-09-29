@@ -51,6 +51,7 @@ from app.pages.legacy import nav_for                                            
 from app.pages.overview import OverviewPage                                           # noqa: E402
 from app.pages.settings import SettingsPage                                           # noqa: E402
 from app.services.jobs import JobCenter                                               # noqa: E402
+from app.services import snapshot as snapshot_module                                  # noqa: E402
 from app.services.snapshot import (                                                   # noqa: E402
     LAST_RUN, PLAYLIST, PlaylistProgress, Reading, RunSummary,
 )
@@ -60,6 +61,9 @@ from app.ui.kit import NavState, PathField, format as fmt                       
 
 theme.apply(app)
 animations.ENABLED = True
+# A finished job asks the Snapshot to count the Rotator's folders again; with no
+# config that would be this machine's own myprojects. Here its worker reads nothing.
+snapshot_module.compute = lambda keys, data_dir: {}
 
 results: list[bool] = []
 
@@ -88,6 +92,13 @@ def wait_for(condition, ms: int = 3000) -> bool:
 
 def read_json(path: Path) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def monitor(name: str) -> SimpleNamespace:
+    """What the tracker says of a monitor, as much of it as the pages read."""
+    return SimpleNamespace(monitor=name, seen=4, total=201, current=None, current_title="",
+                           current_since=None, live=True, from_engine=True, anchor="",
+                           from_rotation=False)
 
 
 # ---- a window with nothing of this machine's in it ------------------------------------
@@ -374,7 +385,7 @@ check("Wallpaper Engine's config.json is saved, and the tracker told",
       and ("use_config", str(engine)) in feed.asked)
 check("and its field holds a file, not a folder",
       page.we_config.kind() == "file" and wait_for(lambda: page.we_config.valid() is True))
-feed.results = [SimpleNamespace(monitor="Monitor1"), SimpleNamespace(monitor="Monitor2")]
+feed.results = [monitor("Monitor1"), monitor("Monitor2")]
 feed.updated.emit()
 check("the lead monitor offers Automatic and each monitor the tracker sees",
       [page.lead.itemText(i) for i in range(page.lead.count())]

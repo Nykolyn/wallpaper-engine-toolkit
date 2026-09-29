@@ -7,7 +7,8 @@ ActivityLine.
   verdict changes only the edge's colour (`tone="ok"` for a clean run, "warn"
   for one with problems). It is also a surface: the controls on it draw their
   shadows and focus rings on it.
-- Overline is a section label ("THE FOUR STEPS").
+- Overline is a section label ("THE FOUR STEPS"); Rule is the hairline
+  between two parts of a panel.
 - CardTitle is a card's title, a quieter subtitle beside it, and actions on
   the right.
 - Callout is a tinted note inside a panel: an icon, an optional title, the
@@ -108,6 +109,18 @@ class GlassPanel(Caster, QFrame):
 
 
 # ---- labels at the top of a panel -------------------------------------------------------
+
+class Rule(QWidget):
+    """A hairline across a panel, between two of its parts."""
+
+    def __init__(self, parent: QWidget | None = None):
+        super().__init__(parent)
+        self.setFixedHeight(1)
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+
+    def paintEvent(self, event) -> None:        # noqa: N802 - Qt's name
+        QPainter(self).fillRect(QRectF(self.rect()), theme.color("border.hairline"))
+
 
 class Overline(QLabel):
     """A section label: mono, upper case, tracked, text.lo."""

@@ -15,7 +15,8 @@ out as they were last read:
 - `PLAYLIST` — the leading monitor's count, from the window's `TrackerFeed`
   (already in memory: no worker needed).
 - `REVIEW` — the last review's summary from `data/review_last.json`, once
-  step 11 writes it; None until then.
+  step 11 writes it; None until then. `ReviewState.from_json` reads it, and
+  its doc is the file's shape.
 
 Every value is a `Reading`: the value, when it was read, and what went wrong
 if the last try failed — in which case the value is the one read before, so
@@ -130,6 +131,71 @@ class PlaylistProgress:
     live: bool                      # the playlist file was found open
     current: str | None = None
     title: str = ""
+    # counted from Wallpaper Engine's own record of the pass: not live then
+    # means Wallpaper Engine is not running, rather than nothing on screen
+    from_engine: bool = False
+
+
+def parse_estimate(estimate: str | None, now: datetime) -> datetime | None:
+    """The tracker's finish estimate ("21 Sep 09:10", no year) as a moment:
+    this year's, or next year's for an estimate past New Year."""
+    if not estimate:
+        return None
+    try:
+        when = datetime.strptime(estimate, "%d %b %H:%M").replace(year=now.year)
+    except ValueError:
+        return None
+    if (now - when).days > 180:
+        when = when.replace(year=now.year + 1)
+    return when
+
+
+@dataclass(frozen=True)
+class ReviewState:
+    """The last review, as `review_last.json` holds it. Step 11 writes the file:
+
+        {"scanned": "2026-09-18T09:10:00",   when the scan finished
+         "scope": "new",                      the Wallpaper Engine folder it read
+         "since": "2026-09-13",               the oldest last visit among the authors
+         "items": 89,                         new items found, every author together
+         "authors": [{"name": "…", "new": 14, "done": false}, …],
+                                              the authors with new items; done once
+                                              gone through in the gallery
+         "finished": null}                    when "Finish review" wrote the database
+
+    A field that is missing or of the wrong kind is not known (None), never 0;
+    fields this build does not know are ignored.
+    """
+    scanned: datetime | None = None
+    scope: str = ""
+    since: date | None = None
+    items: int | None = None
+    authors: int | None = None      # with new items
+    waiting: int | None = None      # of them, not gone through yet
+    finished: datetime | None = None
+
+    @classmethod
+    def from_json(cls, data) -> "ReviewState":
+        if not isinstance(data, dict):
+            return cls()
+        authors = data.get("authors")
+        if isinstance(authors, list):
+            rows = [a for a in authors if isinstance(a, dict)]
+            count, waiting = len(rows), sum(1 for a in rows if a.get("done") is not True)
+        else:
+            count, waiting = _count(authors), None
+        finished = _parse_time(data.get("finished")) if data.get("finished") else None
+        since = _parse_time(data.get("since"))
+        scope = data.get("scope")
+        return cls(scanned=_parse_time(data.get("scanned")),
+                   scope=scope if isinstance(scope, str) else "",
+                   since=since.date() if since else None, items=_count(data.get("items")),
+                   authors=count, waiting=0 if finished and waiting is None else waiting,
+                   finished=finished)
+
+
+def _count(value) -> int | None:
+    return value if isinstance(value, int) and not isinstance(value, bool) and value >= 0 else None
 
 
 class Snapshot(QObject):
@@ -437,4 +503,5 @@ def playlist_progress(results, preferred: str | None = None) -> PlaylistProgress
         monitor=lead.monitor, seen=lead.seen, total=lead.total,
         remaining=lead.remaining, percent=lead.percent, started=lead.started,
         finish_estimate=lead.finish_estimate, live=lead.live,
-        current=lead.current, title=lead.current_title)
+        current=lead.current, title=lead.current_title,
+        from_engine=bool(getattr(lead, "from_engine", False)))
