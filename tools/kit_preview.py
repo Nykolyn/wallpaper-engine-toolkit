@@ -1308,13 +1308,15 @@ def cards_section() -> Section:
 
     from PySide6.QtWidgets import QMenu
 
-    from app.ui.kit import MonitorCard, MonitorView, StatCard
+    from app.ui.kit import MonitorCard, MonitorView, StatCard, ToolTile
 
     previews = synthetic_previews()
     section = Section(14, "Cards",
                       "A StatCard is one number: hover (a card that opens a page), loading, "
                       "and empty with the reason. A MonitorCard is filled from a MonitorView: "
-                      "compact on the Overview, detailed in the Tracker, in the monitor's state.")
+                      "compact on the Overview, detailed in the Tracker, in the monitor's state. "
+                      "A ToolTile is a tool of the loop on the Overview; the one whose job runs "
+                      "is accented.")
     section.body.addWidget(overline("StatCard — default · hover · loading · empty · a tone"))
     row = QHBoxLayout()
     row.setSpacing(14)
@@ -1322,12 +1324,49 @@ def cards_section() -> Section:
     hovered.force_state = "hover"
     loading = StatCard("Reserve", 33421, "8 204 never used")
     loading.set_loading()
+    linked = StatCard("Reserve", clickable=True)
+    linked.set_empty("set the reserve folder in Settings", link=True)
     for card in (StatCard("Reserve", 33421, "8 204 never used", clickable=True), hovered,
                  loading, StatCard("Duplicates set aside"),
                  StatCard("New since last review", 89, "from 12 authors · not reviewed",
                           tone="warn")):
         card.setFixedWidth(232)
         row.addWidget(card)
+    row.addStretch()
+    section.body.addLayout(row)
+    row = QHBoxLayout()
+    row.setSpacing(14)
+    for card in (linked, StatCard("Playlist", "4 / 201", "Monitor1 leading · last known",
+                                  tone="lo")):
+        card.setFixedWidth(232)
+        row.addWidget(card)
+    row.addStretch()
+    section.body.addWidget(overline("StatCard — empty with a link to where it is set · the last known"))
+    section.body.addLayout(row)
+
+    section.body.addWidget(overline("ToolTile — at rest · hover · active (its job runs) · no bar"))
+    row = QHBoxLayout()
+    row.setSpacing(9)
+    rest = ToolTile("Tracker", "tracker")
+    rest.set_status("Counting the playlist down")
+    rest.set_progress(4 / 201)
+    rest.set_meta("4 of 201 shown · ≈21 Sep")
+    hover = ToolTile("Tracker", "tracker")
+    hover.set_status("Counting the playlist down")
+    hover.set_progress(4 / 201)
+    hover.set_meta("4 of 201 shown · ≈21 Sep")
+    hover.force_state = "hover"
+    active = ToolTile("Rotator", "rotator")
+    active.set_status("Step 2 of 4 — moving folders in", "accent")
+    active.set_progress(0.41, "accent")
+    active.set_meta("412 / 1 000 · ≈6 min left")
+    active.set_active(True)
+    waiting = ToolTile("Review", "review")
+    waiting.set_status("12 authors waiting", "warn")
+    waiting.set_meta("89 items since 13 Sep")
+    for tile in (rest, hover, active, waiting):
+        tile.setFixedWidth(232)
+        row.addWidget(tile)
     row.addStretch()
     section.body.addLayout(row)
 
@@ -1725,6 +1764,23 @@ def feedback_section() -> Section:
     row.addWidget(live, 3, Qt.AlignTop)
     closed = _log(live=False, expanded=False, file="copier.log")
     row.addWidget(closed, 2, Qt.AlignTop)
+    section.body.addLayout(row)
+
+    section.body.addWidget(overline("LogPanel filling a column (Overview) — collapsed, the newest "
+                                    "lines · open"))
+    row = QHBoxLayout()
+    row.setSpacing(14)
+    for expanded in (False, True):
+        holder = QWidget()
+        holder.setFixedSize(306, 260)
+        column = QVBoxLayout(holder)
+        column.setContentsMargins(0, 0, 0, 0)
+        glance = _log(live=True, expanded=expanded)
+        glance.set_file("rotator/2026-09-19.log", writing=False)
+        glance.set_fill(True)
+        column.addWidget(glance)
+        row.addWidget(holder, 0, Qt.AlignTop)
+    row.addStretch()
     section.body.addLayout(row)
 
     section.body.addWidget(overline("Toast — ok · info · warn · danger, stacked over a page"))

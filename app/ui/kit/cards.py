@@ -22,13 +22,15 @@ from __future__ import annotations
 import html
 from dataclasses import dataclass
 
-from PySide6.QtCore import QRectF, Qt, Signal
+from PySide6.QtCore import QMargins, QRectF, Qt, Signal
 from PySide6.QtGui import QBrush, QFontMetricsF, QPainter, QPainterPath, QPen
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QSizePolicy, QVBoxLayout, QWidget
 
 from ... import animations, theme
 from . import format as fmt
-from .base import Glyph, Interactive, follow, label, set_tone
+from .base import (
+    Caster, Elided, Glyph, Interactive, LiveDot, elevation_margins, follow, label, set_tone,
+)
 from .buttons import IconButton
 from .chips import Chip
 from .panels import GlassPanel, Overline
@@ -38,7 +40,7 @@ from .tables import Thumb
 _UNSET = object()
 
 VALUE_TONES = {None: "hi", "ok": "ok", "warn": "warn", "danger": "danger", "info": "info",
-               "accent": "accent"}
+               "accent": "accent", "lo": "lo"}      # lo: the last known, not read now
 
 
 def qualified_html(text: str, tone: str = "text.body") -> str:
@@ -63,6 +65,10 @@ class StatCard(Interactive, GlassPanel):
         StatCard("Reserve", 33421, "8 204 never used")
         StatCard("New since last review", 89, "from 12 authors", tone="warn")
         StatCard("Duplicates set aside")            # empty: "—", no run yet
+
+    A value no longer read live (Wallpaper Engine not running) takes the `lo`
+    tone. An empty card can say why as a link (`set_empty(…, link=True)`),
+    when its click goes where the missing thing is set.
     """
 
     clicked = Signal()
@@ -79,6 +85,7 @@ class StatCard(Interactive, GlassPanel):
         self._empty = True
         self._tone = tone
         self._empty_caption = empty_caption
+        self._link = False
         if clickable:
             self.setCursor(Qt.PointingHandCursor)
             self.setFocusPolicy(Qt.StrongFocus)
@@ -134,8 +141,9 @@ class StatCard(Interactive, GlassPanel):
             self._value.setText(fmt.DASH)
             set_tone(self._value, "lo")
             self._caption.setText(self._empty_caption)
-            set_tone(self._caption, "lo")
+            set_tone(self._caption, "accent" if self._link else "lo")
         else:
+            self._link = False
             text = fmt.count(value) if isinstance(value, int) and not isinstance(value, bool) \
                 else str(value)
             self._value.setText(text)
@@ -148,10 +156,17 @@ class StatCard(Interactive, GlassPanel):
         self._caption.setText(text)
         self.setAccessibleDescription(f"{self._value.text()} {text}".strip())
 
-    def set_empty(self, caption: str | None = None) -> None:
+    def set_empty(self, caption: str | None = None, *, link: bool = False) -> None:
+        """"—" and why. `link=True` writes the why in the link colour, for a
+        card whose click goes where it is put right ("set the reserve folder
+        in Settings"); it lasts until the card has a value again."""
         if caption is not None:
             self._empty_caption = caption
+        self._link = link
         self.set_value(None)
+
+    def caption_is_link(self) -> bool:
+        return self._empty and self._link
 
     def set_loading(self, on: bool = True) -> None:
         """Three shimmering bars until the numbers arrive."""
@@ -166,11 +181,13 @@ class StatCard(Interactive, GlassPanel):
         self.state_changed()
 
     def card_state(self) -> str:
+        # A card that opens a page shows it under the pointer even while it
+        # has no number: the page is where the reason is put right.
         if self._loading:
             return "loading"
-        if self._empty:
-            return "empty"
-        return "hover" if self._hovered() else "default"
+        if self._hovered():
+            return "hover"
+        return "empty" if self._empty else "default"
 
     def _hovered(self) -> bool:
         if not self.isEnabled():
@@ -625,3 +642,173 @@ class MonitorCard(GlassPanel):
             out["count"] = self._count.text()
             out["bar"] = self._bar.colour_token()
         return out
+
+
+# ---- ToolTile ---------------------------------------------------------------------------------
+
+TILE_STATES = ("default", "hover", "active", "active-hover")
+
+
+class ToolTile(Interactive, Caster, QWidget):
+    """A tool of the loop, on the Overview: its glyph and name, a line of what
+    it is doing, a thin bar and a mono line of numbers.
+
+    The tile of the tool whose job is running is `active`: an accent edge, a
+    raised fill with its sheen and shadow, and a pulsing dot after the name.
+    The others lie flat. A tile opens its tool's page: a click, or Space or
+    Enter with the keyboard on it, emits `clicked`.
+
+        tile = ToolTile("Rotator", "rotator")
+        tile.set_status("Step 2 of 4 — moving folders in", "accent")
+        tile.set_progress(0.41, "accent")       # None takes the bar away
+        tile.set_meta("412 / 1 000 · ≈6 min left")
+        tile.set_active(True)
+    """
+
+    clicked = Signal()
+
+    def __init__(self, name: str, icon: str, parent: QWidget | None = None):
+        QWidget.__init__(self, parent)
+        self._active = False
+        self._icon = icon
+        self.setCursor(Qt.PointingHandCursor)
+        self.setFocusPolicy(Qt.StrongFocus)
+        vertical, horizontal = theme.TILE_PAD
+        column = QVBoxLayout(self)
+        column.setContentsMargins(horizontal, vertical, horizontal, vertical)
+        column.setSpacing(theme.TILE_GAP)
+        head = QHBoxLayout()
+        head.setSpacing(theme.SP_8)
+        self._glyph = Glyph(icon, "text.mid", theme.TILE_ICON)
+        self._name = label(name, "type.h3", "body")
+        self._dot = LiveDot("accent", live=False, size=theme.TILE_DOT)
+        self._dot.hide()
+        head.addWidget(self._glyph)
+        head.addWidget(self._name, 1)
+        head.addWidget(self._dot, 0, Qt.AlignVCenter)
+        column.addLayout(head)
+        self._status = Elided("", "type.label", "mid")
+        self._bar = ProgressBar(height=theme.TILE_BAR, tone="muted")
+        self._bar.hide()
+        self._meta = Elided("", "type.monoXs", "lo")
+        column.addWidget(self._status)
+        column.addWidget(self._bar)
+        column.addWidget(self._meta)
+        column.addStretch(1)
+        self.setAccessibleName(name)
+
+    # -- what it says
+
+    def name(self) -> str:
+        return self._name.text()
+
+    def set_status(self, text: str, tone: str = "mid") -> None:
+        """The line under the name: what the tool is doing, in a label tone
+        (`accent` for the job that runs, `warn` for what waits on you)."""
+        self._status.set_text(text)
+        self._status.set_tone(tone)
+        self._describe()
+
+    def set_progress(self, fraction: float | None, tone: str = "muted", *,
+                     indeterminate: bool = False) -> None:
+        """The thin bar: how far, 0–1, in a ProgressBar tone. `indeterminate`
+        sweeps it (a job not counted yet); None with neither takes it away."""
+        if fraction is None and not indeterminate:
+            self._bar.hide()
+            return
+        self._bar.set_tone(tone)
+        if indeterminate:
+            self._bar.set_state("indeterminate")
+        else:
+            self._bar.set_state("determinate")
+            self._bar.set_fraction(fraction)
+        self._bar.show()
+
+    def set_meta(self, text: str) -> None:
+        """The mono line at the foot: counts, time left, a date."""
+        self._meta.set_text(text)
+        self._describe()
+
+    def active(self) -> bool:
+        return self._active
+
+    def set_active(self, on: bool) -> None:
+        """The tool whose job is running now."""
+        on = bool(on)
+        if on == self._active:
+            return
+        self._active = on
+        set_tone(self._name, "hi" if on else "body")
+        self._glyph.set_icon(self._icon, "text.hi" if on else "text.mid")
+        self._dot.set_live(on)
+        self._dot.setVisible(on)
+        self.state_changed()
+
+    def tile_state(self) -> str:
+        hover = self.visual_state() in ("hover", "pressed")
+        if self._active:
+            return "active-hover" if hover else "active"
+        return "hover" if hover else "default"
+
+    def texts(self) -> dict:
+        """What the tile says, by part; for tests and snapshots."""
+        bar = self._bar.isVisibleTo(self)
+        return {"name": self._name.text(), "status": self._status.text(),
+                "status_tone": self._status.tone(), "meta": self._meta.text(),
+                "bar": (None if not bar else "indeterminate" if self._bar.state() == "indeterminate"
+                        else round(self._bar.fraction(), 4)),
+                "bar_tone": self._bar.colour_token() if bar else "",
+                "active": self._active, "dot": self._dot.isVisibleTo(self)}
+
+    def _describe(self) -> None:
+        self.setAccessibleDescription(
+            " · ".join(t for t in (self._status.text(), self._meta.text()) if t))
+
+    # -- clicks
+
+    def mouseReleaseEvent(self, event) -> None:  # noqa: N802 - Qt's name
+        if event.button() == Qt.LeftButton and self.rect().contains(event.position().toPoint()):
+            self.clicked.emit()
+        super().mouseReleaseEvent(event)
+
+    def keyPressEvent(self, event) -> None:     # noqa: N802 - Qt's name
+        if event.key() in (Qt.Key_Space, Qt.Key_Return, Qt.Key_Enter):
+            self._kit_keyboard = True
+            self.clicked.emit()
+            event.accept()
+            return
+        super().keyPressEvent(event)
+
+    # -- painting
+
+    def outside_margins(self) -> QMargins:
+        return elevation_margins("elev.1")
+
+    def paint_outside(self, painter: QPainter) -> None:
+        box = QRectF(self.rect())
+        if self._active:
+            theme.paint_shadow(painter, box, "elev.1", theme.TILE_RADIUS)
+        if self.focus_visible():
+            theme.paint_focus_ring(painter, box, theme.TILE_RADIUS)
+
+    def paintEvent(self, event) -> None:        # noqa: N802 - Qt's name
+        follow(self)
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        box = QRectF(self.rect())
+        state = self.tile_state()
+        fill, edge = {
+            "default": ("surface.subtle", "border.hairline"),
+            "hover": ("surface.wash", "border.strong"),
+            "active": ("surface.tileActive", "accent.line"),
+            "active-hover": ("surface.raised", "accent.line"),
+        }[state]
+        radius = theme.TILE_RADIUS
+        path = QPainterPath()
+        path.addRoundedRect(box, radius, radius)
+        painter.fillPath(path, theme.color(fill))
+        if self._active:
+            theme.paint_sheen(painter, box, radius, "elev.1")
+        painter.setPen(QPen(theme.color(edge), 1))
+        painter.setBrush(Qt.NoBrush)
+        painter.drawRoundedRect(box.adjusted(0.5, 0.5, -0.5, -0.5), radius - 0.5, radius - 0.5)

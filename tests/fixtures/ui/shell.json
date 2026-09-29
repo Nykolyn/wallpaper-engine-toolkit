@@ -10,10 +10,27 @@
   "idle": {
     "jobs": [
       {"tool": "rotator", "title": "Run 38", "phase": "finishing", "done": 1000, "total": 1000,
-       "result": "clean", "summary": "Moved 1000, returned 998", "ended": "13:58"}
+       "result": "clean", "summary": "Moved 1000, returned 998", "ended": "13:38"}
     ],
     "playlist": {"monitor": "Monitor1", "seen": 4, "total": 201, "remaining": 197, "percent": 2,
                  "started": "2026-09-19 13:41", "finish_estimate": "21 Sep 09:10", "live": true},
+    "nav": {
+      "rotator": {"kind": "status", "text": "ready · run 39", "below": true},
+      "tracker": {"kind": "count", "done": 4, "total": 201},
+      "review": {"kind": "badge", "value": 12},
+      "creator": {"kind": "status", "text": "idle"},
+      "copier": {"kind": "status", "text": "idle"}
+    },
+    "next": "197 left on Monitor1 — rotate again ≈21 Sep"
+  },
+  "we-off": {
+    "jobs": [
+      {"tool": "rotator", "title": "Run 38", "phase": "finishing", "done": 1000, "total": 1000,
+       "result": "clean", "summary": "Moved 1000, returned 998", "ended": "13:38"}
+    ],
+    "playlist": {"monitor": "Monitor1", "seen": 4, "total": 201, "remaining": 197, "percent": 2,
+                 "started": "2026-09-19 13:41", "finish_estimate": "21 Sep 09:10", "live": false,
+                 "from_engine": true},
     "nav": {
       "rotator": {"kind": "status", "text": "ready · run 39", "below": true},
       "tracker": {"kind": "count", "done": 4, "total": 201},

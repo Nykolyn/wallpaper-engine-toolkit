@@ -18,7 +18,7 @@ from .base import Elided, Glyph, LiveDot, declare as declare_surface, label
 from .buttons import (
     AccentButton, DangerButton, GhostButton, IconButton, LinkButton, SecondaryButton,
 )
-from .cards import MonitorCard, MonitorView, StatCard
+from .cards import MonitorCard, MonitorView, StatCard, ToolTile
 from .chips import Chip, chip_pixmap, chip_size
 from .dialogs import (
     CheckGroup, CheckRow, ConfirmDialog, ConfirmResult, FormDialog, OverlayDialog,
@@ -27,7 +27,8 @@ from .icons import NAMES as ICON_NAMES, icon, pixmap, svg
 from .inputs import Dropdown, DropdownPopup, SpinBox, TextInput
 from .log import LogLine, LogModel, LogPanel, LogView, ProblemsFilter
 from .panels import (
-    ActivityLine, Callout, CardTitle, EmptyState, GlassPanel, MetricStrip, Overline, StepList,
+    ActivityLine, Callout, CardTitle, EmptyState, GlassPanel, MetricStrip, Overline, Rule,
+    StepList,
 )
 from .paths import PathField
 from .progress import ProgressBar, ProgressRing
@@ -53,11 +54,11 @@ __all__ = [
     "TextInput", "SpinBox", "Dropdown", "DropdownPopup",
     "Checkbox", "Toggle", "SegmentedControl", "Pagination", "page_numbers",
     "Chip", "chip_pixmap", "chip_size",
-    "GlassPanel", "Overline", "CardTitle", "Callout", "MetricStrip",
+    "GlassPanel", "Overline", "Rule", "CardTitle", "Callout", "MetricStrip",
     "EmptyState", "StepList", "ActivityLine",
     "PathField", "TagSelect", "TagPopup",
     "ProgressBar", "ProgressRing",
-    "StatCard", "MonitorCard", "MonitorView",
+    "StatCard", "MonitorCard", "MonitorView", "ToolTile",
     "Table", "TableModel", "TableHeader", "RowDelegate", "Column", "Cell", "ChipCell", "Group",
     "TableBar", "TableSummary", "TableFooter", "ListRow", "ListRowDelegate", "RowList",
     "paint_list_row", "Thumb", "paint_thumb", "ThumbLoader",

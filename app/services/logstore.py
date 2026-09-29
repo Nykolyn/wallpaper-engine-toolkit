@@ -10,7 +10,8 @@ info, warn …); the date is in the file's name.
 
 - `open(tool, run_id=None)` gives a `LogWriter`; `write(kind, message)` adds a
   line, `write_text("[WARN]  …")` one in the callback engines' own format.
-- `tail(tool, n)` is the last lines for a collapsed LogPanel.
+- `tail(tool, n)` is the last lines for a collapsed LogPanel; `LogTail`
+  follows one file from there, handing over only the lines written since.
 - `folder(tool)` / `open_folder(tool)` for "Open log folder".
 - `sweep()` deletes the files older than `KEEP_DAYS`, by the day in a daily
   file's name and by the last write of a run file; `sweep_in_background()`
@@ -22,6 +23,7 @@ is what to read when the tray did not come up, and the docs point at it.
 """
 from __future__ import annotations
 
+import os
 import re
 import threading
 from datetime import date, datetime, timedelta
@@ -148,6 +150,45 @@ class LogWriter:
 
     def __del__(self):
         self.close()
+
+
+class LogTail:
+    """One log file, followed from its end: what a panel that shows the newest
+    lines of a running job reads, a second at a time.
+
+    The first `read()` gives the last `n` lines; each read after it only the
+    whole lines written since, so a rotation's log of thousands of moves is
+    read once, not every second. A file that shrank (begun again, or
+    replaced) is read from its end again, and `restarted` says so, for the
+    panel to clear what it had. A file that cannot be opened has no lines.
+    """
+
+    def __init__(self, path: str | Path, n: int):
+        self.path = Path(path)
+        self.n = n
+        self.restarted = False
+        self._offset: int | None = None
+
+    def read(self) -> list[tuple[str, str, str]]:
+        """The lines new since the last read, oldest first, as (time, kind, message)."""
+        self.restarted = False
+        try:
+            with open(self.path, "rb") as f:
+                end = f.seek(0, os.SEEK_END)
+                if self._offset is None or end < self._offset:
+                    self.restarted = self._offset is not None
+                    lines, self._offset = textfile.last_lines(f, end, self.n)
+                else:
+                    f.seek(self._offset)
+                    data = f.read(end - self._offset)
+                    cut = data.rfind(b"\n")
+                    if cut < 0:
+                        return []
+                    self._offset += cut + 1
+                    lines = [textfile.text(line) for line in data[:cut].split(b"\n")]
+        except OSError:
+            return []
+        return [parse_line(line) for line in lines if line.strip()]
 
 
 class LogStore:

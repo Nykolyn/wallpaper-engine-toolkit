@@ -6,6 +6,49 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [3.3.0] - 2026-09-30
+
+The seventh step of the redesign: the Overview, the page the window opens on.
+
+### Added
+
+- **Overview — the state of the loop at a glance.** See
+  [Overview](docs/overview.md).
+  - Four numbers: **Reserve** (folders, and how many were never used),
+    **In rotation** (folders in myprojects, and how many today's runs swapped
+    in), **Playlist** (the leading monitor's `4 / 201` and what is left; green
+    once every wallpaper has been shown) and **New since last review** (what
+    the last Review scan found, in amber while it waits). Each opens the page
+    it comes from. A count on its way shimmers; one that is not known says why
+    — *set the reserve folder in Settings*, as a link there, or *no scan yet* —
+    instead of showing 0; one read before but not now is greyed and says
+    **last known** (the playlist while Wallpaper Engine is not running).
+  - **The loop**: a tile each for the Rotator, the Tracker and Review — what
+    each is doing, a thin bar, and its numbers (`412 / 1 000 · ≈6 min left`,
+    `4 of 201 shown · ≈21 Sep`, `12 authors waiting`). The tile of the job
+    that runs is outlined in blue with a pulsing dot, and a tile opens its
+    page. Under them one sentence says what the next run draws: *The next run
+    draws 1 000 at random from the 8 204 never used*, or that the history
+    resets when too few were never used.
+  - **Recent activity**: the journal's eight newest entries, with the time,
+    the tool, what happened and its chip; a row opens its tool's page, and
+    **Open log folder** opens `data/logs/`.
+  - On the right, a card per monitor, the leading one first, and the log: the
+    newest lines of the running job's own log file, followed as they are
+    written, or of the file written last, with a badge counting its warnings
+    and errors. Open it for All / Problems, copy and the log folder.
+  - **Refresh now** counts the folders again and has the Tracker look. The
+    date beside the title moves on with the minute.
+  - The page reads nothing from the disk while it is built; the numbers come
+    from the counts the window already keeps, made on a worker.
+
+### Fixed
+
+- `tools/ui_snapshot.py` no longer counts this machine's own myprojects
+  folder: a made-up finished job had its Snapshot read the Rotator's folders,
+  with the default config. Its Snapshot now reads nothing; so do the frame's
+  tests.
+
 ## [3.2.0] - 2026-09-29
 
 The sixth step of the redesign, and the first you can see all at once: the
@@ -716,7 +759,8 @@ restructured yet; the tabs keep their layout and take on the new look.
   was right for one library and wrong for every other. Nothing is tagged now
   unless you ask for it.
 
-[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.2.0...HEAD
+[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.3.0...HEAD
+[3.3.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.2.0...v3.3.0
 [3.2.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.1.0...v3.2.0
 [3.1.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.0.3...v3.1.0
 [3.0.3]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.0.2...v3.0.3

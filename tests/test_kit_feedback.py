@@ -191,6 +191,11 @@ check("back at the bottom, it follows again", panel.view.following()
       and panel.view.indexAt(QPoint(4, panel.view.viewport().height() - 4)).data(Qt.DisplayRole)
       .endswith("after 4"))
 
+panel.set_file("rotator/2026-09-28.log", writing=False)
+check("a file only read back is named without 'writing to'",
+      panel.file_text() == "rotator/2026-09-28.log")
+panel.set_file("rotator.log")
+
 full = LogPanel("Log", cap=100)
 host.column.insertWidget(1, full)
 wait(30)
@@ -621,6 +626,36 @@ check("a LinkButton clicks, and is no dialog's default",
 check("fmt.clock can stamp seconds",
       fmt.clock(datetime(2026, 9, 28, 9, 5, 7), seconds=True) == "09:05:07"
       and fmt.clock(datetime(2026, 9, 28, 9, 5, 7)) == "09:05")
+
+# ---- a log that fills its column (the Overview) --------------------------------------------
+
+column_host = Host(320, 420)
+filled = LogPanel("Log", expanded=False, fill=True)
+column_host.column.addWidget(filled, 1)
+column_host.show()
+filled.extend([("13:00:00", "moved", f"r{n}") for n in range(30)]
+              + [("13:00:01", "fail", "in use"), ("13:00:02", "moved", "last")])
+wait(60)
+check("filling, the panel takes the column's height", filled.fills()
+      and filled.height() == column_host.height() - 48)   # the host's margins are 24
+check("collapsed, the console stays open with the newest line in view, and the badge",
+      not filled.expanded() and filled.view.isVisibleTo(column_host)
+      and filled.view.following() and filled.badge_text() == "1 problem")
+check("but not the switch, the copy button or the footer",
+      not filled._switch.isVisibleTo(column_host) and not filled._copy.isVisibleTo(column_host)
+      and not filled.footer_shown())
+height = filled.height()
+filled.toggle()
+wait(40)
+check("opened, they come back, and the height is still the layout's",
+      filled.expanded() and filled._switch.isVisibleTo(column_host) and filled.footer_shown()
+      and filled.height() == height and filled.badge_text() == "")
+filled.set_fill(False)
+filled.set_expanded(False)
+wait(animations.SLOW + 80)
+check("not filling, collapsed is the header alone again",
+      not filled._body.isVisibleTo(column_host) and filled.badge_text() == "1 problem")
+column_host.close()
 
 window.close()
 check("the kit exports what the pages will use",

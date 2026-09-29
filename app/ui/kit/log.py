@@ -23,6 +23,11 @@ in three columns — time · kind · message — in `type.mono`.
   folder". Collapsed, it is the header alone, with the count of problems in
   a badge. The body's height and the chevron move together over
   motion.slow; with Windows' animations off they jump.
+- `fill=True` is the Overview's glance at a log: the panel takes the height
+  its layout gives it, and collapsed it keeps the console open under the
+  header, showing the newest lines, with the badge but without the switch,
+  the copy button or the footer. Opening it brings those back; the height
+  stays the layout's, so nothing slides.
 """
 from __future__ import annotations
 
@@ -69,6 +74,8 @@ MESSAGE_ROLE = Qt.UserRole + 82
 TONE_ROLE = Qt.UserRole + 83
 
 FOOTER_NOTE = "newest first · kept for 30 days"
+# Qt's QWIDGETSIZE_MAX, which PySide does not export: no maximum height.
+_UNBOUNDED = (1 << 24) - 1
 
 
 def kind_tone(kind: str) -> str:
@@ -523,8 +530,9 @@ class LogPanel(GlassPanel):
     def __init__(self, title: str = "Log", parent: QWidget | None = None, *,
                  file: str = "", expanded: bool = True, cap: int = theme.LOG_CAP,
                  on_open_folder: Callable[[], None] | None = None,
-                 note: str = FOOTER_NOTE):
+                 note: str = FOOTER_NOTE, fill: bool = False):
         super().__init__(parent, padding="none")
+        self._fill = False
         self._model = LogModel(self, cap=cap)
         self._filter = ProblemsFilter(self)
         self._filter.setSourceModel(self._model)
@@ -597,6 +605,8 @@ class LogPanel(GlassPanel):
         self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
         self._apply(self._t)
         self._settled()
+        if fill:
+            self.set_fill(True)
 
     # -- lines
 
@@ -657,9 +667,13 @@ class LogPanel(GlassPanel):
     def file_text(self) -> str:
         return self._file.text()
 
-    def set_file(self, name: str | None) -> None:
-        """"writing to rotator.log"; nothing when the job writes no file."""
-        self._file.set_text(f"writing to {name}" if name else "")
+    def set_file(self, name: str | None, *, writing: bool = True) -> None:
+        """"writing to rotator.log"; nothing when the job writes no file.
+        `writing=False` names a file that is only being read back."""
+        if not name:
+            self._file.set_text("")
+        else:
+            self._file.set_text(f"writing to {name}" if writing else name)
 
     def live(self) -> bool:
         return self._dot.live()
@@ -716,7 +730,7 @@ class LogPanel(GlassPanel):
         self._problems()
         self._animation.stop()
         target = 1.0 if on else 0.0
-        if animations.ENABLED and self.isVisible():
+        if animations.ENABLED and self.isVisible() and not self._fill:
             self._animation.setStartValue(self._t)
             self._animation.setEndValue(target)
             self._animation.start()
@@ -730,6 +744,26 @@ class LogPanel(GlassPanel):
         self._console_height = max(0, int(px))
         self._apply(self._t)
 
+    def fills(self) -> bool:
+        return self._fill
+
+    def set_fill(self, on: bool) -> None:
+        """Take the height the layout gives, and keep the console open while
+        collapsed (see the module doc). Off, the panel is as tall as its
+        parts, and collapsed it is its header."""
+        on = bool(on)
+        if on == self._fill:
+            return
+        self._fill = on
+        self._animation.stop()
+        self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding if on else QSizePolicy.Fixed)
+        self._apply(1.0 if self._expanded else 0.0)
+        self._settled()
+        self.updateGeometry()
+
+    def footer_shown(self) -> bool:
+        return self._footer.isVisibleTo(self)
+
     def body_height(self) -> int:
         """The body's full height, console and footer."""
         return self._console_height + self._footer.sizeHint().height()
@@ -739,13 +773,22 @@ class LogPanel(GlassPanel):
 
     def _apply(self, t: float) -> None:
         self._t = t
-        self._body.setFixedHeight(round(self.body_height() * t))
-        self._console.setFixedHeight(self._console_height)
+        if self._fill:
+            # the layout decides the height; open or closed, the console takes
+            # what the header (and, open, the footer) leave
+            for part in (self._body, self._console):
+                part.setMinimumHeight(0)
+                part.setMaximumHeight(_UNBOUNDED)
+            self._footer.setVisible(self._expanded)
+        else:
+            self._footer.setVisible(True)
+            self._body.setFixedHeight(round(self.body_height() * t))
+            self._console.setFixedHeight(self._console_height)
         self._chevron.angle = 180.0 * t
         self._chevron.update()
 
     def _settled(self) -> None:
-        self._body.setVisible(self._t > 0)
+        self._body.setVisible(self._t > 0 or self._fill)
         self._switch.setVisible(self._expanded)
         self._copy.setVisible(self._expanded)
         self._chevron.setToolTip("Hide the log" if self._expanded else "Show the log")

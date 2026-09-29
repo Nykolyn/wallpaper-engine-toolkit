@@ -19,7 +19,7 @@ app/
 ├── selfcheck.py          what a build can import and reach (--selfcheck, Settings)
 ├── pages/                the window's pages, in the order of the loop:
 │   ├── base.py           Page, and LegacyPage (an old tab in the frame)
-│   ├── overview.py       the loop at a glance (a placeholder until its own step)
+│   ├── overview.py       the loop at a glance
 │   ├── settings.py       what is set once
 │   └── legacy.py         what the old tabs' sidebar items say
 ├── theme.py              the design tokens: colour, type, space, radius, shadows, the stylesheet
@@ -135,6 +135,23 @@ Qt's. Maximised, the content pads itself in by however far Windows puts the
 frame off the screen. Offscreen there is no native frame, and the title bar
 moves the window through `startSystemMove()`.
 
+**Overview** (`app/pages/overview.py`) is built only from what the window
+already holds — the Snapshot's readings, the JobCenter, the TrackerFeed's
+`results`, the journal — and its constructor touches no file
+(`tests/test_overview.py` guards it). The journal and the log are read once
+the page is on screen: `journal.recent(8)` after the first `on_shown`, then
+`appended`; the log panel follows the running job's `log_path` (or
+`LogStore.files()[0]`) with a `LogTail`, a second at a time while visible.
+The words are plain functions of those sources — `reserve_card`,
+`rotation_card`, `playlist_card`, `review_card` (→ `CardText`),
+`rotator_tile`, `tracker_tile`, `review_tile`, `job_tile` (→ `TileText`),
+`loop_subtitle`, `loop_sentence`, `activity_row` (→ `ListRow`),
+`monitor_view(s)` (→ `MonitorView`) — which the tests call directly. A
+reading never read yet is a shimmer; one that failed with nothing before it
+is an empty state picked by its `reason`; one read before but not now is
+`lo` and "last known". Its fixtures are `tests/fixtures/ui/overview.json`
+(`running`, `idle`, `empty`, `we-off`).
+
 **Window requests** (`window_instance`): a second launch or the tray sends one
 line — `show <page>`, which every version understands, or the command form
 `<verb>:<argument>` (`show:rotator`; `rotate:confirm` is the tray's, to
@@ -202,7 +219,10 @@ into older ones when it is short; `tail(None, n)` is any tool's. `folder(tool)`
 and `open_folder(tool)` for "Open log folder". `sweep()` deletes files older
 than 30 days (a day's file by its name, a run's by its last write, nothing
 named otherwise); `sweep_in_background()` is what the window runs at start-up.
-`data/tracker.log` is the tray's and stays outside this.
+`data/tracker.log` is the tray's and stays outside this. `LogTail(path, n)`
+follows one file from its end: the first `read()` gives the last `n` lines,
+each after that only the whole lines written since (a line cut short waits),
+and a file that shrank is read from its end again with `restarted` set.
 
 **`Snapshot`** (`snapshot.py`). `get(key)` → `Reading(value, at, error)`,
 with `age()`; a read that fails keeps the value read before and sets `error`,
@@ -213,8 +233,12 @@ folders, never used, `will_reset`, batch), `ROTATION` (`RotationCounts`:
 folders in myprojects, protected, moved in today), `LAST_RUN` (`RunSummary`,
 with the result and times from step 09's `run_meta.json` beside
 `history.json` when it has the run, `from_side_file`), `PLAYLIST`
-(`PlaylistProgress` of the leading monitor, from the feed) and `REVIEW` (the
-dict in `review_last.json`, or None). `refresh(keys=None)` returns at once:
+(`PlaylistProgress` of the leading monitor, from the feed; `from_engine` says
+whether "not live" means Wallpaper Engine is not running) and `REVIEW` (the
+dict in `review_last.json`, or None; `ReviewState.from_json` reads it, and
+its docstring is the file's shape for step 11 to write: `scanned`, `scope`,
+`since`, `items`, `authors` as `[{name, new, done}]`, `finished`).
+`parse_estimate(text, now)` turns the tracker's "21 Sep 09:10" into a moment. `refresh(keys=None)` returns at once:
 the playlist is read from the feed in memory, everything else on one worker
 thread, one refresh at a time (asking during one queues the keys).
 `refreshed(keys)` follows. It refreshes itself when a rotation, a copy, a
@@ -412,8 +436,8 @@ the loops stand on their resting frame.
 
 `app/ui/kit/` holds the components the redesigned pages are built from. Each
 class is named as in the design, and each has all of the design's states.
-The pages move onto them one step at a time; so far only the Review gallery
-uses the kit, for its preview loader.
+The pages move onto them one step at a time: the frame, Settings and
+Overview are built from it; the Review gallery uses its preview loader.
 
 | Module | Classes |
 |---|---|
@@ -421,16 +445,16 @@ uses the kit, for its preview loader.
 | `inputs.py` | `TextInput` (`search=True`, `set_error(message)`), `SpinBox` (mono, `1 000` with a no-break space), `Dropdown` (`add_item(text, data, count=)`, `add_section`, `add_separator`, `prefix="SORT"`) and its list, `DropdownPopup` |
 | `selection.py` | `Checkbox`, `Toggle` (`knob_position`), `SegmentedControl` (two or three segments, `changed`), `Pagination` (`page_changed`), `page_numbers(pages, current)` |
 | `chips.py` | `Chip(variant, text=None)` in exactly fourteen variants; `chip_pixmap` and `chip_size` for delegates |
-| `panels.py` | `GlassPanel` (`tone=`, `padding=`), `Overline`, `CardTitle`, `Callout` (`tone=`, `title=`, `add_action`), `MetricStrip` |
+| `panels.py` | `GlassPanel` (`tone=`, `padding=`), `Overline`, `Rule` (a hairline between two parts of a panel), `CardTitle`, `Callout` (`tone=`, `title=`, `add_action`), `MetricStrip` |
 | `base.py` | the state model and the surfaces, below; `label(text, type, tone)`, `Glyph`, `Elided` (one line cut with an ellipsis, whole in its tool tip) and `LiveDot` (the pulse of a running job) |
 | `format.py` | how every number is written: `count` (`33 421`), `size` (`1.1 GB`), `duration` (`4 min 12 s`), `left` (`≈6 min left`), `approx` / `reconstructed` (`≈`, `~`), `clock` (`13:47`, or `13:47:02` for a log line), `date_table`, `date_activity`, `date_long`, `day`, `ratio` (`4 / 201`, `4/201`, `412 of 1 000`), `percent`. Pages never format numbers themselves. |
 | `paths.py` | `PathField`: empty (type, paste or Browse…), compact (path elided from the left, ✓, a folder button), invalid ("folder not found"), disabled; a drop target. `path_changed` for the user's choice, `validity_changed` when a worker has checked the folder. `kind="file"` (with `file_filter=`) holds one file instead: Wallpaper Engine's `config.json`. |
 | `tags.py` | `TagSelect` (pills, `3 / 25`, a popup of the Creator's `WE_TAGS` in four columns); `per_file=True` adds the clip's three states — `value()` None follows the batch, a list is its own, `[]` is none. `TagPopup` is the open state. |
 | `progress.py` | `ProgressBar` (3–8 px; determinate, eased over `motion.slow`; indeterminate; error; success; optional caption row) and `ProgressRing` (58, 52, 34 px; percentage, spin, done) |
-| `cards.py` | `StatCard` (default, hover when `clickable`, `set_loading`, empty), `MonitorCard` (compact or `detail=True`) and `MonitorView`, the plain values a page fills it from |
+| `cards.py` | `StatCard` (default, hover when `clickable` — an empty one too, `set_loading`, empty, `set_empty(why, link=True)` for a reason written as a link, tone `lo` for the last known), `MonitorCard` (compact or `detail=True`) and `MonitorView`, the plain values a page fills it from, `ToolTile` (a tool of the loop on the Overview: status line and tone, thin bar, mono meta; `set_active` accents the one whose job runs, with a pulsing dot; `clicked` on a click, Enter or Space) |
 | `tables.py` | `Table`, `TableModel`, `Column`, `Cell`, `ChipCell`, `Group`, `RowDelegate`, `TableHeader`, `TableBar`, `TableSummary`, `TableFooter`; `ListRow`, `paint_list_row`, `RowList`; `Thumb` and `paint_thumb` |
 | `thumbs.py` | `ThumbLoader`: Steam previews for the gallery (`request`), and a wallpaper folder's own preview (`request_local`), read on a worker and kept in `data/thumbs/local/` |
-| `log.py` | `LogPanel` (a job's log as a card: `append(time, kind, message)`, All / Problems, copy, live dot, "writing to rotator.log", closes to its header with a problem badge), `LogModel` (the last 5 000 lines in a ring), `ProblemsFilter`, `LogView` |
+| `log.py` | `LogPanel` (a job's log as a card: `append(time, kind, message)`, All / Problems, copy, live dot, "writing to rotator.log" — or a file only read back, `set_file(name, writing=False)` — closes to its header with a problem badge; `fill=True` takes its layout's height and keeps the console open while collapsed, the Overview's glance), `LogModel` (the last 5 000 lines in a ring), `ProblemsFilter`, `LogView` |
 | `toast.py` | `Toast` (ok, info, warn, danger; an action link; close) and `ToastHost` (stacks a page's toasts bottom-right, at most four) |
 | `statusline.py` | `StatusLine`: `set_running(text, done, total, count_text, on_show)`, `set_idle(text)`, `set_warn(text, action, callback)`, `set_error(...)` |
 | `dialogs.py` | `ConfirmDialog` (neutral or destructive; numbered `steps`; a checklist of `CheckGroup`s of `CheckRow`s; a summary; returns a `ConfirmResult`), `FormDialog` (labelled rows, Save once valid), and their chrome, `OverlayDialog` |
@@ -603,12 +627,16 @@ page step compares with the design's `screen-NN` pictures. It never reads this
 machine's data: it runs in a data folder of its own under `%TEMP%`, with no
 TrackerFeed and services that never start, and the old tabs are not built
 (building them reads the library, Steam and Wallpaper Engine); a stand-in says
-where each goes. The fixtures are in `tests/fixtures/ui/`: `shell.json` holds
-the frame's states (`--list`: idle, running, clean, problems, scanning,
-building, copying, failed, empty) as jobs put in the JobCenter, a reading put
-in the Snapshot (`Snapshot.put`), sidebar items pinned to a state and the
-line under Next in the loop; `MainWindow.load_fixture(state)` applies one,
-then the page's own `load_fixture` (its state of that name, or its first).
+where each goes. Its Snapshot's worker reads nothing either: a fixture's
+finished job would have it count the Rotator's folders, and with no config
+that is the machine's own myprojects. The fixtures are in
+`tests/fixtures/ui/`: `shell.json` holds the frame's states (`--list`: idle,
+we-off, running, clean, problems, scanning, building, copying, failed,
+empty) as jobs put in the JobCenter, a reading put in the Snapshot
+(`Snapshot.put`), sidebar items pinned to a state and the line under Next in
+the loop; `MainWindow.load_fixture(state)` applies one, then the page's own
+`load_fixture` (its state of that name, or its first). A page with more to
+make up keeps it in a file of its own: `overview.json`.
 Folders in fixtures are on a drive `X:` the tool reports as present. `--scale
 1.5` is the user's 150 %; the PNG is then 1.5 × the size.
 

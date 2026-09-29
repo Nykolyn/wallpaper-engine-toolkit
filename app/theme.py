@@ -67,6 +67,7 @@ TOKENS: dict[str, str] = {
     "surface.note": "rgba(255,255,255,.04)",    # a neutral Callout
     "surface.tile": "rgba(255,255,255,.05)",    # an EmptyState's icon tile
     "surface.rowHover": "rgba(255,255,255,.08)",  # a TagSelect option under the pointer
+    "surface.tileActive": "rgba(255,255,255,.10)",  # the loop's tile of the job that runs
     # A Thumb with no picture: two diagonals, white .28 drawn at .4 opacity.
     "thumb.cross": "rgba(255,255,255,.11)",
 
@@ -894,6 +895,23 @@ HEADER_GAP = 12               # the title, the subtitle and the actions
 HEADER_ACTION_GAP = 8
 BODY_PAD = (14, 16)           # a page's body: vertical, horizontal
 PANEL_GAP = 12                # between a page's panels
+
+# -- the Overview (OverviewBody)
+
+OVERVIEW_STAT_PAD = (12, 14)  # its StatCards, a little tighter than the kit's
+OVERVIEW_SIDE = 306           # the right column: the monitors and the log
+LOOP_PAD = (13, 15)           # "The loop" panel
+LOOP_GAP = 11                 # its title, its tiles and its sentence
+LOOP_RULE_PAD = 9             # the hairline to the sentence under it
+TILE_PAD = (11, 12)           # a tool's tile in the loop
+TILE_GAP = 7                  # its heading, status, bar and meta
+TILE_SPACING = 9              # one tile to the next
+TILE_RADIUS = 8
+TILE_ICON = 15
+TILE_DOT = 6                  # the pulsing dot of the tile whose job runs
+TILE_BAR = 5
+ACTIVITY_HEAD_PAD = (11, 14, 9)   # "Recent activity": top, sides, bottom
+ACTIVITY_LIST_PAD = 6             # the rows' inset from the panel's sides and foot
 
 
 # ---- Semantic colours the old tabs ask for ---------------------------------

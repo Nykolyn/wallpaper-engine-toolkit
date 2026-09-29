@@ -26,7 +26,7 @@ tool tips.
 
 | Page | What it is for | Reach for it when |
 |---|---|---|
-| Overview | The loop at a glance. The page itself arrives in the next release; for now the sidebar carries the numbers. | You open the window. |
+| [Overview](overview.md) | The loop at a glance: the reserve, what is in rotation, the playlist's count and what is new since the last review; what each tool is doing; recent activity; the monitors and the newest log lines. | You open the window. |
 | [Rotator](rotator.md) | Moves folders between a reserve and `myprojects`, with duplicate and history handling, and rebuilds the playlist. | Your library is far larger than one playlist, and you cycle through it. |
 | [Tracker](tracker.md) | Reports how far Wallpaper Engine has got through the active playlist. | You want to know when the playlist is finished, so the next rotation is due. |
 | [Review](review.md) | Groups the week's new wallpapers by author, and says what each has published since you last looked. | You triage new wallpapers weekly and care who made them. |
