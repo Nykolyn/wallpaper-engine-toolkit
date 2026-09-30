@@ -32,7 +32,7 @@ from pathlib import Path
 from typing import Callable, Iterable
 
 from ..settings import app_data_dir
-from .rotator.config import Config as RotatorConfig
+from .rotator.config import Config as RotatorConfig, _write_atomically
 from .rotator.core import folder_is_set
 from . import steam_paths
 
@@ -235,7 +235,11 @@ class Library:
             data = json.loads(self.index_path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             return
-        for root, entry in (data.get("roots") or {}).items():
+        if not isinstance(data, dict) or not isinstance(data.get("roots"), dict):
+            return
+        for root, entry in data["roots"].items():
+            if not isinstance(entry, dict):
+                continue
             self._scans[root] = Scan(root=root, folders=entry.get("folders") or {},
                                      read=entry.get("read", 0))
 
@@ -246,7 +250,9 @@ class Library:
                       for root, scan in self._scans.items()},
         }
         try:
-            self.index_path.write_text(json.dumps(payload), encoding="utf-8")
+            # Whole or not at all: a save cut short used to leave half a file,
+            # which read as no index, which meant the four-minute walk again.
+            _write_atomically(self.index_path, json.dumps(payload))
         except OSError as err:
             self._log(f"could not save the library index: {err}")
 

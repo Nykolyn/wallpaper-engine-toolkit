@@ -6,6 +6,67 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [3.4.1] - 2026-09-30
+
+The ninth step of the redesign: what the new Rotator page needs from the
+engine, built and tested before the page. Little of it shows yet; what does
+is below.
+
+### Changed
+
+- **Every rotation has a log file of its own**,
+  `logs/rotator/run-<id>.log`, named by the run's id, instead of sharing the
+  day's file. Each step's first and last lines are numbered (`step 2`), and
+  each folder gets exactly one line — `returned`, `dupe`, `moved` or `fail`.
+  See [the Rotator](docs/rotator.md#how-a-run-goes).
+- **What each run did beyond its record goes in `run_meta.json`**, beside
+  `history.json`: when it started and finished, how it ended (clean, with
+  problems, stopped, failed), which folders failed in the return and which in
+  the move, what became of the playlist, when each step ended. Overview and
+  the sidebar read a run's result and time from it. `history.json` keeps the
+  shape every version since 1.0.0 reads — a version before 3.0.0 read a record
+  with a key it did not know as no history at all. See
+  [What a run leaves behind](docs/rotator.md#what-a-run-leaves-behind).
+- **A stopped rotation is in the history.** Stopped while returning folders,
+  it used to be recorded nowhere: the duplicates it had set aside and the
+  folders it had returned were in no record. Now any run that moved something
+  is recorded — stopped, or ended by an error — so what it moved in is never
+  drawn again by mistake.
+- The rotation's playlist is found, when nothing matches what is in myprojects
+  now, by the batches the last runs moved in: a rebuild that failed leaves the
+  playlist listing the batch before, and the next rotation now brings it back
+  instead of saying there is none.
+
+### Added
+
+For the new Rotator page (next release), in the engine and its tests:
+the steps of a run as events (check → return → move → rebuild), **Stop after
+this step**, **Retry** of a run's failures in the step each failed in,
+**Rebuild playlist now** on its own, estimates from the times of earlier
+runs, the duplicates listed with their sizes, and `library_meta.json` — the
+title, type, workshop id, preview and size of each folder in the reserve and
+myprojects, read on a worker a folder at a time and only again when it
+changes. See [Configuration](docs/configuration.md#the-rotators-run-facts-and-library-index).
+
+### Fixed
+
+- **Nothing the Rotator keeps is saved over when it cannot be read.**
+  `history.json` has been set aside rather than overwritten since 3.0.0;
+  `config.json` was not, quite: one that could be neither read nor renamed
+  gave the defaults, and the next setting you changed saved them over it. It
+  now refuses, and the Settings page says the setting was not saved.
+  `run_meta.json` is kept the same way.
+- A setting of the wrong type in `config.json` (`"count": "many"`) was used as
+  it was; it falls back to its default now. A setting written by a newer
+  version is kept through a save instead of dropped.
+- The rotation log said "Returned" and "Moved" also for folders that had just
+  failed to move.
+- Saving the history or the settings could fail if the Overview's counts were
+  reading the same file at that instant; the save is tried again.
+- `library.json` is written whole: a save cut short left half a file, which read
+  as no index and meant the four-minute walk again. One that is not an index
+  reads as none instead of stopping Review.
+
 ## [3.4.0] - 2026-09-30
 
 The eighth step of the redesign: the Tracker page, where the count is read at
@@ -811,7 +872,8 @@ restructured yet; the tabs keep their layout and take on the new look.
   was right for one library and wrong for every other. Nothing is tagged now
   unless you ask for it.
 
-[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.4.0...HEAD
+[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.4.1...HEAD
+[3.4.1]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.4.0...v3.4.1
 [3.4.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.3.0...v3.4.0
 [3.3.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.2.0...v3.3.0
 [3.2.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.1.0...v3.2.0

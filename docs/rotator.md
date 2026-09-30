@@ -33,11 +33,11 @@ a duplicate, and what should never move at all.
    The Rotator page shows all four under **Next run**, each with a ✓ once it
    has been found, and **Change in Settings** beside them. While a rotation
    runs they are read-only on the Settings page.
-5. **Wallpaper Engine** — rebuild the playlist from the new set and start it
+2. **Wallpaper Engine** — rebuild the playlist from the new set and start it
    over. On by default, and on the Rotator page itself; see
    [below](#wallpaper-engines-playlist).
-6. **Check folders** first if it has been a while — see below.
-7. Rotate. The confirmation dialog states exactly what will move, and which
+3. **Check folders** first if it has been a while — see below.
+4. Rotate. The confirmation dialog states exactly what will move, and which
    playlist will be rebuilt, before anything does.
 
 All three folders are needed, as full paths — `D:\Wallpapers\reserve`, not
@@ -51,6 +51,51 @@ built exe is the install folder — the program itself, and before 3.0.0 your
 The first time, build a playlist in Wallpaper Engine from what is in
 `myprojects`. From then on every rotation rebuilds it and starts it over by
 itself, and the [Tracker](tracker.md) tells you when it is done.
+
+## How a run goes
+
+In this order, which is the order the log and the new Rotator page show:
+
+1. **Check the folders** for a `project.json` — [the reserve check](#the-reserve-check).
+   Anything it finds waits for your tick before the rest begins.
+2. **Return the previous batch to the reserve.** Wallpaper Engine is closed
+   first, when the playlist is to be rebuilt. Every folder in `myprojects` goes
+   back, except the `[protected]` ones; a folder whose name the reserve already
+   has goes to the duplicates folder instead — duplicates are set aside here,
+   not after the move.
+3. **Draw and move the new batch in**, at random from the folders never used
+   since the history last started over.
+4. **Rebuild the playlist in Wallpaper Engine** and start it again — only with
+   the box ticked.
+
+Each step's first and last lines in the log are numbered — `step 2`, *998
+folders returned to the reserve, 2 left behind* — and each folder gets one
+line: `returned`, `dupe`, `moved`, or `fail` with the reason.
+
+**Stopping.** The Stop button stops before the next folder. What was moved
+until then is recorded in the history like any run, as *stopped*, so nothing
+it moved is drawn again by mistake; Wallpaper Engine is started again, and the
+playlist is rebuilt only if the move had begun. A run stopped before it moved
+anything is not recorded. The new Rotator page adds **Stop after this step**:
+the step under way finishes — every folder of the return goes back, or every
+one of the batch comes in — and the run stops there, with Wallpaper Engine
+started again on the playlist as it was. **Rebuild playlist now** then brings
+the playlist up to date on its own.
+
+**Retrying.** A folder that could not be moved — in use by Wallpaper Engine,
+usually — stays where it was, and the run ends *with problems*. The new
+Rotator page's **Retry** tries each one again in the step it failed in: back to
+the reserve (or to the duplicates folder, if the reserve has that name by
+then), or into `myprojects`; then the playlist is rebuilt when anything moved.
+A folder you have since moved or deleted by hand is taken off the list, not
+moved again. The run's record is updated in place and its log gets the retry's
+lines at the end. A run from before 3.4.1 does not say which step each failure
+was in, and a retry leaves those alone rather than guess: where a folder is now
+cannot tell a failed move from a failed return put right by hand.
+
+**Rebuild playlist now** finds the rotation's playlist the way a run does —
+by its contents — and, failing that, by the batches the last runs moved in:
+a rebuild that failed leaves the playlist listing the batch before.
 
 ## Wallpaper Engine's playlist
 
@@ -169,6 +214,8 @@ everything else. (Until 3.0.0 a source run kept them apart, in
 - `data/config.json` — the five settings above.
 - `data/history.json` — one record per run: which folders moved,
   which were duplicates, how many came back, what failed.
+- `data/run_meta.json` and `data/logs/rotator/run-<id>.log` — see
+  [below](#what-a-run-leaves-behind).
 
 History is not only a log. It is what keeps a rotation from picking what the
 last ones already showed, and the [Tracker](tracker.md) reads it to date a cycle:
@@ -200,7 +247,29 @@ next rotation began a history of one run. So now:
   record would replace the file — until it reads or is moved away.
 
 `config.json` is kept the same way: one that cannot be read is renamed
-`config.unreadable-<time>.json` before the defaults are written.
+`config.unreadable-<time>.json` before the defaults are written, and one that
+can be neither read nor renamed is never saved over — a setting changed
+meanwhile says it could not be saved. A setting of the wrong type (`"count":
+"many"`) falls back to its default alone, and a setting written by a newer
+version is kept through a save.
+
+### What a run leaves behind
+
+- **Its record in `history.json`**, in the shape every version since 1.0 reads.
+- **An entry in `run_meta.json`**, by the run's id: when it started and
+  finished and how long it took, how it ended (*clean*, *with problems*,
+  *stopped*, *failed*), the batch asked for, how many `[protected]` folders
+  stayed, which folders failed in the return and which in the move, what
+  happened to the playlist, when each step ended, its log file, and each
+  retry. Kept apart because a version before 3.0.0 reads a record with a key
+  it does not know as no history at all, and would save an empty one over the
+  real file.
+- **Its own log**, `logs/rotator/run-<id>.log`: the lines the page showed while
+  it ran.
+
+"Takes about 15 minutes" on the new page is the median time of the last five
+runs that went all the way with a batch within half of yours either way — and
+nothing at all until there is one.
 
 To start the history over on purpose, delete `history.json` *and*
 `history_backup/`; with a snapshot left, the history comes back.

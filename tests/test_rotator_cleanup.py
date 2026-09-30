@@ -199,6 +199,38 @@ check("a name that is not one folder name is refused, not joined",
 check("the reserve check's delete refuses a relative path",
       core.delete_broken(["data"]) == ["data"] and untouched())
 
+# ------------------------------------------------ listing the duplicates
+#
+# For the Duplicates dialog of the new Rotator page: what is there, with sizes.
+
+check("listing an unset duplicates folder lists nothing, not the working directory",
+      core.list_duplicates("") == [] and core.list_duplicates(".") == [] and untouched())
+(DUPES / "dup-a" / "clip.mp4").write_bytes(b"x" * 300)
+(DUPES / "dup-a" / "sub").mkdir()
+(DUPES / "dup-a" / "sub" / "scene.pkg").write_bytes(b"y" * 20)
+(DUPES / "dup-b").mkdir()
+(RESERVE / "dup-a").mkdir()
+listed = core.list_duplicates(str(DUPES), str(RESERVE))
+check("each folder with its size and file count, by name",
+      [(d.name, d.size, d.files) for d in listed] == [("dup-a", 320, 2), ("dup-b", 0, 0)])
+check("and whether Move & replace would replace one in the reserve",
+      [d.in_reserve for d in listed] == [True, False])
+try:
+    import _winapi
+    _winapi.CreateJunction(str(INSTALL / "data"), str(DUPES / "dup-b" / "linked"))
+    junction = True
+except (ImportError, OSError, AttributeError):
+    junction = False
+if junction:
+    check("a junction inside a duplicate is not followed, so nothing is counted twice",
+          [d.size for d in core.list_duplicates(str(DUPES))] == [320, 0])
+    os.rmdir(DUPES / "dup-b" / "linked")          # the link only, never what it points at
+    check("and removing it left what it pointed at", untouched())
+shutil.rmtree(DUPES / "dup-a" / "sub")
+(DUPES / "dup-a" / "clip.mp4").unlink()
+(DUPES / "dup-b").rmdir()
+(RESERVE / "dup-a").rmdir()
+
 
 def validate(**folders: str) -> str:
     cfg = Config(**{"source": str(RESERVE), "destination": str(MYPROJECTS),
@@ -347,6 +379,48 @@ check("and Delete all deletes it, having named the folder in the question",
       not (DUPES / "dup-a").exists() and DUPES.exists()
       and shown[0][0] == "question" and str(DUPES) in shown[0][1] and untouched())
 check("the buttons come back when it is done", tab.del_all_btn.isEnabled())
+
+# ------------------------------------------ a rotation from the tab, reported
+#
+# The run's id is made before it starts, so its log is a file of its own —
+# logs/rotator/run-<id>.log, the lines the page shows — and its side-file
+# entry names that file.
+
+from app import services                             # noqa: E402
+from app.engines.rotator import meta as rotator_meta  # noqa: E402
+from app.services import snapshot                    # noqa: E402
+
+snapshot.compute = lambda keys, data_dir: {}         # count nothing on this machine
+wired = services.Services(data_dir=TMP / "services")
+services.install(wired)
+for name in ("fresh-a", "fresh-b"):
+    folder(name, {"project.json": b'{"file":"a.mp4"}', "a.mp4": b"x"})
+(MYPROJECTS / "old-a").mkdir()
+tab.config.source, tab.config.destination = str(RESERVE), str(MYPROJECTS)
+tab.config.duplicates, tab.config.count, tab.config.refresh_playlist = str(DUPES), 2, False
+before = sorted(p.name for p in RESERVE.iterdir()) + ["old-a"]
+shown.clear()
+tab._confirm_and_rotate()
+worker = tab.rotation_worker
+run_id = worker.run_id
+worker.wait(20_000)
+app.processEvents()
+log = TMP / "services" / "logs" / "rotator" / f"run-{run_id}.log"
+lines = log.read_text(encoding="utf-8").splitlines() if log.exists() else []
+check("a rotation from the tab logs to a file of its own, named by the run",
+      len(lines) > 4 and lines[0].split("\t")[1] == "start"
+      and sum(line.split("\t")[1] == "moved" for line in lines) == 2
+      and any(line.split("\t")[1] == "returned" for line in lines))
+entry = rotator_meta.read_meta(rotator_config.HISTORY_PATH.parent / "run_meta.json").get(run_id)
+check("and its side-file entry names that file", entry is not None
+      and entry.log == f"rotator/run-{run_id}.log" and entry.result == "clean")
+kinds = [e.kind for e in wired.journal.recent(5)]
+check("the journal has it started and finished, under that id",
+      kinds[:2] == ["run.clean", "run.started"]
+      and all(e.run == run_id for e in wired.journal.recent(2)))
+check("every folder is still somewhere",
+      sorted([p.name for p in RESERVE.iterdir()] + [p.name for p in MYPROJECTS.iterdir()])
+      == sorted(before))
 
 tab.deleteLater()
 os.chdir(HOME)

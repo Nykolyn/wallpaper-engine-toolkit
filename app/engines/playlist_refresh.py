@@ -11,7 +11,10 @@ left to you. This does it:
    any playlist — saved, or running on a monitor — most of whose wallpapers are
    folders the rotation is about to take back, and which holds most of those
    folders. Renaming it, or keeping a saved twin of it, changes nothing; a
-   playlist of workshop items, or of a few favourites, never qualifies.
+   playlist of workshop items, or of a few favourites, never qualifies. When
+   none is made of what is in myprojects now — a rebuild failed last time, so
+   the playlist still lists the batch before — the batches recent runs moved
+   in are tried the same way, newest first (`candidates`).
 3. **After the move** each such playlist is given every wallpaper now in
    myprojects, keeping its name, its settings and whatever it holds from
    elsewhere. A monitor that was playing it starts a fresh pass: its deck in
@@ -143,6 +146,29 @@ def _items(playlist) -> list[str]:
     return [i for i in playlist.get("items") or [] if isinstance(i, str)]
 
 
+def find_playlists_any(config: dict, destination: str,
+                       sets: list[set[str]]) -> list[Found]:
+    """The playlists of the first set of folders that has any."""
+    for rotating in sets:
+        found = find_playlists(config, destination, rotating)
+        if found:
+            return found
+    return []
+
+
+def recent_batches(runs, count: int = 3) -> list[set[str]]:
+    """The folders the newest runs moved in, one set each, newest first, lower
+    case: what the rotation's playlist was made of before the last rebuilds."""
+    batches = []
+    for record in runs:
+        moved = {str(n).lower() for n in getattr(record, "moved", []) or []}
+        if moved:
+            batches.append(moved)
+            if len(batches) >= count:
+                break
+    return batches
+
+
 def find_playlists(config: dict, destination: str, rotating: set[str]) -> list[Found]:
     """Every playlist, saved or running, that belongs to the rotation."""
     found: list[Found] = []
@@ -246,13 +272,25 @@ def _replace(path: Path, data: bytes) -> None:
 
 # ---- Around a rotation ----------------------------------------------------------
 
+# The three stages, as the done / total of every event: closing Wallpaper
+# Engine (or finding it closed) and reading its playlists; rewriting them;
+# starting it again.
+STAGES = ("close", "rewrite", "start")
+
+
 @dataclass
 class PlaylistRefresh:
     """Closes Wallpaper Engine before a rotation, points it at the new set after.
 
     prepare() before the files move, finish() after — always, even when the
     rotation failed or was stopped, because finish() is what starts Wallpaper
-    Engine again.
+    Engine again. On its own, prepare() then finish(completed=True) is the
+    "Rebuild playlist now" of the Rotator and the Creator.
+
+    Afterwards: `summary` is what to tell the user (every warning, and the
+    playlist rebuilt), `problems` the warnings and errors alone, `rebuilt`
+    whether a playlist was rewritten, and `restarted` whether Wallpaper Engine
+    came back (None when it was not running to begin with).
     """
     destination: str
     progress: Progress = _noop
@@ -262,11 +300,19 @@ class PlaylistRefresh:
     summary: list[str] = field(default_factory=list)
     # config.json as Wallpaper Engine left it on closing; what is rewritten.
     config: dict | None = None
+    # Folder sets to look for the playlist by, after what is in myprojects now.
+    candidates: list[set[str]] = field(default_factory=list)
+    problems: list[str] = field(default_factory=list)
+    rebuilt: bool = False
+    restarted: bool | None = None
+    stage: int = 0
 
     def _say(self, message: str, level: str = "INFO") -> None:
-        self.progress(ProgressEvent("playlist", message, level=level))
+        self.progress(ProgressEvent("playlist", message, self.stage, len(STAGES),
+                                    level=level))
         if level != "INFO":
             self.summary.append(message)
+            self.problems.append(message)
 
     def prepare(self) -> None:
         try:
@@ -276,6 +322,7 @@ class PlaylistRefresh:
             self._say(f"Wallpaper Engine's playlist could not be looked at: {e}", "ERROR")
 
     def _prepare(self) -> None:
+        self.stage = 0
         self.engine = engine_control.running()
         if self.engine is not None:
             self._say("Closing Wallpaper Engine, so its playlist can be rewritten...")
@@ -301,8 +348,10 @@ class PlaylistRefresh:
             self.config_path = None
             return
         self.config = config
-        self.found = find_playlists(config, self.destination,
-                                    rotating_folders(self.destination))
+        self.found = find_playlists_any(
+            config, self.destination,
+            [rotating_folders(self.destination), *self.candidates])
+        self.stage = 1
         if self.found:
             self._say("The rotation's playlist: "
                       + ", ".join(f.label for f in self.found) + ".")
@@ -311,24 +360,36 @@ class PlaylistRefresh:
                       "now. Build one there once from this rotation, and every rotation "
                       "after keeps it current.", "WARN")
 
-    def finish(self, completed: bool) -> None:
+    def finish(self, completed: bool, why: str | None = None) -> None:
+        """Rewrite the playlist when `completed`, and start Wallpaper Engine again
+        whatever happened. `why` is what to say instead of "the rotation did not
+        finish" when a playlist was found but is left as it was."""
+        self.stage = max(self.stage, 1)
         try:
             if not completed:
                 if self.found:
-                    self._say("The rotation did not finish, so the playlist was left "
-                              "as it was.", "WARN")
+                    self._say(why or "The rotation did not finish, so the playlist was "
+                              "left as it was.", "INFO" if why else "WARN")
+                    if not why:
+                        # Said, but the run's own ending says it: not a problem of
+                        # the playlist's.
+                        self.problems.pop()
             elif self.found and self.config is not None:
                 self._rewrite()
         except Exception as e:  # noqa: BLE001 — Wallpaper Engine must come back regardless
             self._say(f"Rewriting the playlist failed: {e}", "ERROR")
         finally:
+            self.stage = 2
             if self.engine is not None:
                 self._say("Starting Wallpaper Engine again...")
-                if engine_control.start(self.engine):
+                self.restarted = engine_control.start(self.engine)
+                self.stage = 3
+                if self.restarted:
                     self._say("Wallpaper Engine is running again.")
                 else:
                     self._say("Wallpaper Engine did not come back — start it by hand.",
                               "ERROR")
+            self.stage = 3
 
     def _rewrite(self) -> None:
         config_path, config = self.config_path, self.config
@@ -352,6 +413,7 @@ class PlaylistRefresh:
         if state is not None and restarted:
             _replace(state_path, restart_passes(state, config, restarted))
         _replace(config_path, dump_config(config))
+        self.rebuilt = True
         self._say(f"Playlist rewritten with {len(fresh)} wallpapers: "
                   + ", ".join(f.label for f in self.found) + ".")
         self.summary.append(f"Playlist rebuilt with {len(fresh)} wallpapers "
