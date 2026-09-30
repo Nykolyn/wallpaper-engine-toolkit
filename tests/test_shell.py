@@ -48,6 +48,7 @@ from app.main_window import (                                                   
 )
 from app.pages.base import LegacyPage, Page                                           # noqa: E402
 from app.pages.legacy import nav_for                                                  # noqa: E402
+from app.pages.rotator import nav_state as rotator_nav                             # noqa: E402
 from app.pages.overview import OverviewPage                                           # noqa: E402
 from app.pages.settings import SettingsPage                                           # noqa: E402
 from app.services.jobs import JobCenter                                               # noqa: E402
@@ -463,22 +464,22 @@ class Snap(dict):
 
 center = JobCenter()
 snap = Snap()
-check("a Rotator not read yet says nothing", nav_for("rotator", center, snap) == NavState())
+check("a Rotator not read yet says nothing", rotator_nav(center, snap) == NavState())
 snap[LAST_RUN] = Reading(None, 1.0)
-check("with no run yet: ready for run 1", nav_for("rotator", center, snap).text == "ready · run 1")
+check("with no run yet: ready for run 1", rotator_nav(center, snap).text == "ready · run 1")
 summary = RunSummary(38, "x", None, "clean", 1000, 998, 0, 0)
 snap[LAST_RUN] = Reading(summary, 1.0)
-check("after a run: ready for the next", nav_for("rotator", center, snap).text == "ready · run 39")
+check("after a run: ready for the next", rotator_nav(center, snap).text == "ready · run 39")
 done = center.start("rotator", "Run 38")
 done.finish("clean", "ok")
-check("after a clean run this session: clean", nav_for("rotator", center, snap)
+check("after a clean run this session: clean", rotator_nav(center, snap)
       == NavState.status("clean · run 38", "ok", below=True))
 snap[LAST_RUN] = Reading(RunSummary(38, "x", None, "problems", 998, 998, 0, 2), 1.0)
-check("after problems: how many, in warn", nav_for("rotator", center, snap)
+check("after problems: how many, in warn", rotator_nav(center, snap)
       == NavState.status("2 problems", "warn", below=True))
 going = center.start("rotator", "Run 39")
 going.update("moving", 412, 1000)
-check("while it runs: its bar", nav_for("rotator", center, snap) == NavState.progress(412, 1000))
+check("while it runs: its bar", rotator_nav(center, snap) == NavState.progress(412, 1000))
 check("the Creator and the Copier say idle", nav_for("creator", center, snap).text == "idle")
 snap[PLAYLIST] = Reading(playlist, 1.0)
 check("the Tracker has a page of its own now: the old tabs' nav leaves it alone",
@@ -538,7 +539,7 @@ s = make_window("rotator")
 s.load_fixture("running")
 wait(150)
 check("a fixture puts its jobs in the JobCenter: the status line runs",
-      s.status.state() == "running" and "step 2 of 4" in s.status.text())
+      s.status.state() == "running" and "step 3 of 4" in s.status.text())
 check("and pins the sidebar", s.sidebar.state("rotator") == NavState.progress(412, 1000)
       and s.sidebar.state("review") == NavState.badge(12))
 over = make_window("overview")

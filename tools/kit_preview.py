@@ -995,6 +995,17 @@ def panels_section() -> Section:
     section.body.addLayout(tones)
     section.body.addSpacing(8)
 
+    from app.ui.kit import IconDisc
+    discs = QHBoxLayout()
+    discs.setSpacing(14)
+    for icon, tone in (("check", "ok"), ("warn", "warn"), ("stop", "warn"), ("warn", "danger"),
+                       ("info", "neutral"), ("rotator", "accent")):
+        discs.addWidget(IconDisc(icon, tone))
+        discs.addWidget(text(f"IconDisc {icon} · {tone}", "type.monoSm", "text.lo"))
+    discs.addStretch(1)
+    section.body.addLayout(discs)
+    section.body.addSpacing(8)
+
     row = QHBoxLayout()
     row.setSpacing(14)
 
@@ -1117,7 +1128,8 @@ def playlist_model():
             if column == 0:
                 return fmt.DASH if i < PLAYLIST_SHOWN else f"{i - PLAYLIST_SHOWN + 2:03d}"
             if column == 1:
-                return title
+                # a glyph before a cell's words: the Rotator's lock on [protected]
+                return Cell(title, "text.lo", icon="lock") if i == PLAYLIST_SHOWN + 2 else title
             if column == 2:
                 return author
             if column == 3:
@@ -1138,6 +1150,10 @@ def playlist_model():
 
         def row_dimmed(self, item):
             return 0 < item[0] < PLAYLIST_SHOWN
+
+        def row_tone(self, item):
+            # a row marked in a hue: the Rotator's history marks the run just finished
+            return "ok" if item[0] == PLAYLIST_SHOWN + 1 else None
 
     n = len(TITLE_WORDS)
     rows = [(i, f"{TITLE_WORDS[(i * 7) % n]} {TITLE_WORDS[(i * 3 + 5) % n]}",

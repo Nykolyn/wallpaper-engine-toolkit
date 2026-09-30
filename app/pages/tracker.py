@@ -48,7 +48,7 @@ from typing import Callable
 
 from PySide6.QtCore import QObject, Qt, QTimer, Signal
 from PySide6.QtWidgets import (
-    QAbstractItemView, QHBoxLayout, QMenu, QScrollArea, QStackedLayout, QVBoxLayout, QWidget,
+    QAbstractItemView, QHBoxLayout, QMenu, QStackedLayout, QVBoxLayout, QWidget,
 )
 
 from .. import animations, external, theme
@@ -67,7 +67,7 @@ from ..ui.kit import (
 )
 from ..ui.kit.base import set_tone
 from ..ui.kit.cards import qualified_html
-from .base import Page
+from .base import Page, SideScroll
 
 _MINUTE_MS = 60_000
 REVEAL_AGAIN = 1.0             # seconds before the same row opens Explorer again
@@ -766,30 +766,6 @@ def _plain(rich: str) -> str:
     return QTextDocumentFragment.fromHtml(rich).toPlainText()
 
 
-class _SideScroll(QScrollArea):
-    """The left column, 330 px, scrolling when the window is too short for
-    it. The scroll bar is added beside the column rather than taken out of
-    it, so the cards keep the width they are drawn for."""
-
-    def __init__(self, column: QWidget, parent: QWidget | None = None):
-        super().__init__(parent)
-        self.setWidgetResizable(True)
-        self.setFrameShape(QScrollArea.NoFrame)
-        self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self.setWidget(column)
-        column.setFixedWidth(theme.TRACKER_SIDE)
-        self.verticalScrollBar().rangeChanged.connect(self._fit)
-        self._fit()
-
-    def _fit(self, *_args) -> None:
-        bar = self.verticalScrollBar()
-        extra = bar.sizeHint().width() if bar.maximum() > 0 else 0
-        self.setFixedWidth(theme.TRACKER_SIDE + extra)
-
-    def scrolls(self) -> bool:
-        return self.verticalScrollBar().maximum() > 0
-
-
 class TrackerPage(Page):
     key = "tracker"
     title = "Tracker"
@@ -863,7 +839,7 @@ class TrackerPage(Page):
         self._side.setSpacing(theme.PANEL_GAP)
         # Too short for the monitors and every note (a window 720 high), the
         # column scrolls, and the table beside it keeps its whole height.
-        self.side_scroll = _SideScroll(side)
+        self.side_scroll = SideScroll(side, theme.TRACKER_SIDE)
         self.lead_card = MonitorCard(detail=True)
         self._lead_menu = QMenu(self)
         self.lead_card.set_menu(self._lead_menu)

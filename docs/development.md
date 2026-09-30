@@ -18,8 +18,9 @@ app/
 ├── window_instance.py    one window; the requests a second launch or the tray send it
 ├── selfcheck.py          what a build can import and reach (--selfcheck, Settings)
 ├── pages/                the window's pages, in the order of the loop:
-│   ├── base.py           Page, and LegacyPage (an old tab in the frame)
+│   ├── base.py           Page, SideScroll (a page's 330 px left column), LegacyPage
 │   ├── overview.py       the loop at a glance
+│   ├── rotator.py        the next run, a run under way, how it ended; reserve, current, history
 │   ├── tracker.py        each monitor's playlist, counted down; its table
 │   ├── settings.py       what is set once
 │   └── legacy.py         what the old tabs' sidebar items say
@@ -69,11 +70,9 @@ app/
     │                       cards, tables, thumbs), feedback (log, toast,
     │                       statusline, dialogs), and the frame (shell)
     ├── copier_tab.py, creator_tab.py
-    ├── rotator_tab.py, cleanup_dialog.py
     ├── review_tab.py, gallery.py
     ├── credentials.py    the optional Steam key
-    ├── authors_dialog.py the authors database, its backups, restoring one
-    └── widgets.py        verbatim  wallpaper_rotator/app/ui/widgets.py
+    └── authors_dialog.py the authors database, its backups, restoring one
 ```
 
 `tools/kit_preview.py` and `tools/ui_snapshot.py` sit outside the app: a
@@ -117,11 +116,13 @@ bar, the badge and a warn or danger word.
 
 `LegacyPage(key, title, icon, tab, subtitle)` hosts one of the old tabs until
 its page step replaces it, and `app/pages/legacy.py` works out its sidebar
-item from the services (a job running, the Rotator's last run, the leading
-monitor's count). A tab with a `settings_requested` signal gets its
-**Change in Settings** wired to the Settings page. `build_pages(window)` makes
-them all: one Rotator `Config` is shared by the Rotator tab and the Settings
-page, whose Rotator fields are read-only while a Rotator job runs.
+item from the JobCenter (a job running, else idle). A tab with a
+`settings_requested` signal gets its **Change in Settings** wired to the
+Settings page. `build_pages(window)` makes them all: one Rotator `Config` is
+shared by the Rotator page and the Settings page, whose Rotator fields are
+read-only while a Rotator job runs; each tells the other when it saved
+(`SettingsPage.changed("rotator")` → `RotatorPage.config_changed()`,
+`RotatorPage.config_edited` → `SettingsPage.show_rotator()`).
 
 The status line reads the `JobCenter` (`StatusBinding`): the job that leads,
 its phase, bar and `412 / 1 000 · 41%`, and **Show**, which goes to
@@ -190,6 +191,62 @@ did: a new cycle and rebuilding from file times (`Tracker.reset` /
 `finished`, `restarted`, `we-off`, `single-monitor`, `no-config`,
 `no-playlist`); `Page.frame_fixture(state)` names the frame's state each goes
 with, and its sidebar item and "Next in the loop" to match.
+
+**Rotator** (`app/pages/rotator.py`) is the next run, a run under way, or how
+one ended, on the left (`SideScroll`, 330 px), and a `Table` with three views
+on the right — Reserve, Current, History — which gives way to the run's
+`LogPanel` while it runs. `state` is `idle`, `running` or `done`. Its words are
+plain functions, which `tests/test_rotator_page.py` calls directly:
+`plan_rows` / `plan_captions` (the next run's steps from `Rotator.preview()`),
+`selection_line`, `protected_line`, `estimate_line`, `confirmation` (→ the
+start question: title, body, steps in the engine's order, notes),
+`broken_groups` / `broken_reason` / `broken_title` / `broken_body` (the
+checklist), `history_rows` (→ `HistoryRow`s; a run without a side-file entry
+gets its result from its record), `history_summary`, `history_csv`,
+`record_lines` (a run whose log was not kept), `done_steps`, `result_title`,
+`result_sentence`, `playlist_stale`, `tracker_note`, `nav_state` /
+`idle_nav`, the three subtitles, and `duplicates_confirmation`.
+`RunTracker` is a run under way as the page draws it: fed each
+`ProgressEvent`, it keeps the step, its count, what moved, returned, was set
+aside and failed (per step), the folder last moved and the playlist's fate;
+`finish(result)` ends it.
+
+- **Nothing about the reserve is read on the window's thread.** `read_facts`
+  (validate, preview, the playlists a rebuild would find, the estimate, the
+  duplicates count) and the check's `check_roots` run through `_Offload`, a
+  thread per piece handing its result to a callback; the tables are
+  `LibraryModel`s fed by `LibraryIndexWorker` — `loaded` (the cache), `listed`
+  (every name, so rows appear at once), `refreshed`, `authors`, `sized` —
+  which runs while the page is on screen and stops when it leaves, or when a
+  run starts. The visible rows' sizes are asked for once scrolling settles. The
+  Rotator's own small files (`history.json`, `run_meta.json`, a run's log) are
+  read on the window's thread when first needed, never in the constructor.
+- **A `LibraryModel` row is a folder name.** Everything else is looked up
+  when the row is painted — `FolderInfo`, the measured size, the author, the
+  history's `Usage` — so 33 000 names build in about 15 ms and a scroll step
+  paints in 2 ms at p95 (measured in the test, with every file call on the
+  window's thread made to fail). Its chip column fits `New`, and widens for
+  `Unidentified` only while a folder listed is one (`fit_chips`,
+  `Table.refresh_columns`).
+- **The flows** are the old tab's, one worker at a time and every question a
+  `ConfirmDialog`: Start → `check_roots` → `ReserveScanWorker(step=0)` →
+  `broken_dialog` → `CleanupWorker` → `read_facts` again → `start_dialog`
+  ("Start run N?") → `RotationWorker(check_finished=, started=)`. Also
+  `retry_failures` (`RetryWorker`), `rebuild_playlist`
+  (`PlaylistRebuildWorker`), and `DuplicatesDialog` (`DuplicatesListWorker`,
+  then `DuplicateActionWorker`). Each is a `begin("rotator", …, activity=…)`:
+  check, cleanup, run, retry, rebuild, duplicates_delete, duplicates_return.
+  Workers are kept in a module set until they finish (`_park`), so a page going
+  never takes a running thread with it. What used to be a message box is
+  `_say(tone, words)` — a toast, and a line in `page.messages` for tests; a
+  run that ends while another page is shown says so in a toast with **Show**.
+  `page._answer(dialog)` asks; tests put their own answer there.
+- Fixtures: `tests/fixtures/ui/rotator.json` (`idle`, `running`,
+  `done-clean`, `done-problems`, `current`, `confirm`, `broken`, `history`,
+  `will-reset`) — an invented reserve of 33 421 names from a word list on `X:`,
+  a history of a run a week, the next run's facts. `confirm` and `broken`
+  leave their dialog open as `page.fixture_dialog`, which `ui_snapshot`
+  draws over the window.
 
 **Window requests** (`window_instance`): a second launch or the tray sends one
 line — `show <page>`, which every version understands, or the command form
@@ -345,7 +402,8 @@ changed folders, carries a folder moved between the roots across without
 reading it, saves as it goes (a stopped walk resumes) and marks a root
 `complete` at the end; `measure(root, names)` adds sizes; `authors()` names
 workshop ids from Review's Steam cache, never Steam. `LibraryIndexWorker`
-does it all on a thread: `loaded` (what the file knew, at once), `progress`,
+does it all on a thread: `loaded` (what the file knew, at once), `listed`
+(every folder's name, as soon as the root is listed), `progress`,
 `refreshed`, `walked`, `authors`, then `sized` as it measures —
 `request_sizes(root, names)` first (the visible rows), then with
 `fill_sizes` the rest. 33 000 entries: 3.8 MB, saved in 40 ms, loaded in
@@ -373,9 +431,10 @@ for %f in (tests\test_*.py) do .venv\Scripts\python.exe %f
 | `test_tracker.py` | anchoring a cycle, rebuilding history, merging two writers, following the engine's deck, when to look |
 | `test_wallpaper_timer.py` | the PLPV0005 parser, the file watcher, the countdown, pause rules |
 | `test_playlist_refresh.py` | finding the rotation's playlist, refilling it, restarting one monitor's pass, the state file written back byte for byte |
-| `test_rotator_cleanup.py` | the reserve check and what it offers to delete; the duplicates listed with sizes, junctions not followed; a rotation from the tab logging to its own run file and side-file entry |
+| `test_rotator_cleanup.py` | the reserve check and what it offers to delete, ticked by default; the duplicates listed with sizes, junctions not followed; the Rotator page with its folders unset listing, checking, rotating and deleting nothing; a rotation from the page logging to its own run file and side-file entry |
+| `test_rotator_page.py` | the next run's steps and captions from `preview()`; the start question for a normal run, `[protected]` folders, duplicates and a reset; the broken-folders groups and their defaults; the history's rows (old runs without a side file), summary and CSV; a finished run's steps and sentences; the event → state machine; a run end to end on folders made here (check, clean-up, question, rotation, journal, log), stop after this step, retry, rebuild (Wallpaper Engine stood in for), a run's log read back, CSV export; 33 000 rows built, sorted and scrolled with every file call on the window's thread failing; every fixture |
 | `test_rotator_engine.py` | the steps and their order in a run, with and without the playlist, stopped after the return (folders and Wallpaper Engine's files read back) and after the move; retrying failures by step, one that still fails, one put right by hand, one from before the side file; the side file's round trip and tolerance; estimates; Rebuild playlist now; every history read back by 2.1.1's loader; a history, config or side file that does not read never saved over; library index v2 incremental, resumed, carried across, tolerant, measured, named, on its worker |
-| `test_rotator_history.py` | the history's snapshots, and a missing or unreadable one put back |
+| `test_rotator_history.py` | the history's snapshots, and a missing or unreadable one put back, and the Rotator page saying so |
 | `test_autostart.py` | the command line, the task XML, and the rename migration |
 | `test_theme.py` | every token parses, text stays legible on glass, fonts, shadows, the stylesheet fills in and ticks its check boxes |
 | `test_icons.py` | every icon draws, in the colour and at the size asked; unknown names raise |
@@ -487,7 +546,7 @@ in the template.
 
 `theme.apply(app)` sets Fusion, the palette, the font and the stylesheet, and
 reads Windows' animation switch. The old tabs' helpers (`label_style`,
-`console_style`, `card_style`, `status_color`, `level_color`, `kind_color`,
+`console_style`, `card_style`, `status_color`, `kind_color`,
 `make_accent`) are mapped onto the tokens until the pages that call them are
 replaced.
 
@@ -552,7 +611,7 @@ Overview are built from it; the Review gallery uses its preview loader.
 | `inputs.py` | `TextInput` (`search=True`, `set_error(message)`), `SpinBox` (mono, `1 000` with a no-break space), `Dropdown` (`add_item(text, data, count=)`, `add_section`, `add_separator`, `prefix="SORT"`) and its list, `DropdownPopup` |
 | `selection.py` | `Checkbox`, `Toggle` (`knob_position`), `SegmentedControl` (two or three segments, `changed`), `Pagination` (`page_changed`), `page_numbers(pages, current)` |
 | `chips.py` | `Chip(variant, text=None)` in exactly fourteen variants; `chip_pixmap` and `chip_size` for delegates |
-| `panels.py` | `GlassPanel` (`tone=`, `padding=`), `Overline`, `Rule` (a hairline between two parts of a panel), `CardTitle`, `Callout` (`tone=`, `title=`, `add_action`), `MetricStrip` |
+| `panels.py` | `GlassPanel` (`tone=`, `padding=`), `Overline`, `Rule` (a hairline between two parts of a panel), `IconDisc` (a glyph in a tinted circle before a panel's title: a clean run's tick), `CardTitle`, `Callout` (`tone=`, `title=`, `add_action`), `MetricStrip` |
 | `base.py` | the state model and the surfaces, below; `label(text, type, tone)`, `Glyph`, `Elided` (one line cut with an ellipsis, whole in its tool tip) and `LiveDot` (the pulse of a running job) |
 | `format.py` | how every number is written: `count` (`33 421`), `size` (`1.1 GB`), `duration` (`4 min 12 s`), `left` (`≈6 min left`), `approx` / `reconstructed` (`≈`, `~`), `clock` (`13:47`, or `13:47:02` for a log line), `date_table`, `date_activity`, `date_long`, `day`, `ratio` (`4 / 201`, `4/201`, `412 of 1 000`), `percent`. Pages never format numbers themselves. |
 | `paths.py` | `PathField`: empty (type, paste or Browse…), compact (path elided from the left, ✓, a folder button), invalid ("folder not found"), disabled; a drop target. `path_changed` for the user's choice, `validity_changed` when a worker has checked the folder. `kind="file"` (with `file_filter=`) holds one file instead: Wallpaper Engine's `config.json`. |
@@ -592,8 +651,13 @@ the parent's own background.
 left), `align`, `mono` (or a `font` token), `tone`, `sortable`, and a `thumb`
 size or `icon` drawn before the text. A subclass says what a cell shows
 (`cell(item, column)`: a str, a `Cell` for another tone, a `ChipCell`), what
-it sorts by (`sort_key`), where a row's preview is (`thumb_source`) and
-whether it is dimmed (`row_dimmed`). `set_rows(items, groups=[Group(...)],
+it sorts by (`sort_key`), where a row's preview is (`thumb_source`),
+whether it is dimmed (`row_dimmed`) and whether it is marked in a hue
+(`row_tone`: its soft ground and an edge down the left, as a selected row is
+in accent — the Rotator's history marks the run just finished). A `Cell`'s
+`icon` draws a glyph before its words in its tone (the lock on a
+`[protected]` folder). `Table.refresh_columns()` lays the header out again
+when a model's column widths change. `set_rows(items, groups=[Group(...)],
 group_of=fn)` puts header rows over runs of items ("ALREADY SHOWN THIS CYCLE ·
 4 of 201"); sorting stays inside each group, a filter is `set_filter(fn)`, and
 the zebra restarts under each header. The model holds a list of ints, not a
@@ -624,11 +688,13 @@ message)` (`time` a datetime, a timestamp, text, or None for now), or
 `extend(lines)` for many at once, which the view hears as one insert. Its
 `LogModel` keeps the last 5 000 lines in a ring: past the cap the oldest line
 leaves the front and nothing behind it moves. Kinds take the console's
-colours: moved and done ok, skip and dupe warn, fail and error err, step,
-start and info mid; any other kind is written as it is, in mid. The console
+colours: moved, returned, deleted and done ok, skip, dupe and stop warn, fail
+and error err, step, start and info mid; any other kind (`step 2`) is written
+as it is, in mid. The console
 follows the newest line while it is at the bottom and stops the moment you
 scroll up, keeping the lines you read where they are even as the oldest leave
-the ring; back at the bottom it follows again. `copy()` (the button, or
+the ring; back at the bottom it follows again. The kind column is as wide as the
+widest kind a job writes, `returned` and `step 2` included. `copy()` (the button, or
 Ctrl+C) takes the selected lines, or every line shown. Measured offscreen:
 30 000 lines appended one by one past the cap, about 80 µs each; 5 000 at
 once, 21 ms; a repaint of the console, 3.7 ms. `set_expanded(False)` closes
@@ -743,12 +809,15 @@ empty) as jobs put in the JobCenter, a reading put in the Snapshot
 (`Snapshot.put`), sidebar items pinned to a state and the line under Next in
 the loop; `MainWindow.load_fixture(state)` applies one, then the page's own
 `load_fixture` (its state of that name, or its first). A page with more to
-make up keeps it in a file of its own: `overview.json`, `tracker.json`. A
+make up keeps it in a file of its own: `overview.json`, `tracker.json`,
+`rotator.json`. A
 page's own states (`--list` prints them per page: the Tracker's `tracking`,
 `paused`, `disconnected`, `finished`, …) are asked for the same way; the page's
 `frame_fixture(state)` says which of the frame's states goes with each, and
 what of it the page changes (its sidebar item, "Next in the loop").
-Folders in fixtures are on a drive `X:` the tool reports as present. `--scale
+A page state that opens a dialog (the Rotator's `confirm` and `broken`) keeps it
+as `page.fixture_dialog`; the tool draws its grab over the window's, scrim and
+all. Folders in fixtures are on a drive `X:` the tool reports as present. `--scale
 1.5` is the user's 150 %; the PNG is then 1.5 × the size.
 
 ## Conventions

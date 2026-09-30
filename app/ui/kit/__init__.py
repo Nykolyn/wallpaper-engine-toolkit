@@ -27,8 +27,8 @@ from .icons import NAMES as ICON_NAMES, icon, pixmap, svg
 from .inputs import Dropdown, DropdownPopup, SpinBox, TextInput
 from .log import LogLine, LogModel, LogPanel, LogView, ProblemsFilter
 from .panels import (
-    ActivityLine, Callout, CardTitle, EmptyState, GlassPanel, MetricStrip, Overline, Rule,
-    StepList,
+    ActivityLine, Callout, CardTitle, EmptyState, GlassPanel, IconDisc, MetricStrip, Overline,
+    Rule, StepList,
 )
 from .paths import PathField
 from .progress import ProgressBar, ProgressRing
@@ -54,7 +54,7 @@ __all__ = [
     "TextInput", "SpinBox", "Dropdown", "DropdownPopup",
     "Checkbox", "Toggle", "SegmentedControl", "Pagination", "page_numbers",
     "Chip", "chip_pixmap", "chip_size",
-    "GlassPanel", "Overline", "Rule", "CardTitle", "Callout", "MetricStrip",
+    "GlassPanel", "Overline", "Rule", "CardTitle", "Callout", "MetricStrip", "IconDisc",
     "EmptyState", "StepList", "ActivityLine",
     "PathField", "TagSelect", "TagPopup",
     "ProgressBar", "ProgressRing",

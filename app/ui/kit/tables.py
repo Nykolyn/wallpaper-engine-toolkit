@@ -279,10 +279,13 @@ class Column:
 
 @dataclass(frozen=True)
 class Cell:
-    """A cell's text in a tone of its own ("on screen" in accent), or strong."""
+    """A cell's text in a tone of its own ("on screen" in accent), or strong;
+    `icon` is a glyph before it, in the same tone (a lock on a [protected]
+    folder)."""
     text: str
     tone: str | None = None
     strong: bool = False
+    icon: str | None = None
 
 
 @dataclass(frozen=True)
@@ -326,8 +329,9 @@ class TableModel(QAbstractTableModel):
     """The rows of a Table. Give it the items and the columns; override
     `cell(item, column)` to say what each cell shows (the default indexes the
     item like a tuple), `sort_key(item, column)` to sort by something other
-    than the text, `thumb_source(item)` for a thumb column's folder, and
-    `row_dimmed(item)` for rows drawn faint.
+    than the text, `thumb_source(item)` for a thumb column's folder,
+    `row_dimmed(item)` for rows drawn faint, and `row_tone(item)` for a row
+    marked in a hue ("ok": the run that just finished cleanly).
 
     Groups: `set_rows(items, groups=[Group(...)], group_of=fn)` puts each item
     under the group whose key `group_of(item)` returns, in the order the
@@ -370,6 +374,11 @@ class TableModel(QAbstractTableModel):
 
     def row_dimmed(self, item) -> bool:
         return False
+
+    def row_tone(self, item) -> str | None:
+        """A hue the row is marked in, as a selected row is in accent: its soft
+        ground and its edge down the left. "ok", "warn", "danger" or None."""
+        return None
 
     # -- the rows
 
@@ -679,13 +688,15 @@ class RowDelegate(QStyledItemDelegate):
         if item is None:
             self.paint_group(painter, QRectF(rect), model.group_at(row), model.group_note(row))
             return
-        fill = ("accent.soft" if selected else "surface.raised" if hovered
+        tone = None if selected else model.row_tone(item)
+        fill = ("accent.soft" if selected else f"{tone}.soft" if tone
+                else "surface.raised" if hovered
                 else "surface.zebra" if model.zebra(row) else None)
         if fill:
             painter.fillRect(rect, self.colour(fill))
-        if selected:
+        if selected or tone:
             painter.fillRect(rect.x(), rect.y(), theme.TABLE_SELECT_EDGE, rect.height(),
-                             self.colour("accent"))
+                             self.colour(tone or "accent"))
         if focused:
             paint_row_ground(painter, QRectF(rect), focused=True)
             self._font = None
@@ -750,8 +761,14 @@ class RowDelegate(QStyledItemDelegate):
             return
         box = QRectF(x, top, right - x, height)
         if isinstance(value, Cell):
+            tone = value.tone or column.tone
+            if value.icon:
+                size = theme.TABLE_ICON
+                painter.drawPixmap(QPointF(x, middle - size / 2),
+                                   icons.pixmap(value.icon, tone, size, self._dpr))
+                box.setLeft(x + size + theme.TABLE_ICON_GAP)
             self._text(painter, box, value.text, column.type_token(),
-                       value.tone or column.tone, align, column.elide, value.strong)
+                       tone, align, column.elide, value.strong)
         elif value is not None:
             self._text(painter, box, str(value), column.type_token(), column.tone,
                        align, column.elide)
@@ -929,6 +946,13 @@ class Table(QTableView):
                 header.setSectionResizeMode(c, QHeaderView.Fixed)
                 header.resizeSection(c, column.width + left + right)
         self._spans = None
+
+    def refresh_columns(self) -> None:
+        """The model's columns changed their widths (a chip column widened for
+        a longer chip): lay the header out again."""
+        self._apply_columns()
+        self.horizontalHeader().viewport().update()
+        self.viewport().update()
 
     @staticmethod
     def _pads(c: int, last: int) -> tuple[int, int]:

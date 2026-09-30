@@ -56,6 +56,8 @@ ACTIVITIES = {
     "cleanup": ("rotator", "deleting the folders ticked after that check"),
     "duplicates_delete": ("rotator", "deleting folders in the duplicates folder"),
     "duplicates_return": ("rotator", "moving them back into the reserve"),
+    "retry": ("rotator", "trying a run's failures again, in the steps they failed in"),
+    "rebuild": ("rotator", "rebuilding the rotation's playlist in Wallpaper Engine on its own"),
     "scan": ("review", "a Review scan of a Wallpaper Engine folder"),
     "count": ("review", "counting what each author has published since the last visit"),
     "database": ("review", "writing the review to the authors database"),

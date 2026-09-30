@@ -3,6 +3,7 @@
 - base: `Page`, what the frame needs from a page, and `LegacyPage`, an old
   tab in the new frame.
 - overview: the loop at a glance.
+- rotator: a batch of folders swapped between the reserve and myprojects.
 - tracker: each monitor's playlist, counted down.
 - settings: what is set once.
 - legacy: what the old tabs' sidebar items say, until their pages say it.
@@ -22,23 +23,21 @@ def build_pages(window) -> list[Page]:
     from ..ui.copier_tab import CopierTab
     from ..ui.creator_tab import CreatorTab
     from ..ui.review_tab import ReviewTab
-    from ..ui.rotator_tab import RotatorTab
     from .legacy import LegacyNav
     from .overview import OverviewPage
+    from .rotator import RotatorPage
     from .settings import SettingsPage
     from .tracker import TrackerPage
 
     settings, feed, services = window.settings, window.feed, window.services
-    # One Config for the Rotator tab and the Settings page: what one saves the
+    # One Config for the Rotator page and the Settings page: what one saves the
     # other has, and a run is never handed a config the page is changing
-    # (the page's Rotator fields are read-only while it runs).
+    # (the Settings page's Rotator fields are read-only while it runs).
     config = Config.load()
-    rotator = RotatorTab(config)
     review = ReviewTab(settings)
     creator = CreatorTab(settings)
     copier = CopierTab(settings)
-    rotator_page = LegacyPage("rotator", "Rotator", "rotator", rotator,
-                              "Swaps a batch of folders between the reserve and myprojects")
+    rotator_page = RotatorPage(config, services)
     tracker_page = TrackerPage(feed, services, settings=settings)
     legacy = [
         LegacyPage("review", "Review", "review", review,
@@ -54,9 +53,10 @@ def build_pages(window) -> list[Page]:
 
     def changed(what: str) -> None:
         if what == "rotator":
-            rotator.refresh_all()
+            rotator_page.config_changed()
 
     settings_page.changed.connect(changed)
-    window._legacy_nav = LegacyNav([rotator_page, *legacy], services, window)
+    rotator_page.config_edited.connect(settings_page.show_rotator)
+    window._legacy_nav = LegacyNav(legacy, services, window)
     return [OverviewPage(services, feed, settings=settings), rotator_page, tracker_page,
             *legacy, settings_page]

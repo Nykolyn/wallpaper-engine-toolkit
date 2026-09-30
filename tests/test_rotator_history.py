@@ -180,42 +180,48 @@ before = len(rc.snapshots())
 empty.save()
 check("an empty history is saved but not snapshotted", len(rc.snapshots()) == before)
 
-# ---- the tab says so ----------------------------------------------------------------------
+# ---- the page says so ---------------------------------------------------------------------
 
-print("-- the History tab --")
+print("-- the Rotator page --")
 import os                                                   # noqa: E402
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PySide6.QtWidgets import QApplication                  # noqa: E402
 qt = QApplication.instance() or QApplication(sys.argv)
 from app import theme                                       # noqa: E402
+from app.engines.library_index import LibraryIndex          # noqa: E402
+from app.pages.rotator import RotatorPage                   # noqa: E402
 theme.apply(qt)
-from app.ui import rotator_tab                              # noqa: E402
 
-def tab_config(folder: Path) -> None:
-    """Folders of its own, so the tab lists nothing on this machine."""
+
+def page_for(folder: Path) -> RotatorPage:
+    """Folders of its own, so the page lists nothing on this machine; the
+    history is read as it is when the page is first shown."""
     for name in ("reserve", "myprojects", "dupes"):
         (folder / name).mkdir()
-    Config(source=str(folder / "reserve"), destination=str(folder / "myprojects"),
-           duplicates=str(folder / "dupes")).save()
+    config = Config(source=str(folder / "reserve"), destination=str(folder / "myprojects"),
+                    duplicates=str(folder / "dupes"))
+    config.save()
+    page = RotatorPage(config, index=LibraryIndex(folder / "library_meta.json"))
+    page._ensure_loaded()
+    page.show_view("history")
+    page._render()
+    return page
 
 
 folder = fresh("tab")
-tab_config(folder)
 History([]).add(run(1))
 rc.HISTORY_PATH.unlink()
-tab = rotator_tab.RotatorTab()
-check("a history put back from a snapshot is shown with the notice above it",
-      tab.history_summary.text() == "History: 1 runs"
-      and not tab.history_notice.isHidden()
-      and "missing" in tab.history_notice.text())
-tab.deleteLater()
+page = page_for(folder)
+check("a history put back from a snapshot is shown, with the notice over the next run",
+      page.models["history"].item_rows() == 1 and page.summary.items()[0] == "1 run"
+      and "missing" in page.texts()["next"]["notice"])
+page.deleteLater()
 
 folder = fresh("tab-quiet")
-tab_config(folder)
 History([]).add(run(1))
-tab = rotator_tab.RotatorTab()
-check("a history that simply read shows no notice", tab.history_notice.isHidden())
-tab.deleteLater()
+page = page_for(folder)
+check("a history that simply read shows no notice", page.texts()["next"]["notice"] == "")
+page.deleteLater()
 
 # ---- the Rotator's settings -------------------------------------------------------------
 

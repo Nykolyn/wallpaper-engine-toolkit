@@ -49,6 +49,8 @@ def run() -> tuple[bool, str]:
                         ("app.services",
                          "the running jobs, the activity journal and the log files"),
                         ("app.pages", "the window's pages: Overview, Settings, the old tabs"),
+                        ("app.pages.rotator",
+                         "the Rotator page: the next run, a run under way, the history"),
                         ("app.pages.tracker",
                          "the Tracker page, its titles and authors read off the window's thread"),
                         ("app.window_frame", "the window's own title bar")):

@@ -8,7 +8,8 @@ ActivityLine.
   for one with problems). It is also a surface: the controls on it draw their
   shadows and focus rings on it.
 - Overline is a section label ("THE FOUR STEPS"); Rule is the hairline
-  between two parts of a panel.
+  between two parts of a panel; IconDisc a glyph in a tinted circle before a
+  panel's title (the tick of a clean run).
 - CardTitle is a card's title, a quieter subtitle beside it, and actions on
   the right.
 - Callout is a tinted note inside a panel: an icon, an optional title, the
@@ -120,6 +121,57 @@ class Rule(QWidget):
 
     def paintEvent(self, event) -> None:        # noqa: N802 - Qt's name
         QPainter(self).fillRect(QRectF(self.rect()), theme.color("border.hairline"))
+
+
+# tone → (ground, edge, icon colour)
+DISC_TONES: dict[str, tuple[str, str, str]] = {
+    "neutral": ("surface.tile", "border.hairline", "text.mid"),
+    "ok": ("ok.soft", "ok.line", "ok"),
+    "warn": ("warn.soft", "warn.line", "warn"),
+    "danger": ("danger.soft", "danger.line", "danger"),
+    "accent": ("accent.soft", "accent.line", "accent.hover"),
+}
+
+
+class IconDisc(QWidget):
+    """A glyph in a tinted circle, before a panel's title: the tick of a run
+    that finished cleanly, the warning of one with problems."""
+
+    def __init__(self, icon: str = "check", tone: str = "ok", parent: QWidget | None = None, *,
+                 size: int = theme.RUN_DISC, icon_size: int = theme.RUN_DISC_ICON):
+        super().__init__(parent)
+        self._icon_size = icon_size
+        self.setFixedSize(size, size)
+        self._icon, self._tone = "", ""
+        self.set(icon, tone)
+
+    def icon(self) -> str:
+        return self._icon
+
+    def tone(self) -> str:
+        return self._tone
+
+    def set(self, icon: str | None = None, tone: str | None = None) -> None:
+        if icon is not None:
+            icons.svg(icon)
+            self._icon = icon
+        if tone is not None:
+            if tone not in DISC_TONES:
+                raise KeyError(f"no disc tone {tone!r}; there are {', '.join(DISC_TONES)}")
+            self._tone = tone
+        self.update()
+
+    def paintEvent(self, event) -> None:        # noqa: N802 - Qt's name
+        ground, edge, colour = DISC_TONES[self._tone]
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        box = QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5)
+        painter.setPen(QPen(theme.color(edge), 1))
+        painter.setBrush(theme.color(ground))
+        painter.drawEllipse(box)
+        size = self._icon_size
+        painter.drawPixmap(QPointF((self.width() - size) / 2, (self.height() - size) / 2),
+                           icons.pixmap(self._icon, colour, size, self.devicePixelRatioF()))
 
 
 class Overline(QLabel):

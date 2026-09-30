@@ -43,7 +43,7 @@
   "running": {
     "jobs": [
       {"tool": "rotator", "title": "Run 39",
-       "phase": "step 2 of 4 — moving 1 000 folders into myprojects", "done": 412, "total": 1000}
+       "phase": "step 3 of 4 — moving 1 000 folders into myprojects", "done": 412, "total": 1000}
     ],
     "nav": {
       "rotator": {"kind": "progress", "done": 412, "total": 1000},

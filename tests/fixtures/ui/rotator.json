@@ -1,0 +1,112 @@
+{
+  "//": "Made-up states of the Rotator page for tools/ui_snapshot.py and tests/test_rotator_page.py. The page builds its reserve, myprojects and history from these (app/pages/rotator.py, build_fixture): folder names from the word list, the first of the reserve used and the last 'never_used' not, a run a week with its side-file entry from 'meta_from' on. Nothing here is anyone's data: every name is invented and the folders are on X:, which no machine here has. 'now' is today at that time; 'frame' is the state of shell.json the frame shows.",
+  "now": "13:44",
+  "config": {
+    "source": "X:\\wallpaper_reserve",
+    "destination": "X:\\Steam\\steamapps\\common\\wallpaper_engine\\projects\\myprojects",
+    "duplicates": "X:\\duplicated_wallpapers",
+    "count": 1000,
+    "refresh_playlist": true
+  },
+  "words": ["Harbour", "Lights", "Paper", "Cranes", "Tide", "Pine", "Mist", "Copper", "Field",
+            "Glass", "River", "Moth", "Orbit", "Signal", "Quiet", "Ember", "Salt", "Cedar",
+            "Velvet", "Dune", "Hollow", "Prism", "Linen", "Marble", "Fog"],
+  "authors": ["Marlow", "tidewright", "orbit_lab", "North Room", "Pale Harbour", "Lumen Six",
+              "Ferro Works", "Quill", "ashgrove", "Studio Twelve"],
+  "kinds": ["scene", "video", "web"],
+  "reserve": {"count": 33421, "never_used": 8204},
+  "current": {"count": 1000, "protected": 2},
+  "history": {
+    "runs": 38, "every_days": 7, "time": "09:02", "batch": 1000, "meta_from": 31,
+    "special": {
+      "30": {"failed": 1},
+      "32": {"dupes": 5},
+      "34": {"dupes": 2},
+      "35": {"result": "stopped", "moved": 0, "returned": 412, "seconds": 240,
+             "stopped_after": "return", "playlist_rebuilt": false},
+      "37": {"dupes": 1}
+    }
+  },
+  "facts": {
+    "preview": {"returning": 998, "duplicates_expected": 2, "count": 1000, "used": 25217},
+    "labels": ["custom"],
+    "estimate": 900,
+    "duplicates": 3
+  },
+  "broken": [
+    {"name": "harbour_lights-00127", "reason": "empty folder"},
+    {"name": "Paper Cranes 2210", "reason": "only Wallpaper Engine's shader cache", "files": 14, "size": 2940},
+    {"name": "copper-field-3312", "reason": "empty folder"},
+    {"name": "TideMist_0415", "reason": "no project.json", "files": 1, "size": 4096},
+    {"name": "orbit_signal-05531", "reason": "empty folder"},
+    {"name": "Quiet Ember 6620", "reason": "only Wallpaper Engine's shader cache", "files": 9, "size": 1733},
+    {"name": "salt-cedar-7781", "reason": "empty folder"},
+    {"name": "VelvetDune_0902", "reason": "no project.json", "files": 2, "size": 2048},
+    {"name": "hollow_prism-09944", "reason": "empty folder"},
+    {"name": "Linen Marble 1180", "reason": "no project.json, but media inside", "media": true,
+     "files": 3, "size": 2040109465, "entries": ["linen_marble.mp4", "preview.jpg", "notes.txt"]},
+    {"name": "fog-harbour-2046", "reason": "no project.json, but media inside", "media": true,
+     "files": 3, "size": 985661440, "entries": ["fog.webm", "frame_01.png", "frame_02.png"]},
+    {"name": "Moth River 3907", "reason": "no project.json, but media inside", "media": true,
+     "files": 12, "size": 399507456,
+     "entries": ["01.jpg", "02.jpg", "03.jpg", "04.jpg", "05.jpg", "06.jpg", "07.jpg", "08.jpg",
+                 "09.jpg", "10.jpg", "11.jpg", "12.jpg"]}
+  ],
+  "states": {
+    "idle": {"frame": "idle", "last_started": "13:22",
+             "special": {"38": {"seconds": 960, "step_times": {"check": 1, "return": 5, "move": 14, "playlist": 16}}}},
+    "current": {"frame": "idle", "view": "current", "last_started": "13:22",
+                "special": {"38": {"seconds": 960}}},
+    "history": {"frame": "idle", "view": "history", "last_started": "13:22",
+                "special": {"38": {"seconds": 960}}},
+    "will-reset": {"frame": "idle", "never_used": 640, "last_started": "13:22",
+                   "special": {"38": {"seconds": 960}}},
+    "confirm": {"frame": "idle", "dialog": "confirm", "last_started": "13:22",
+                "special": {"38": {"seconds": 960}}},
+    "broken": {"frame": "idle", "dialog": "broken", "last_started": "13:22",
+               "special": {"38": {"seconds": 960}}},
+    "running": {
+      "frame": "running", "last_started": "09:02",
+      "running": {
+        "id": "f0000039", "started": "13:41", "step": 2, "ended": ["13:41", "13:46"],
+        "done": 412, "total": 1000, "moved": 412, "returned": 998, "dupes": 2,
+        "fails": [0, 2, 0, 0], "broken": 0,
+        "activity": "glass_river-33821 → myprojects", "left": "≈6 min left",
+        "log": [
+          ["13:41:00", "start", "Run 39"],
+          ["13:41:02", "step 1", "Checking 34 423 folders for a project.json..."],
+          ["13:41:40", "step 1", "0 of 34 423 folders cannot be shown by Wallpaper Engine."],
+          ["13:41:41", "info", "Closing Wallpaper Engine, so its playlist can be rewritten..."],
+          ["13:41:43", "skip", "Skipping 2 protected folder(s) ('[protected]' prefix) — left in myprojects."],
+          ["13:41:43", "step 2", "Returning 1000 folders from myprojects..."],
+          ["13:44:12", "dupe", "DUPLICATE: Signal Quiet 34101 already in reserve -> duplicated_wallpapers"],
+          ["13:45:30", "fail", "Failed to return Marble Fog 34260: the file is in use"],
+          ["13:45:31", "fail", "Failed to return cedar-velvet-34299: the file is in use"],
+          ["13:46:03", "step 2", "998 folders returned to the reserve, 2 set aside as duplicates, 2 left behind"],
+          ["13:46:04", "step 3", "Moving 1000 folders into myprojects..."],
+          ["13:46:22", "moved", "Moved harbour_tide-00404"],
+          ["13:46:31", "moved", "Moved Pine Copper 12877"],
+          ["13:46:44", "moved", "Moved OrbitSalt_2211"],
+          ["13:46:57", "moved", "Moved lights-moth-7735"],
+          ["13:46:58", "moved", "Moved Dune Hollow 30081"],
+          ["13:47:01", "moved", "Moved prism_linen-18840"],
+          ["13:47:02", "moved", "Moved glass_river-33821"]
+        ]
+      }
+    },
+    "done-clean": {
+      "frame": "clean", "runs": 39, "last_started": "09:02",
+      "special": {"39": {"seconds": 960, "step_times": {"check": 1, "return": 2, "move": 12, "playlist": 16}}},
+      "done": {"check": [0, 0], "tracker": {"total": 1000, "days": 7}}
+    },
+    "done-problems": {
+      "frame": "problems", "last_started": "13:41",
+      "special": {"38": {"returned": 998, "dupes": 3, "failed": 2, "failed_in": "return",
+                         "seconds": 1020, "result": "problems", "playlist_rebuilt": false,
+                         "playlist": ["Wallpaper Engine did not come back — start it by hand."],
+                         "playlist_problem": "Wallpaper Engine did not come back — start it by hand.",
+                         "step_times": {"check": 1, "return": 5, "move": 17, "playlist": 17}}},
+      "done": {"check": [0, 0]}
+    }
+  }
+}

@@ -6,6 +6,82 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [3.5.0] - 2026-10-01
+
+The tenth step of the redesign: the Rotator's page. Its five inner tabs are
+gone; the page is the next run on the left and the reserve, what is in
+myprojects and the history in one table on the right, and a run in each of its
+states. See [the Rotator](docs/rotator.md#the-page).
+
+### Changed
+
+- **The Rotator is a page of its own.** Before a run, **Next run** shows the
+  two folders, the batch (changeable here as on the Settings page), how the
+  batch is drawn — *Drawn at random from 8 204 never used*, or a warning when
+  the history is about to start over — the playlist switch, and how many
+  `[protected]` folders stay; **What a run does** lists the run's steps in the
+  engine's order, each with what it will do this time, and *Takes about 15
+  min* once earlier runs say so.
+- **A run shows itself as it goes**: which step of how many, the count and a
+  ring, *≈6 min left* from the live rate, the folder last moved, each step's
+  result and time as it ends, and the counts — with the run's log beside it,
+  All or Problems, written to its own file. The sidebar shows the run's bar
+  and percentage, then *clean · run 39* or *2 problems*.
+- **A finished run says how it ended**, in its colour — cleanly, with
+  problems, stopped, or failed — with what moved and what did not, its steps
+  and their times, and the history beside it with the run marked. After a
+  clean run with the playlist rebuilt, it says the Tracker is counting again
+  and when it will be time to rotate.
+- **The broken-folders check asks in one grouped question**: *Safe to
+  delete*, ticked, and *Holds media*, in warn and not ticked, each row saying
+  what is in the folder and its size; the button counts what is ticked
+  (**Delete 9 permanently**) and Enter goes to Cancel. The list of each
+  folder's files and the per-folder Explorer button are gone: a row says what
+  kinds of file it holds, and **Open folder** opens the library.
+- **"Start run 39?"** replaces the old question: what goes back and what is
+  drawn, the steps still to come, and the `[protected]` folders, the
+  duplicates, a history reset and anything wrong with the history as notes.
+- **The Reserve and Current views** list every folder with its preview,
+  author, type, size and when a run last moved it in, **New** for the ones the
+  next run may draw and **Unidentified** for one without a readable
+  `project.json`, and a lock on `[protected]` ones. Rows come as soon as the
+  folders are listed; the rest fills in from a cache
+  (`data/library_meta.json`), measured on a thread while the page is open,
+  the rows on screen first.
+- **Stop is "Stop after this step"** (gate G7): the step under way finishes
+  and the run stops there. The check still stops at once.
+- **The messages that were message boxes are toasts**, and a run that ends
+  while another page is shown says so there, with **Show**.
+- The LogPanel's kind column fits `returned`, `deleted` and `step 2`, and
+  colours `returned` and `deleted` as done, `stop` as a warning.
+
+### Added
+
+- **Retry the N failures**: the folders a run could not move are tried again
+  in the step they failed in, after a question naming them.
+- **Rebuild playlist now**, when a run did not rebuild Wallpaper Engine's
+  playlist — it failed to, or the run stopped or failed first.
+- **The History view**: a row per run with when it started, how long it took,
+  what it moved, returned and set aside, and how it ended; **Log** reads the
+  run's log back — or, for a run from before run logs, what its record says it
+  moved — and **Export as CSV** saves the lot.
+- **Duplicates · N** in the header, when the duplicates folder holds any: each
+  folder with its size, file count and whether the reserve has one of that
+  name; **Move & replace → reserve** and **Delete…**, each after a question
+  naming the count and the size.
+- **Run settings** in the header while a run goes or after one with problems.
+- The journal's `retry.*` and `rebuild.*` entries.
+- For later pages, in the kit: `IconDisc`; a `Cell`'s `icon`; a
+  `TableModel`'s `row_tone`; `Table.refresh_columns()`. In the engine: the
+  library index's `listed` signal. `SideScroll` is shared by the Tracker and
+  Rotator pages.
+
+### Removed
+
+- The Rotator tab and its five inner tabs (Rotate, Reserve, Transferred,
+  History, Duplicates), the old cleanup dialog, `app/ui/widgets.py`, the
+  tabs' stylesheet rules and `theme.level_color`.
+
 ## [3.4.1] - 2026-09-30
 
 The ninth step of the redesign: what the new Rotator page needs from the
@@ -872,7 +948,8 @@ restructured yet; the tabs keep their layout and take on the new look.
   was right for one library and wrong for every other. Nothing is tagged now
   unless you ask for it.
 
-[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.4.1...HEAD
+[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.5.0...HEAD
+[3.5.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.4.1...v3.5.0
 [3.4.1]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.4.0...v3.4.1
 [3.4.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.3.0...v3.4.0
 [3.3.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.2.0...v3.3.0

@@ -280,13 +280,16 @@ class LibraryIndex:
 
     def refresh(self, roots: Iterable[str | Path], *, progress: Progress | None = None,
                 cancelled: Cancelled | None = None,
-                published: Callable[[str, dict], None] | None = None) -> RefreshReport:
+                published: Callable[[str, dict], None] | None = None,
+                listed: Callable[[str, list], None] | None = None) -> RefreshReport:
         """Walk each root and read the folders that are new or changed.
 
         Saves as it goes and at the end; a root is `complete` once its walk
-        got to the end. `published(root, folders)` hands out a copy of what is
-        known each time the walk saves. A root that is not set or not there is
-        skipped (and reported), and what is known of it kept.
+        got to the end. `listed(root, names)` hands out the root's folder
+        names as soon as they are listed, before any is read;
+        `published(root, folders)` a copy of what is known each time the walk
+        saves. A root that is not set or not there is skipped (and reported),
+        and what is known of it kept.
         """
         started = self._clock()
         report = RefreshReport()
@@ -303,6 +306,8 @@ class LibraryIndex:
             except OSError:
                 report.missing.append(root)
                 continue
+            if listed is not None:
+                listed(root, [name for name, _mtime in listing])
             if not self._walk(root, key, listing, carry, report, progress, cancelled,
                               published):
                 report.complete = False
@@ -402,6 +407,8 @@ class LibraryIndexWorker(QThread):
     rows), then, with `fill_sizes`, all the rest.
 
     - `loaded(root, folders)`: what the file already knew, at once;
+    - `listed(root, names)`: every folder the root holds now, once listed
+      (a table shows its rows from here, and fills them in as they are read);
     - `progress(root, done, total)` through each walk;
     - `refreshed(root, folders)`: after a walk saves, and when it ends — a
       copy, `{name: FolderInfo}`;
@@ -411,6 +418,7 @@ class LibraryIndexWorker(QThread):
     `stop()` ends it; what was read or measured is saved.
     """
     loaded = Signal(str, object)
+    listed = Signal(str, object)
     progress = Signal(str, int, int)
     refreshed = Signal(str, object)
     walked = Signal(object)
@@ -455,7 +463,8 @@ class LibraryIndexWorker(QThread):
         for root in self.roots:
             self.loaded.emit(root, index.folders(root))
         report = index.refresh(self.roots, progress=self.progress.emit,
-                               cancelled=self._stopped, published=self.refreshed.emit)
+                               cancelled=self._stopped, published=self.refreshed.emit,
+                               listed=self.listed.emit)
         self.walked.emit(report)
         if self._stopping:
             return

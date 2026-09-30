@@ -265,9 +265,8 @@ check("and stays inside it", canvas.pixelColor(150, 50).alpha() == 0)
 check("status colours map onto the tokens",
       theme.status_color("bad") == theme.css("danger")
       and theme.status_color("done") == theme.css("accent"))
-check("log levels map onto the console tokens",
-      theme.level_color("ERROR") == theme.css("console.err")
-      and theme.level_color("WARN") == theme.css("console.warn"))
+check("the Rotator tab's helpers went with it", not hasattr(theme, "level_color")
+      and "rotatorTabs" not in theme.stylesheet())
 check("a secondary line is text.mid, a faint one text.lo",
       theme.css("text.mid") in theme.label_style("muted")
       and theme.css("text.lo") in theme.label_style("faint"))
