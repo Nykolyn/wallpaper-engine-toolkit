@@ -913,6 +913,19 @@ TILE_BAR = 5
 ACTIVITY_HEAD_PAD = (11, 14, 9)   # "Recent activity": top, sides, bottom
 ACTIVITY_LIST_PAD = 6             # the rows' inset from the panel's sides and foot
 
+# -- the Tracker (TrackerBody)
+
+TRACKER_SIDE = 330            # the left column: the monitors and the pace
+PACE_PAD = (12, 14)           # the Pace panel: vertical, horizontal
+PACE_GAP = 10                 # its overline, figure, rule, sentence and notes
+PACE_ICON = 14                # the clock before the finish sentence
+PACE_FIGURE_GAP = 8           # the figure to the words after it
+TRACKER_FILTER = 184          # the filter over the playlist (the design's 168 cuts its words)
+TRACKER_AUTHORS = 140         # the author list, at the least
+# the playlist's fixed columns; the wallpaper's takes the rest (SHOWN is wider than the
+# design's 52 px, which cuts "1 h 10 min")
+TRACKER_COLUMNS = {"number": 32, "author": 88, "type": 48, "shown": 64, "state": 64}
+
 
 # ---- Semantic colours the old tabs ask for ---------------------------------
 

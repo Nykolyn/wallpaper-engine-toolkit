@@ -55,7 +55,8 @@ to `data/suite.json`. See [Configuration](configuration.md#folder-settings).
 - **Lead monitor** — the monitor the tray icon, the Tracker and "Next in the
   loop" lead with. **Automatic** picks the playlist a rotation built. The tray
   reads the choice the next time it draws its icon; its own **Show on the
-  icon** menu writes the same setting.
+  icon** menu, and **Show on the tray icon** in a monitor's menu on the
+  [Tracker](tracker.md#the-page) page, write the same setting.
 
 ## Review and Steam
 

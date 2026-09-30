@@ -2,14 +2,14 @@
 
 An old tab knows nothing of the sidebar, so its item is worked out here from
 the services: a job of that tool running (a bar and a percentage, or
-"working"), the Rotator's last run, the leading monitor's count. Each page
-step moves its tool's part into its own page and deletes it from here.
+"working"), or the Rotator's last run. Each page step moves its tool's part
+into its own page and deletes it from here (the Tracker's went in step 08).
 """
 from __future__ import annotations
 
 from PySide6.QtCore import QObject
 
-from ..services.snapshot import LAST_RUN, PLAYLIST
+from ..services.snapshot import LAST_RUN
 from ..ui.kit import NavState
 
 # Tools whose sidebar item shows a bar while they work; the others say "working".
@@ -26,11 +26,6 @@ def nav_for(key: str, jobs, snapshot) -> NavState:
         return NavState.status("working", below=key in _BARS)
     if key == "rotator":
         return rotator_idle(jobs, snapshot)
-    if key == "tracker":
-        playlist = snapshot[PLAYLIST].value
-        if playlist is not None and playlist.total > 0:
-            return NavState.count(playlist.seen, playlist.total)
-        return NavState()
     if key in ("creator", "copier"):
         return NavState.status("idle")
     return NavState()

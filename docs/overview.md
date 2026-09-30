@@ -73,7 +73,8 @@ leading one first and marked **LEADING** (the **Lead monitor** in
 [Settings](settings.md#tracker-and-tray) chooses it; Automatic picks the
 playlist a rotation built): what it is showing, for how long, and its count.
 With Wallpaper Engine not running they show the last known wallpaper and
-count, and say so.
+count, and say so. A playlist shown to its end turns its card green. The
+[Tracker](tracker.md#the-page) page has the leading one in detail.
 
 Under them, the log: while a job runs, the newest lines of that job's own log
 file, followed as they are written; otherwise the log file written last, named

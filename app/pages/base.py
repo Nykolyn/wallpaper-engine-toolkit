@@ -12,7 +12,8 @@ it comes on screen and goes off it:
 - `navigate`: asks the window for another page, by key ("settings");
 - `on_shown()` / `on_hidden()`;
 - `FIXTURES` and `load_fixture(state)`: made-up states for
-  `tools/ui_snapshot.py`, which never reads this machine's data.
+  `tools/ui_snapshot.py`, which never reads this machine's data;
+  `frame_fixture(state)`: the frame's state that goes with one of them.
 
 `LegacyPage` puts one of the old tabs in the frame until its own page
 replaces it.
@@ -90,6 +91,14 @@ class Page(QWidget):
         """Another page has just taken its place."""
 
     # -- snapshots
+
+    def frame_fixture(self, state: str) -> dict | None:
+        """For a state of this page's own: the frame's state that goes with it
+        (`{"frame": "running"}`, a state of tests/fixtures/ui/shell.json), and
+        what the page changes in it — its sidebar item under "nav", "Next in
+        the loop" under "next" — so the frame agrees with the page. None:
+        the frame's state of the same name, as it is."""
+        return None
 
     def load_fixture(self, state: str) -> None:
         """Show a made-up state, for `tools/ui_snapshot.py`. A page with no

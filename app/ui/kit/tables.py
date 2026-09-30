@@ -192,7 +192,9 @@ class Thumb(QWidget):
             self.set_pixmap(None)
             return
         path = str(path)
-        if path == self._source and self._state != "placeholder":
+        # The same folder again is already shown, on its way, or known to have
+        # no preview: a card refreshed every second must not read it again.
+        if path == self._source:
             return
         self._source = path
         self._pixmap = None

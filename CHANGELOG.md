@@ -6,6 +6,58 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [3.4.0] - 2026-09-30
+
+The eighth step of the redesign: the Tracker page, where the count is read at
+a glance.
+
+### Changed
+
+- **Tracker page — the leading monitor in detail, the others as summaries, the
+  pace, and the playlist as a table.** See [Tracker](docs/tracker.md#the-page).
+  - The leading monitor's card: the ring and `4 / 201` shown this cycle, a
+    preview of the wallpaper on screen, its title, its author with a **Known**
+    chip when your authors database has them, and **SHOWN FOR**,
+    **REMAINING** and **CYCLE STARTED**. REMAINING is the countdown: `≈` when
+    it is estimated, "paused" in amber while Wallpaper Engine has paused that
+    monitor, "— disconnected" in red while Wallpaper Engine is not running,
+    when the card keeps the last known wallpaper and says so. A cycle start
+    worked out afterwards is marked `~`. The card's **…** menu: *Show its
+    playlist below*, *Show on the tray icon*, *New cycle…*.
+  - The other monitors as smaller cards; one whose playlist no rotation built
+    says it follows its own order and is not counted for rotation.
+  - **Pace**: the average time on screen this cycle, and when the playlist
+    runs out at that pace — "At this pace the playlist empties ≈21 Sep, about
+    09:10 — time to rotate (run 39)" — once 20 have been shown. Under it, what
+    the count rests on, never hidden: how it is counted, how many times are
+    reconstructed, how the cycle is dated; in amber, a pass Wallpaper Engine
+    started over and wallpapers deleted from disk.
+  - **The whole playlist shown** is unmissable: the ring closes in green, the
+    count turns green, the card's edge goes green, and a note says "Whole
+    playlist shown — time to rotate" with **Open Rotator**. The sidebar's count
+    turns green with it.
+  - **The playlist** as a table with previews: what this cycle has shown,
+    newest first, the one on screen selected, how long each stayed and when it
+    came up (`~` when rebuilt); then the queue, "up next, in playing order" or
+    "random order, any of these can be next". Filter by title or author, pick
+    an author, jump to Shown or Queue; a click opens the wallpaper in Explorer.
+    Titles and types come from each wallpaper's project.json, authors from
+    what Review has already asked Steam, all read in the background, the rows
+    filling in as they come.
+  - **Playlist settings** says where the count comes from and links to
+    Settings for it, and holds **Rebuild from file times** (now asking first)
+    and a **New cycle…** per monitor. The header says whether the count goes
+    on with the window closed: "counting in the background" while the tray
+    runs, "counting while this window is open" when it does not.
+  - With nothing to show the page says why: `config.json` not found, no
+    playlist on any monitor, or Wallpaper Engine not running.
+  - The old Tracker tab is gone.
+
+### Fixed
+
+- A card's preview with no picture was read from disk again on every refresh
+  of the card; it is read once.
+
 ## [3.3.0] - 2026-09-30
 
 The seventh step of the redesign: the Overview, the page the window opens on.
@@ -759,7 +811,8 @@ restructured yet; the tabs keep their layout and take on the new look.
   was right for one library and wrong for every other. Nothing is tagged now
   unless you ask for it.
 
-[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.3.0...HEAD
+[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.4.0...HEAD
+[3.4.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.3.0...v3.4.0
 [3.3.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.2.0...v3.3.0
 [3.2.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.1.0...v3.2.0
 [3.1.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.0.3...v3.1.0

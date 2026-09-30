@@ -14,16 +14,19 @@ that reads nothing (a fixture's finished job would otherwise have it count
 the Rotator's folders, and with no config that is this machine's own
 myprojects), made-up folders on a drive `X:` that it reports as present, and
 the frame's state from `tests/fixtures/ui/shell.json`. Pages that have a page of their own
-(Overview, Settings) are the real ones, and `load_fixture(state)` puts them in
+(Overview, Tracker, Settings) are the real ones, and `load_fixture(state)` puts them in
 the state asked for; the old tabs are not built at all — a stand-in says
 where each one goes — because building them reads the library, Steam and
 Wallpaper Engine.
 
 - `--page`: overview, rotator, tracker, review, creator, copier, settings.
 - `--state`: a state of the frame (`--list` shows them: idle, running, clean,
-  problems, scanning, building, copying, failed, empty, we-off). A page with
-  a fixture of the same name shows it (Overview's are in
-  `tests/fixtures/ui/overview.json`); otherwise its first.
+  problems, scanning, building, copying, failed, empty, we-off), or one of
+  the page's own (the Tracker's tracking, paused, disconnected, finished, …),
+  which names the frame's state it goes with (`Page.frame_fixture`). A page
+  with a fixture of that name shows it (Overview's are in
+  `tests/fixtures/ui/overview.json`, the Tracker's in `tracker.json`);
+  otherwise its first.
 - `--size WxH` (default 1280x860) and `--scale 1|1.5` (the user's screen is
   at 150 %; the picture is then 1.5 × the size in pixels).
 """
@@ -64,12 +67,17 @@ def main(argv=None) -> int:
     os.chdir(scratch)
     sys.path.insert(0, str(ROOT))
 
-    from app.main_window import load_shell_fixture
+    from app.main_window import load_shell_fixture, page_for
     import json
     states = [k for k in json.loads((ROOT / "tests" / "fixtures" / "ui" / "shell.json")
                                     .read_text(encoding="utf-8")) if k != "//"]
     if args.list:
+        from app.pages.overview import OverviewPage
+        from app.pages.settings import SettingsPage
+        from app.pages.tracker import TrackerPage
         print("states:", ", ".join(states))
+        for page in (OverviewPage, TrackerPage, SettingsPage):
+            print(f"{page.key}:", ", ".join(page.FIXTURES))
         return 0
     if out is None:
         print("--out is needed")
@@ -79,9 +87,13 @@ def main(argv=None) -> int:
     except ValueError:
         print(f"--size is WxH, not {args.size!r}")
         return 2
-    fixture = load_shell_fixture(args.state)
 
     window = build_window(args.page)
+    fixture = frame_fixture(window.pages[page_for(args.page)], args.state, states,
+                            load_shell_fixture)
+    if fixture is None:
+        print(f"no state {args.state!r}: not the frame's ({', '.join(states)}), nor the page's")
+        return 2
     from PySide6.QtWidgets import QApplication
     window.resize(width, height)
     window.show()
@@ -94,6 +106,21 @@ def main(argv=None) -> int:
     window.grab().save(str(out))
     print(f"saved {out}  ({args.page}, {args.state}, {width}x{height} @ {args.scale})")
     return 0
+
+
+def frame_fixture(page, state: str, states: list[str], load) -> dict | None:
+    """The frame's fixture for a state: the frame's own of that name, or the
+    one a page's state names, with what the page changes in it."""
+    spec = page.frame_fixture(state) or {}
+    frame = spec.get("frame", state)
+    if frame not in states:
+        return None
+    fixture = load(frame)
+    if "nav" in spec:
+        fixture["nav"] = {**fixture.get("nav", {}), **spec["nav"]}
+    if "next" in spec:
+        fixture["next"] = spec["next"]
+    return fixture
 
 
 # ---- the window, made up ---------------------------------------------------------------
@@ -113,6 +140,7 @@ def build_window(page_key: str):
     from app.pages.base import Page
     from app.pages.overview import OverviewPage
     from app.pages.settings import SettingsPage
+    from app.pages.tracker import TrackerPage
     from app.settings import Settings
     from app.ui.kit import label, paths
 
@@ -162,7 +190,7 @@ def build_window(page_key: str):
     config = Config(source="", destination="", duplicates="", count=1000)
     pages = [OverviewPage(svc, feed, settings=settings),
              StandIn("rotator", "Rotator", "rotator"),
-             StandIn("tracker", "Tracker", "tracker"),
+             TrackerPage(feed, svc, settings=settings),
              StandIn("review", "Review", "review"),
              StandIn("creator", "Creator", "creator"),
              StandIn("copier", "Copier", "copier"),

@@ -940,23 +940,46 @@ class Progress:
         return estimate_minutes(self.remaining, self.delay, changes, self.seen)
 
     @property
-    def finish_estimate(self) -> str | None:
+    def reconstructed_start(self) -> bool:
+        """Whether the cycle's start was worked out afterwards — from Wallpaper
+        Engine starting the playlist over, or from the break in the file
+        times — rather than seen (a rotation's own record, or tracking
+        beginning)."""
+        return self.anchor in (ANCHOR_ENGINE, ANCHOR_FILE_TIMES)
+
+    def pace_seconds(self, now: datetime | None = None) -> float | None:
+        """The time this cycle has taken per wallpaper shown, so far: from its
+        start to now, over what it has shown. Real time, not wallpaper time —
+        the nights and the paused hours are in it. None before the first."""
+        started = _parse(self.started)
+        if started is None or self.seen <= 0:
+            return None
+        elapsed = ((now or datetime.now()) - started).total_seconds()
+        return elapsed / self.seen if elapsed > 0 else None
+
+    def finish_at(self, now: datetime | None = None) -> datetime | None:
         """When the playlist should be done, at the pace this cycle has kept.
 
         `eta_minutes` counts wallpaper time, which only passes while Wallpaper
         Engine is running and unpaused — with the machine off overnight, or the
         wallpaper paused behind a fullscreen game, real time runs much slower.
         This projects from what the cycle has actually managed per hour instead,
-        which is the number that answers "when can I rotate?".
+        which is the number that answers "when can I rotate?". None until
+        `MIN_SAMPLE` wallpapers have been shown, and once none are left.
         """
-        started = _parse(self.started)
-        if started is None or self.seen < MIN_SAMPLE or self.remaining <= 0:
+        now = now or datetime.now()
+        if self.seen < MIN_SAMPLE or self.remaining <= 0:
             return None
-        elapsed = (datetime.now() - started).total_seconds()
-        if elapsed <= 0:
+        pace = self.pace_seconds(now)
+        if pace is None:
             return None
-        seconds_left = elapsed / self.seen * self.remaining
-        return (datetime.now() + timedelta(seconds=seconds_left)).strftime("%d %b %H:%M")
+        return now + timedelta(seconds=pace * self.remaining)
+
+    @property
+    def finish_estimate(self) -> str | None:
+        """`finish_at`, as "21 Sep 09:10"."""
+        when = self.finish_at()
+        return when.strftime("%d %b %H:%M") if when is not None else None
 
     @property
     def label(self) -> str:

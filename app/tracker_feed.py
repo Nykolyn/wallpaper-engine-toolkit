@@ -13,11 +13,36 @@ whoever is listening.
 """
 from __future__ import annotations
 
+import ctypes
+from ctypes import wintypes
+
 from PySide6.QtCore import QObject, QTimer, Signal
 
 from .engines.tracker import (
     HEARTBEAT_SECONDS, WATCH_SECONDS, PollSchedule, Progress, Tracker)
 from .engines.wallpaper_timer import EngineFiles
+
+# The tray tracker holds this mutex for as long as it runs (tracker_tray), so
+# a second one does not start, and the window can tell it is counting.
+TRAY_MUTEX = "Local\\WallpaperEngineToolkitTracker"
+_SYNCHRONIZE = 0x00100000
+
+
+def tray_running() -> bool:
+    """Whether the tray tracker is running for this user — whether the count
+    goes on with the window closed."""
+    try:
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    except (AttributeError, OSError):
+        return False
+    kernel32.OpenMutexW.restype = wintypes.HANDLE
+    kernel32.OpenMutexW.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.LPCWSTR]
+    kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+    handle = kernel32.OpenMutexW(_SYNCHRONIZE, False, TRAY_MUTEX)
+    if not handle:
+        return False
+    kernel32.CloseHandle(handle)
+    return True
 
 
 def heartbeat_setting(settings) -> int:

@@ -32,7 +32,7 @@ from .engines.tracker import (
     FALLBACK_SECONDS, TIME_FMT, Progress, Tracker, app_data_dir, pick_primary)
 from .engines.wallpaper_timer import Countdown, WallpaperTimer
 from .settings import Settings
-from .tracker_feed import TrackerFeed, heartbeat_setting
+from .tracker_feed import TRAY_MUTEX, TrackerFeed, heartbeat_setting
 
 
 # A windowed build has no console, so a start that goes wrong leaves no trace.
@@ -394,7 +394,7 @@ def _claim_single_instance() -> bool:
     # A HANDLE is 64-bit here; without this the return value is truncated to int.
     kernel32.CreateMutexW.restype = wintypes.HANDLE
     kernel32.CreateMutexW.argtypes = [wintypes.LPVOID, wintypes.BOOL, wintypes.LPCWSTR]
-    handle = kernel32.CreateMutexW(None, False, "Local\\WallpaperEngineToolkitTracker")
+    handle = kernel32.CreateMutexW(None, False, TRAY_MUTEX)
     if not handle:
         return True   # cannot tell — better to run than to refuse
     if ctypes.get_last_error() == ERROR_ALREADY_EXISTS:

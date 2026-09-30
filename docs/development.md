@@ -20,6 +20,7 @@ app/
 ├── pages/                the window's pages, in the order of the loop:
 │   ├── base.py           Page, and LegacyPage (an old tab in the frame)
 │   ├── overview.py       the loop at a glance
+│   ├── tracker.py        each monitor's playlist, counted down; its table
 │   ├── settings.py       what is set once
 │   └── legacy.py         what the old tabs' sidebar items say
 ├── theme.py              the design tokens: colour, type, space, radius, shadows, the stylesheet
@@ -45,6 +46,7 @@ app/
 │   ├── creator.py        projects from videos: ffmpeg preview.gif + project.json
 │   ├── tracker.py        playlist progress, and when to look at it
 │   ├── wallpaper_timer.py  the countdown, the PLPV0005 parser, the file watcher
+│   ├── wallpaper_meta.py a wallpaper's title and type, and its author from Review's cache
 │   ├── we_memory.py      reading wallpaper64.exe's timer, read-only
 │   ├── engine_control.py closing Wallpaper Engine as its tray does, starting it again
 │   ├── playlist_refresh.py the rotation's playlist: found by contents, refilled, restarted
@@ -65,7 +67,6 @@ app/
     │                       statusline, dialogs), and the frame (shell)
     ├── copier_tab.py, creator_tab.py
     ├── rotator_tab.py, cleanup_dialog.py
-    ├── tracker_tab.py
     ├── review_tab.py, gallery.py
     ├── credentials.py    the optional Steam key
     ├── authors_dialog.py the authors database, its backups, restoring one
@@ -106,7 +107,7 @@ A page is an `app.pages.Page`:
 | `FIXTURES`, `load_fixture(state)` | made-up states for `tools/ui_snapshot.py` |
 
 A `NavState` is one of the design's: `NavState.progress(done, total)` (a bar
-and `41%` under the name), `count(done, total)` (`4/201` and a mini bar),
+and `41%` under the name), `count(done, total)` (`4/201` and a mini bar, green once done),
 `badge(n)` (warn), `status(text, tone, below=)` (`idle`; `2 problems` in warn
 under the name), or nothing. In the rail each is an icon with a dot for the
 bar, the badge and a warn or danger word.
@@ -151,6 +152,41 @@ reading never read yet is a shimmer; one that failed with nothing before it
 is an empty state picked by its `reason`; one read before but not now is
 `lo` and "last known". Its fixtures are `tests/fixtures/ui/overview.json`
 (`running`, `idle`, `empty`, `we-off`).
+
+**Tracker** (`app/pages/tracker.py`) shows the window's `TrackerFeed`: the
+leading monitor (`pick_primary` with `tracker.primary`) in a detailed
+`MonitorCard`, the others compact, the **Pace** panel, and the playlist in a
+`Table`. Its words are plain functions — `monitor_view` (→ `MonitorView`),
+`pace_figure`, `finish_sentence`, `provenance` (→ `(tone, sentence)` notes),
+`playlist_rows` (a `Cycle` → `PlaylistRow`s and whether the queue is in
+playing order), `row_matches`, `author_choices`, `header_subtitle`,
+`nav_state`, `empty_text` — and `tests/test_tracker_page.py` calls them
+directly. Nothing on the window's thread reads a file (the test patches the
+file functions to raise there):
+
+- `ListReader` does the reading on a thread of its own, a job at a time: a
+  monitor's `Cycle` out of `data/tracker.json`, its rows at once, then
+  `project.json` a chunk at a time and the authors, each chunk sent back
+  through a queued signal. A newer list makes an older one stop.
+- `engines/wallpaper_meta.py`: `read_meta(item)` (title, type, workshop id
+  from `project.json`), `author_names(ids)` (Review's `steam_cache.sqlite`,
+  answers of any age, no network), `known_authors(keys)` (`authors.sqlite`,
+  opened read-only) and `MetaCache`, which keeps a session's answers. Measured
+  here: a 196-wallpaper playlist 1.5 s cold, 1 756 in 14 s; 0.01 s and 0.1 s warm.
+- `Countdowns` runs a `WallpaperTimer` of its own while the page is on screen,
+  as a reader: `open_memory=None`, `save_path=None`, `restore_path` the tray's
+  `wallpaper_timer.json`, `follow_files=False` (the feed stats the files). It
+  is made again each time the page is shown, so it starts from the tray's
+  latest count; it also gives each monitor's resolution.
+- A row's click opens Explorer through `reveal(item)` on a thread.
+
+Only two things a click starts run on the window's thread, as the old tab's
+did: a new cycle and rebuilding from file times (`Tracker.reset` /
+`Tracker.rebuild`, with the busy cursor). Its fixtures are
+`tests/fixtures/ui/tracker.json` (`tracking`, `paused`, `disconnected`,
+`finished`, `restarted`, `we-off`, `single-monitor`, `no-config`,
+`no-playlist`); `Page.frame_fixture(state)` names the frame's state each goes
+with, and its sidebar item and "Next in the loop" to match.
 
 **Window requests** (`window_instance`): a second launch or the tray sends one
 line — `show <page>`, which every version understands, or the command form
@@ -284,6 +320,7 @@ for %f in (tests\test_*.py) do .venv\Scripts\python.exe %f
 | `test_hang_watch.py` | a stuck GUI thread leaves its stacks in the hang log |
 | `test_window_instance.py` | one window, raised from the tray, in a process of its own; the plain request and the command form on the socket |
 | `test_shell.py` | pages in the loop's order, the sidebar and Ctrl+number; `--tab` names; the window command parser; the rail below 1 200 px; the status line bound to the JobCenter (Show, problems until seen); the cross-fade, and none with motion off; the Settings page writing `config.json` and `suite.json`, read-only while the Rotator works; the window and the tray reading each other's `suite.json`; the title bar's hit testing; `ui_snapshot` at a size and scale |
+| `test_tracker_page.py` | the tracker's Progress as a monitor card in every state (paused, Wallpaper Engine stopped, restarted, finished); the countdown's words (`≈`, paused, any moment); the pace and the finish sentence; the notes the count rests on; the playlist's groups, order, `~` times, filter and authors; titles and authors read from project.json, the Steam cache and the authors database (never written); the countdown as a reader of the tray's file; every fixture; no file read on the GUI thread |
 | `test_services.py` | which running job leads; rate and time left only once measured; the journal's append, tail and rotation past a damaged line and an unknown field; log files by tool, day and run, their tail and the 30-day sweep; the snapshot read on a worker, never the GUI thread, keeping its age and its last value; each tab's work reaching all three |
 | `test_external.py` | a child cannot load a DLL from the bundle, through the DLL directory or PATH; a quoted URL survives cmd.exe; nothing in `app/` starts a program another way |
 
@@ -451,7 +488,7 @@ Overview are built from it; the Review gallery uses its preview loader.
 | `paths.py` | `PathField`: empty (type, paste or Browse…), compact (path elided from the left, ✓, a folder button), invalid ("folder not found"), disabled; a drop target. `path_changed` for the user's choice, `validity_changed` when a worker has checked the folder. `kind="file"` (with `file_filter=`) holds one file instead: Wallpaper Engine's `config.json`. |
 | `tags.py` | `TagSelect` (pills, `3 / 25`, a popup of the Creator's `WE_TAGS` in four columns); `per_file=True` adds the clip's three states — `value()` None follows the batch, a list is its own, `[]` is none. `TagPopup` is the open state. |
 | `progress.py` | `ProgressBar` (3–8 px; determinate, eased over `motion.slow`; indeterminate; error; success; optional caption row) and `ProgressRing` (58, 52, 34 px; percentage, spin, done) |
-| `cards.py` | `StatCard` (default, hover when `clickable` — an empty one too, `set_loading`, empty, `set_empty(why, link=True)` for a reason written as a link, tone `lo` for the last known), `MonitorCard` (compact or `detail=True`) and `MonitorView`, the plain values a page fills it from, `ToolTile` (a tool of the loop on the Overview: status line and tone, thin bar, mono meta; `set_active` accents the one whose job runs, with a pulsing dot; `clicked` on a click, Enter or Space) |
+| `cards.py` | `StatCard` (default, hover when `clickable` — an empty one too, `set_loading`, empty, `set_empty(why, link=True)` for a reason written as a link, tone `lo` for the last known), `MonitorCard` (compact or `detail=True`; a playlist shown to its end closes the ring in ok, turns the count green with a flash and gives the card an ok edge) and `MonitorView`, the plain values a page fills it from (`remaining_approx` for `≈`; `timer` "paused" or "stopped" says so in REMAINING without changing the badge), `ToolTile` (a tool of the loop on the Overview: status line and tone, thin bar, mono meta; `set_active` accents the one whose job runs, with a pulsing dot; `clicked` on a click, Enter or Space) |
 | `tables.py` | `Table`, `TableModel`, `Column`, `Cell`, `ChipCell`, `Group`, `RowDelegate`, `TableHeader`, `TableBar`, `TableSummary`, `TableFooter`; `ListRow`, `paint_list_row`, `RowList`; `Thumb` and `paint_thumb` |
 | `thumbs.py` | `ThumbLoader`: Steam previews for the gallery (`request`), and a wallpaper folder's own preview (`request_local`), read on a worker and kept in `data/thumbs/local/` |
 | `log.py` | `LogPanel` (a job's log as a card: `append(time, kind, message)`, All / Problems, copy, live dot, "writing to rotator.log" — or a file only read back, `set_file(name, writing=False)` — closes to its header with a problem badge; `fill=True` takes its layout's height and keeps the console open while collapsed, the Overview's glance), `LogModel` (the last 5 000 lines in a ring), `ProblemsFilter`, `LogView` |
@@ -636,7 +673,11 @@ empty) as jobs put in the JobCenter, a reading put in the Snapshot
 (`Snapshot.put`), sidebar items pinned to a state and the line under Next in
 the loop; `MainWindow.load_fixture(state)` applies one, then the page's own
 `load_fixture` (its state of that name, or its first). A page with more to
-make up keeps it in a file of its own: `overview.json`.
+make up keeps it in a file of its own: `overview.json`, `tracker.json`. A
+page's own states (`--list` prints them per page: the Tracker's `tracking`,
+`paused`, `disconnected`, `finished`, …) are asked for the same way; the page's
+`frame_fixture(state)` says which of the frame's states goes with each, and
+what of it the page changes (its sidebar item, "Next in the loop").
 Folders in fixtures are on a drive `X:` the tool reports as present. `--scale
 1.5` is the user's 150 %; the PNG is then 1.5 × the size.
 

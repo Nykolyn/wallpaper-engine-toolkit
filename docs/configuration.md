@@ -125,7 +125,7 @@ each through its own code, and they stay two files.
 | Creator tags | [Creator](creator.md) | `suite.json` (`creator.tags`) | none — nothing is tagged unless you say so |
 | `config.json` path | [Settings](settings.md#wallpaper-engine) | `suite.json` (`tracker.we_config`) | Wallpaper Engine's, detected |
 | Safety check ("Also check every") | [Settings](settings.md#wallpaper-engine) | `suite.json` (`tracker.heartbeat`, seconds) | 5 min — changes themselves are picked up as Wallpaper Engine writes them |
-| Lead monitor | [Settings](settings.md#tracker-and-tray), or the tray's **Show on the icon** | `suite.json` (`tracker.primary`) | automatic |
+| Lead monitor | [Settings](settings.md#tracker-and-tray), a monitor's menu on the [Tracker](tracker.md#the-page) page, or the tray's **Show on the icon** | `suite.json` (`tracker.primary`) | automatic |
 
 The window and the tray both keep `suite.json`. Each reads it again when the
 other has written it, before it relies on or changes the lead monitor.

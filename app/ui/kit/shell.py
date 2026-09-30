@@ -71,8 +71,10 @@ class NavState:
 
     @classmethod
     def count(cls, done: int, total: int) -> "NavState":
+        """The count and its mini bar; both turn ok once all are done."""
         fraction = max(0.0, min(1.0, done / total)) if total > 0 else 0.0
-        return cls("count", fmt.ratio(done, total, "nav"), fraction)
+        tone = "ok" if total > 0 and done >= total else "lo"
+        return cls("count", fmt.ratio(done, total, "nav"), fraction, tone)
 
     @classmethod
     def badge(cls, value) -> "NavState":
@@ -529,7 +531,8 @@ class NavItem(Interactive, Caster, QAbstractButton):
             font = theme.font("type.monoXs")
             text_w = QFontMetricsF(font).horizontalAdvance(s.text)
             painter.setFont(font)
-            painter.setPen(theme.color("text.mid" if s.kind == "count" else NAV_TONES[s.tone]))
+            painter.setPen(theme.color(("ok" if s.tone == "ok" else "text.mid")
+                                       if s.kind == "count" else NAV_TONES[s.tone]))
             meta = QRectF(right - text_w, top, text_w, name_h)
             painter.drawText(meta, Qt.AlignRight | Qt.AlignVCenter, s.text)
             name_right = meta.left() - theme.NAV_META_GAP
@@ -553,7 +556,7 @@ class NavItem(Interactive, Caster, QAbstractButton):
             return
         bar_right = right
         bar_mid = second + theme.NAV_BAR / 2
-        fill = "text.mid"
+        fill = "ok" if s.tone == "ok" else "text.mid"
         if s.kind == "progress":
             fill = "accent.hover"
             font = theme.font("type.monoXs")
