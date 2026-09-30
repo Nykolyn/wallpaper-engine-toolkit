@@ -53,12 +53,15 @@ app/
 │   ├── steam_api.py      the Steam Web API
 │   ├── steam_ugc.py      Steamworks, for subscribing
 │   ├── library.py        what is subscribed now, and what was owned once
+│   ├── library_index.py  every folder of the reserve and myprojects described: library_meta.json
 │   ├── authors_store.py  the authors database: SQLite, snapshots, the journal
 │   ├── review.py         the weekly walk itself
 │   └── rotator/
-│       ├── config.py     verbatim  wallpaper_rotator/app/config.py
-│       ├── core.py       + the [protected] rule
-│       └── worker.py     + closing and restarting Wallpaper Engine around a run
+│       ├── config.py     Config, RunRecord, History (+ never saved over unread), Usage
+│       ├── core.py       the steps, the rotation, stop between steps, retry, the reserve check
+│       ├── meta.py       run_meta.json: what a run leaves beside its record; estimates
+│       ├── runner.py     a run, a retry, a playlist rebuild, start to finish, without Qt
+│       └── worker.py     the same on threads, and the duplicates and the reserve check
 └── ui/
     ├── kit/              the redesign's components: icons, the controls
     │                       (base, buttons, inputs, selection, chips, panels),
@@ -267,8 +270,8 @@ chosen), `missing`, `unreadable` or `error` — for it to pick its empty state
 by. The keys: `RESERVE` (`ReserveCounts`:
 folders, never used, `will_reset`, batch), `ROTATION` (`RotationCounts`:
 folders in myprojects, protected, moved in today), `LAST_RUN` (`RunSummary`,
-with the result and times from step 09's `run_meta.json` beside
-`history.json` when it has the run, `from_side_file`), `PLAYLIST`
+with the result and times from `run_meta.json` beside `history.json` when it
+has the run, `from_side_file`), `PLAYLIST`
 (`PlaylistProgress` of the leading monitor, from the feed; `from_engine` says
 whether "not live" means Wallpaper Engine is not running) and `REVIEW` (the
 dict in `review_last.json`, or None; `ReviewState.from_json` reads it, and
@@ -283,6 +286,71 @@ writes: it reads `config.json` without `Config.load()`'s default save, and
 the history through `read_runs()`, never `History.load()`'s repairs. On the
 real reserve (33 619 folders on the W: disk) the worker took 1.0 s cold and
 0.26 s warm.
+
+## The Rotator engine
+
+Everything the Rotator page draws comes from the engine without the engine
+knowing about the page (REDESIGN_PLAN §6.2).
+
+**Steps.** `core.STEPS` is the order a run really goes in: `check` (the
+reserve check, its own worker, with a confirmation before the rest),
+`return` (duplicates are set aside here), `move` (draw, then move in),
+`playlist` (only with `refresh_playlist`). `run_steps(check=, playlist=)` is
+one run's plan. Every `ProgressEvent` a run hands on carries `step`, the index
+of its step in that plan, and `current` / `total` within it, and `kind`, its
+log line's kind; a step's first and last lines are `step N`. Closing Wallpaper
+Engine is the start of `return`; starting it again the end of `playlist`,
+three stages counted 0–3.
+
+**Runs** (`runner.py`, and the same on a thread in `worker.py`):
+
+- `RotationRun(config, history, run_id=, progress=, check_finished=,
+  started=)` / `RotationWorker` — `run_id` exists before it starts, so the
+  page opens `logs/rotator/run-<id>.log` with `begin(..., run_id=)` first.
+  `stop_after_step()` finishes the step under way and stops: after `return`,
+  nothing is drawn and the playlist is left as it was
+  (`PlaylistRefresh.finish(completed=False)`); after `move`, the batch is in
+  and the playlist is not rebuilt. `cancel()` stops before the next folder.
+  `result` is `clean` / `problems` / `stopped` / `failed`; `meta` the side-file
+  entry. A run is in the history once it moved anything, however it ended.
+- `RetryRun(config, history, record)` / `RetryWorker` — `record.failed` again,
+  each in the step the side file says it failed in (a run from before it is
+  left alone), then the playlist rebuilt when anything moved. The record and
+  its entry are updated in place; the entry gains a `retries` item.
+- `PlaylistRebuild(destination, runs=)` / `PlaylistRebuildWorker` — "Rebuild
+  playlist now": the playlist step on its own. `runs` lets it find a playlist
+  still made of an earlier batch, which a failed rebuild leaves.
+- `DuplicatesListWorker(config)` — `core.list_duplicates()`, with sizes.
+
+**`run_meta.json`** (`meta.py`), beside `history.json`, keyed by run id:
+`started`, `finished`, `seconds`, `result`, `batch`, `protected`,
+`returned_failed`, `moved_failed`, `playlist` (the summary lines),
+`playlist_rebuilt`, `playlist_problem`, `history_reset`, `stopped_after`,
+`log`, `step_times` (when each step ended) and `retries`. `RunRecord` keeps
+its shape for good: 2.1.1 reads `RunRecord(**r)`, and one unknown key made it
+save an empty history over the real one (`test_rotator_engine.py` reads every
+history the tests write with 2.1.1's loader). `read_meta()` for readers,
+`record_meta(id, meta)` to write one entry, `estimate_seconds(count)` — the
+median time of the newest five completed runs whose batch was within half of
+`count`, or None.
+
+**`History.usage()`** → `Usage`: `last_used(name)` (when a run last moved it
+in) and `never_used(name)` (not since the history last started over — what
+the next run draws from), both O(1) for 33 000 rows.
+
+**Library index v2** (`library_index.py`, `data/library_meta.json`). Per
+folder, keyed by name and mtime: `FolderInfo(title, kind, workshop_id,
+preview, size, unidentified)`. `LibraryIndex.refresh(roots)` reads only new or
+changed folders, carries a folder moved between the roots across without
+reading it, saves as it goes (a stopped walk resumes) and marks a root
+`complete` at the end; `measure(root, names)` adds sizes; `authors()` names
+workshop ids from Review's Steam cache, never Steam. `LibraryIndexWorker`
+does it all on a thread: `loaded` (what the file knew, at once), `progress`,
+`refreshed`, `walked`, `authors`, then `sized` as it measures —
+`request_sizes(root, names)` first (the visible rows), then with
+`fill_sizes` the rest. 33 000 entries: 3.8 MB, saved in 40 ms, loaded in
+90 ms, on the worker. `library.json` (Review's) is a separate file and keeps
+its shape.
 
 ## Tests
 
@@ -305,7 +373,9 @@ for %f in (tests\test_*.py) do .venv\Scripts\python.exe %f
 | `test_tracker.py` | anchoring a cycle, rebuilding history, merging two writers, following the engine's deck, when to look |
 | `test_wallpaper_timer.py` | the PLPV0005 parser, the file watcher, the countdown, pause rules |
 | `test_playlist_refresh.py` | finding the rotation's playlist, refilling it, restarting one monitor's pass, the state file written back byte for byte |
-| `test_rotator_cleanup.py` | the reserve check and what it offers to delete |
+| `test_rotator_cleanup.py` | the reserve check and what it offers to delete; the duplicates listed with sizes, junctions not followed; a rotation from the tab logging to its own run file and side-file entry |
+| `test_rotator_engine.py` | the steps and their order in a run, with and without the playlist, stopped after the return (folders and Wallpaper Engine's files read back) and after the move; retrying failures by step, one that still fails, one put right by hand, one from before the side file; the side file's round trip and tolerance; estimates; Rebuild playlist now; every history read back by 2.1.1's loader; a history, config or side file that does not read never saved over; library index v2 incremental, resumed, carried across, tolerant, measured, named, on its worker |
+| `test_rotator_history.py` | the history's snapshots, and a missing or unreadable one put back |
 | `test_autostart.py` | the command line, the task XML, and the rename migration |
 | `test_theme.py` | every token parses, text stays legible on glass, fonts, shadows, the stylesheet fills in and ticks its check boxes |
 | `test_icons.py` | every icon draws, in the colour and at the size asked; unknown names raise |

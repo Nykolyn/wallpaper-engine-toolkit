@@ -11,7 +11,7 @@ out as they were last read:
 - `ROTATION` — folders in myprojects, the `[protected]` ones apart, and how
   many rotations moved in today.
 - `LAST_RUN` — the last rotation: its number, when, and how it ended, from
-  the history and, once step 09 writes it, the `run_meta.json` beside it.
+  the history and the `run_meta.json` beside it (see engines/rotator/meta.py).
 - `PLAYLIST` — the leading monitor's count, from the window's `TrackerFeed`
   (already in memory: no worker needed).
 - `REVIEW` — the last review's summary from `data/review_last.json`, once
@@ -56,7 +56,7 @@ AFTER_JOB = {
     "review": (REVIEW,),
 }
 
-RUN_META = "run_meta.json"          # step 09's side file, beside history.json
+RUN_META = "run_meta.json"          # the Rotator's side file, beside history.json
 REVIEW_LAST = "review_last.json"    # step 11's summary of the last review
 
 
@@ -426,7 +426,7 @@ def read_config():
         return defaults
     if not isinstance(data, dict):
         return defaults
-    return rconfig.Config(**{k: data.get(k, getattr(defaults, k)) for k in defaults.__dict__})
+    return rconfig.Config.from_dict(data)
 
 
 def _parse_time(text) -> datetime | None:
@@ -447,7 +447,7 @@ def moved_on(runs, day: date) -> int:
 
 
 def run_meta(folder: Path) -> dict:
-    """Step 09's side file, `{run id: {...}}`; empty when absent or unreadable."""
+    """The Rotator's side file, `{run id: {...}}`; empty when absent or unreadable."""
     try:
         data = json.loads((Path(folder) / RUN_META).read_text(encoding="utf-8"))
     except (OSError, ValueError):

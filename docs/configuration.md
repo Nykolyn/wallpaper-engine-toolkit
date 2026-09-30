@@ -22,15 +22,17 @@ data/
 ├── config.json             the Rotator's five settings
 ├── history.json            one record per rotation run
 ├── history_backup/         the history as it was after each of the last 30 saves
+├── run_meta.json           what each run did beyond its record: result, times, failures by step
 ├── secrets.json            the Steam API key, DPAPI-encrypted
 ├── authors.sqlite          the Review page's authors database
 ├── tracker.json            the live cycle per monitor, plus 40 finished ones
 ├── wallpaper_timer.json    the countdown, saved every 15 seconds
 ├── tracker.log             every tray launch, and any crash
-├── logs/                   each tool's log, a file a day, kept for 30 days
+├── logs/                   each tool's log, a file a day, and a file per rotation; kept 30 days
 ├── activity.jsonl          a line for each piece of work as it ended
 ├── activity.1.jsonl        the lines before the journal last passed 2 MB
 ├── library.json            workshop ids found across the local libraries
+├── library_meta.json       title, type, size of each folder in the reserve and myprojects
 ├── steam_cache.sqlite      what Steam has already been asked
 ├── selfcheck.txt           the last --selfcheck report
 ├── thumbs/                 cached preview images
@@ -89,6 +91,11 @@ of its own, the files older than 30 days are deleted: a day's file by the day
 in its name, any other by its last change. Only files named that way are
 touched.
 
+**`logs/rotator/run-<id>.log`**: one rotation's lines, in the same shape,
+named by the run's id — every folder returned or moved, each step's first and
+last line (`step 2`, `step 3`, …), and a retry of its failures added at the
+end. Swept after 30 days like the rest.
+
 **`activity.jsonl`**: a JSON object a line for each piece of work as it
 ended, and for a few things that happened on the way — a rotation starting,
 duplicates set aside, the leading monitor's playlist advancing, finishing or
@@ -103,6 +110,26 @@ it does not know, so an older build and a newer one can share them. Neither
 is worth backing up: nothing reads them to decide anything.
 
 `tracker.log` is not part of this. The tray writes it as before.
+
+## The Rotator's run facts and library index
+
+Since 3.4.1.
+
+**`run_meta.json`**, beside `history.json`: an entry per run, by its id —
+when it started and finished, how it ended (`clean`, `problems`, `stopped`,
+`failed`), the batch it was asked for, which folders failed in which step, what
+happened to Wallpaper Engine's playlist, when each step ended, its log file, and
+any retry. The history itself keeps the shape every older build reads; see
+[the Rotator](rotator.md#what-a-run-leaves-behind). Written whole, like the
+history; one that does not read is renamed `run_meta.unreadable-<time>.json`
+and a new one begun.
+
+**`library_meta.json`**: for each folder of the reserve and myprojects, its
+title, type, workshop id and preview from its `project.json`, and its size
+once measured — keyed by name and modification time, so a refresh reads only
+what changed. A cache: deleted, it is built again, which on a hard disk takes
+minutes the first time. It is a file of its own so that `library.json`, which
+Review has read since 1.x, never changes shape.
 
 ## Folder settings
 
@@ -184,9 +211,11 @@ have.
 | `data/history.json` and `data/history_backup/` | what keeps a rotation from repeating the last ones, and what dates every cycle; it cannot be rebuilt. The snapshots are made for you — see [the Rotator](rotator.md#the-history-is-not-lost-quietly). |
 | `data/authors.sqlite` and `data/authors_backup/` | every author you have visited, and when — years of review, and nowhere else. The backups are made for you; **Second copy in** under **Authors database…** puts them on another disk as well. See [Backups](authors-database.md#backups). |
 | `data/suite.json`, `data/config.json` | your settings; small, easily lost |
+| `data/run_meta.json` | each run's result, times and failures by step; estimates and Retry read it. Losing it loses those, never the history |
 
 **Not** worth backing up: `thumbs/` and `steam_cache.sqlite` are caches that
-rebuild themselves, and `library.json` rebuilds in about four minutes.
+rebuild themselves, and `library.json` and `library_meta.json` rebuild in a few
+minutes.
 
 `secrets.json` is **not** portable — DPAPI ties it to one Windows account, so a
 restored copy on another machine decrypts to nothing. Keep the API key

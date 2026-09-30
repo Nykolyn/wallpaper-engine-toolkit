@@ -10,11 +10,18 @@ The history also keeps a snapshot of itself after every save, in
 put back from the newest snapshot that reads, and the History tab says so. It
 went missing once without anyone noticing — a build emptied the folder it was
 in — and the next rotation simply began a new one.
+
+Both files are read by older builds too, after a newer one wrote them, so
+neither ever gains a key an older reader would choke on: `RunRecord` keeps its
+shape, and what a run needs beyond it goes in ``run_meta.json`` (see
+``meta.py``). Keys a newer build did add are carried through a save.
 """
 from __future__ import annotations
 
 import json
 import os
+import time
+import uuid
 from dataclasses import dataclass, asdict, field, fields
 from datetime import datetime
 from pathlib import Path
@@ -28,6 +35,11 @@ HISTORY_PATH = app_data_dir() / "history.json"
 # Snapshots of the history, newest last by name. At one save per rotation this
 # reaches back months; each is a few kilobytes per run.
 KEEP_SNAPSHOTS = 30
+# Windows will not replace a file another thread has open at that moment — the
+# Snapshot reads these on a thread of its own — so a replace is tried again a
+# few times before the save is given up.
+REPLACE_TRIES = 8
+REPLACE_WAIT = 0.05
 
 
 def _write_atomically(path: Path, text: str) -> None:
@@ -36,7 +48,19 @@ def _write_atomically(path: Path, text: str) -> None:
         f.write(text)
         f.flush()
         os.fsync(f.fileno())
-    os.replace(tmp, path)
+    for attempt in range(REPLACE_TRIES):
+        try:
+            os.replace(tmp, path)
+            return
+        except PermissionError:
+            if attempt == REPLACE_TRIES - 1:
+                raise
+            time.sleep(REPLACE_WAIT)
+
+
+def new_run_id() -> str:
+    """A run's id: what history.json, run_meta.json and its log file share."""
+    return uuid.uuid4().hex[:8]
 
 
 def _set_aside(path: Path) -> Path | None:
@@ -74,24 +98,77 @@ class Config:
     # previous rotation with the new set, and start it again on a fresh pass.
     refresh_playlist: bool = True
 
+    def __post_init__(self) -> None:
+        # Keys a newer build wrote, carried through a save; and why the file on
+        # disk must not be saved over, when it must not (see `load`).
+        self._extra: dict = {}
+        self.problem = ""
+        self.notice = ""
+
     @classmethod
     def load(cls) -> "Config":
+        """The settings on disk, or the defaults — saved — when there are none.
+
+        A value of the wrong type falls back to its default alone. A file that
+        does not read is renamed ``config.unreadable-<time>.json`` before the
+        defaults are written; one that can be neither read nor renamed is left
+        as it is, and the defaults it gives meanwhile refuse to be saved over it.
+        """
         if CONFIG_PATH.exists():
             try:
                 data = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
-                return cls(**{k: data.get(k, getattr(cls(), k)) for k in cls().__dict__})
-            except Exception:  # noqa: BLE001 — anything unreadable is set aside below
-                if _set_aside(CONFIG_PATH) is None:
+                if not isinstance(data, dict):
+                    raise ValueError("it does not hold an object")
+                return cls.from_dict(data)
+            except Exception as err:  # noqa: BLE001 — anything unreadable is set aside below
+                kept = _set_aside(CONFIG_PATH)
+                if kept is None:
                     # Still there and still unreadable: use the defaults for
                     # now, and leave the file for a later start or a person.
-                    return cls()
+                    c = cls()
+                    c.problem = (f"The Rotator's settings in {CONFIG_PATH} could not be "
+                                 f"read ({err}), nor moved aside; they are left as they "
+                                 f"are and not saved over.")
+                    c.notice = c.problem
+                    return c
+                notice = (f"config.json could not be read ({err}); it is kept as "
+                          f"{kept.name} and the defaults are used.")
+                c = cls()
+                c.notice = notice
+                c.save()
+                return c
         c = cls()
         c.save()
         return c
 
+    @classmethod
+    def from_dict(cls, data: dict) -> "Config":
+        """Settings from a stored object: unknown keys kept, a value of the wrong
+        type replaced by its default."""
+        defaults = cls()
+        known = {f.name for f in fields(cls)}
+        values = {}
+        for name in known:
+            value, default = data.get(name, getattr(defaults, name)), getattr(defaults, name)
+            # bool is an int to isinstance, and neither may pass for the other.
+            if type(default) is bool:
+                ok = type(value) is bool
+            elif type(default) is int:
+                ok = type(value) is int and value > 0
+            else:
+                ok = isinstance(value, type(default))
+            values[name] = value if ok else default
+        c = cls(**values)
+        c._extra = {k: v for k, v in data.items() if k not in known}
+        return c
+
     def save(self) -> None:
-        _write_atomically(CONFIG_PATH,
-                          json.dumps(asdict(self), indent=2, ensure_ascii=False))
+        """Write the settings. Raises OSError, the file untouched, while the one
+        on disk could not be read or moved aside (`problem`)."""
+        if self.problem:
+            raise PermissionError(self.problem)
+        data = {**self._extra, **asdict(self)}
+        _write_atomically(CONFIG_PATH, json.dumps(data, indent=2, ensure_ascii=False))
 
 
 @dataclass
@@ -171,12 +248,23 @@ class History:
     def __init__(self, runs: list[RunRecord], notice: str = "", problem: str = ""):
         self.runs = runs
         # What was wrong with the file on disk and what was done about it, for
-        # the History tab and the confirmation before a rotation. Empty when
-        # the file simply read.
+        # the History tab, the confirmation before a rotation and the first
+        # lines of the next run's log. Empty when the file simply read.
         self.notice = notice
         # Set only when the history cannot be saved without destroying a file
-        # that could not be read. A rotation will not start while it is.
+        # that could not be read. A rotation will not start while it is, and
+        # save() refuses.
         self.problem = problem
+
+    def find(self, run_id: str) -> RunRecord | None:
+        return next((r for r in self.runs if r.id == run_id), None)
+
+    def number(self, record: RunRecord) -> int:
+        """The run's number, counted from the oldest (1); 0 when not in the history."""
+        for i, r in enumerate(self.runs):
+            if r is record or r.id == record.id:
+                return len(self.runs) - i
+        return 0
 
     @classmethod
     def load(cls) -> "History":
@@ -236,6 +324,16 @@ class History:
         self.runs.insert(0, record)  # newest first
         self.save()
 
+    def usage(self) -> "Usage":
+        """last_used / never_used for every folder, worked out once."""
+        return Usage(self.runs)
+
+    def last_used(self, name: str) -> datetime | None:
+        return self.usage().last_used(name)
+
+    def never_used(self, name: str) -> bool:
+        return self.usage().never_used(name)
+
     def used_set(self) -> set[str]:
         """All folder names ever moved, lower-cased, since the last history reset."""
         used: set[str] = set()
@@ -248,3 +346,41 @@ class History:
             for name in r.moved:
                 used.add(name.lower())
         return used
+
+
+def _stamp(text: str) -> datetime | None:
+    try:
+        return datetime.strptime(text, "%Y-%m-%d %H:%M:%S")
+    except (TypeError, ValueError):
+        try:
+            return datetime.fromisoformat(str(text)).replace(tzinfo=None)
+        except (TypeError, ValueError):
+            return None
+
+
+class Usage:
+    """When each folder was last moved into myprojects, and whether the next
+    run may draw it — the LAST USED column and the New chip of the Rotator's
+    tables. Worked out once from the runs, so a lookup costs nothing across
+    33 000 rows.
+
+    `never_used` is what the next run draws from: not moved in since the
+    history last started over (`used_set`). A folder can have a last use from
+    before that and still be never used in this sense; the page shows both.
+    """
+
+    def __init__(self, runs: list[RunRecord]):
+        self._last: dict[str, datetime] = {}
+        for record in runs:                       # newest first
+            when = _stamp(record.timestamp)
+            if when is None:
+                continue
+            for name in record.moved:
+                self._last.setdefault(name.lower(), when)
+        self._used = History(runs).used_set()
+
+    def last_used(self, name: str) -> datetime | None:
+        return self._last.get(name.lower())
+
+    def never_used(self, name: str) -> bool:
+        return name.lower() not in self._used

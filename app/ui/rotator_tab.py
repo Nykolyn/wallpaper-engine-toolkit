@@ -9,6 +9,7 @@ shares this tab's `Config`; the tab shows them, and says where to change them.
 """
 from __future__ import annotations
 
+from datetime import datetime
 from pathlib import Path
 
 from PySide6.QtCore import Signal
@@ -23,7 +24,7 @@ from .. import animations, theme
 from ..engines import playlist_refresh
 from ..engines.rotator.config import Config, History, RunRecord
 from ..engines.rotator.core import (
-    Rotator, list_subfolders, ProgressEvent, folder_is_set, folder_problem,
+    Rotator, list_subfolders, ProgressEvent, folder_is_set, folder_problem, log_kind,
 )
 from ..engines.rotator.worker import (
     RotationWorker, DuplicateActionWorker, ReserveScanWorker, CleanupWorker,
@@ -44,27 +45,8 @@ _PHASE_TEXT = {
     "replace": "moving duplicates into the reserve",
     "done": "finishing",
     "cancelled": "stopping",
+    "stopped": "stopping",
 }
-
-
-def _log_kind(e: ProgressEvent) -> str:
-    """The LogPanel kind of an engine event, for the log file."""
-    message = e.message
-    if message.startswith("DUPLICATE"):
-        return "dupe"
-    if message.startswith(("SKIP", "Skipping")):
-        return "skip"
-    if e.level == "ERROR":
-        return "fail" if message.startswith("Failed") else "error"
-    if e.level == "WARN":
-        return "warn"
-    if message.startswith("Moved"):
-        return "moved"
-    if message.startswith("Returned"):
-        return "returned"
-    if message.startswith("Deleted"):
-        return "deleted"
-    return {"done": "done", "select": "step"}.get(e.phase, "info")
 
 
 class RotatorTab(QWidget):
@@ -81,6 +63,8 @@ class RotatorTab(QWidget):
         self.scan_worker: ReserveScanWorker | None = None
         self.cleanup_worker: CleanupWorker | None = None
         self._rotate_after_check = False
+        # When the check that begins a rotation finished: the run's first step.
+        self._check_finished: datetime | None = None
         self._dup_busy = False
         # The check, clean-up or rotation under way, and the duplicates action,
         # as the status line and the log files know them (app/services).
@@ -188,7 +172,11 @@ class RotatorTab(QWidget):
         if self.rotation_worker is not None and self.rotation_worker.isRunning():
             return      # the run has its answer already; the box is off meanwhile
         self.config.refresh_playlist = on
-        self.config.save()
+        try:
+            self.config.save()
+        except OSError as err:
+            QMessageBox.warning(self, "Not saved",
+                                f"The Rotator's settings could not be saved: {err}")
 
     # --------------------------------------------------------------- Reserve
     def _build_reserve_tab(self):
@@ -351,6 +339,7 @@ class RotatorTab(QWidget):
                                  "Folder not found:\n" + "\n".join(missing))
             return
         self._rotate_after_check = then_rotate
+        self._check_finished = None
         self._cancelled = False
         self._start_job("Checking folders", "check")
         self.log.clear()
@@ -368,6 +357,7 @@ class RotatorTab(QWidget):
 
     def _on_scan_finished(self, broken: list, scanned: int):
         self.scan_worker = None
+        self._check_finished = datetime.now()
         self._set_running(False)
         self.phase_label.setText(
             f"Checked {scanned} folders — {len(broken)} unusable")
@@ -413,6 +403,7 @@ class RotatorTab(QWidget):
     def _on_cleanup_finished(self, failed: list):
         asked = len(self.cleanup_worker.paths) if self.cleanup_worker else len(failed)
         self.cleanup_worker = None
+        self._check_finished = datetime.now()
         self._set_running(False)
         deleted = asked - len(failed)
         self._end_job("problems" if failed else "clean", f"{deleted} of {asked} folders deleted",
@@ -464,10 +455,14 @@ class RotatorTab(QWidget):
         self._set_running(True)
         self._cancelled = False
         number = len(self.history.runs) + 1
-        job = self._start_job(f"Run {number}", "run")
+        # The worker makes the run's id, which names its log file.
+        self.rotation_worker = RotationWorker(self.config, self.history,
+                                              check_finished=self._check_finished)
+        run_id = self.rotation_worker.run_id
+        job = self._start_job(f"Run {number}", "run", run_id=run_id)
         job.note("run.started", f"Run {number} started",
-                 f"{p['returning']} to return · {p['count']} to move into myprojects")
-        self.rotation_worker = RotationWorker(self.config, self.history)
+                 f"{p['returning']} to return · {p['count']} to move into myprojects",
+                 run=run_id)
         self.rotation_worker.progress.connect(self._on_progress)
         self.rotation_worker.finished_run.connect(self._on_finished)
         self.rotation_worker.error.connect(self._on_error)
@@ -496,8 +491,8 @@ class RotatorTab(QWidget):
 
     # ------------------------------------------ reporting (app/services)
 
-    def _start_job(self, title: str, activity: str):
-        self._job = begin("rotator", title, activity=activity)
+    def _start_job(self, title: str, activity: str, run_id: str | None = None):
+        self._job = begin("rotator", title, activity=activity, run_id=run_id)
         self._job_phase = ""
         return self._job
 
@@ -508,7 +503,7 @@ class RotatorTab(QWidget):
         job = self._job
         if job is None:
             return
-        job.log(_log_kind(e), e.message)
+        job.log(log_kind(e), e.message)
         text = _PHASE_TEXT.get(e.phase)
         if e.total:
             job.update(text, e.current, e.total)
@@ -533,6 +528,7 @@ class RotatorTab(QWidget):
             "playlist": "Wallpaper Engine's playlist",
             "done": "Complete",
             "cancelled": "Cancelled",
+            "stopped": "Stopped",
             "error": "Error",
         }
         if e.phase in phase_names:
@@ -557,9 +553,13 @@ class RotatorTab(QWidget):
             f"Complete — moved {record.moved_count}, duplicates {record.duplicate_count}")
         self._report_run(record)
         self.refresh_all()
-        summary = self.rotation_worker.playlist_summary if self.rotation_worker else []
+        worker = self.rotation_worker
+        summary = worker.playlist_summary if worker else []
+        # An error part-way still leaves a record of what had moved by then.
+        failed_with = worker.job.error if worker is not None and worker.result == "failed" else ""
         QMessageBox.information(
-            self, "Rotation complete",
+            self, "Rotation failed" if failed_with else "Rotation complete",
+            (f"{failed_with}\n\n" if failed_with else "") +
             f"Moved {record.moved_count} folders.\n"
             f"Returned {record.returned}.\n"
             f"Duplicates set aside: {record.duplicate_count}.\n"
@@ -567,8 +567,8 @@ class RotatorTab(QWidget):
             + "".join(f"\n\n{line}" for line in summary))
 
     def _report_run(self, record: RunRecord) -> None:
-        """The run to the status line and the journal. A run stopped while
-        returning folders is not in the history, so it has no number yet."""
+        """The run to the status line and the journal. A run stopped before it
+        moved anything is not in the history, so it has no number."""
         job = self._job
         if job is None:
             return
@@ -577,14 +577,18 @@ class RotatorTab(QWidget):
         number = len(runs) if recorded else len(runs) + 1
         run_id = record.id if recorded else None
         failed, dups = len(record.failed), record.duplicate_count
-        if self._cancelled:
-            result = "stopped"
+        worker = self.rotation_worker
+        result = worker.result if worker is not None and worker.result else (
+            "stopped" if self._cancelled else "problems" if failed else "clean")
+        if result == "stopped":
             title = f"Run {number} stopped" if recorded else "The rotation was stopped"
-        elif failed:
-            result = "problems"
-            title = f"Run {number} finished with {failed} problem{'s' * (failed != 1)}"
+        elif result == "failed":
+            title = f"Run {number} failed"
+        elif result == "problems":
+            count = failed or 1
+            title = f"Run {number} finished with {count} problem{'s' * (count != 1)}"
         else:
-            result, title = "clean", f"Run {number} finished"
+            title = f"Run {number} finished"
         parts = [f"{record.moved_count} moved in", f"{record.returned} returned"]
         if dups:
             parts.append(f"{dups} duplicate{'s' * (dups != 1)}")
@@ -674,7 +678,7 @@ class RotatorTab(QWidget):
             self.dup_progress.setMaximum(e.total)
             self.dup_progress.setValue(e.current)
         if self._dup_job is not None:
-            self._dup_job.log(_log_kind(e), e.message)
+            self._dup_job.log(log_kind(e), e.message)
             if e.total:
                 self._dup_job.update(None, e.current, e.total)
 

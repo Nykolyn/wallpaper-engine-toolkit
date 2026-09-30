@@ -349,7 +349,7 @@ check("every activity names a tool the journal knows",
 source = "\n".join(p.read_text(encoding="utf-8") for p in
                    (Path(__file__).resolve().parent.parent / "app" / "ui").glob("*_tab.py"))
 used = set(re.findall(r'activity="(\w+)"', source))
-used |= set(re.findall(r'_start_job\(f?"[^"]*",\s*"(\w+)"\)', source))
+used |= set(re.findall(r'_start_job\(f?"[^"]*",\s*"(\w+)"[,)]', source))
 used |= set(re.findall(r'job=\(f?"[^"]*",\s*"(\w+)"\)', source))
 check("the tabs start every activity documented, and no other",
       used == set(activity.ACTIVITIES))
@@ -872,7 +872,7 @@ check("a build that built nothing, unasked, failed",
 print("-- the Rotator tab's report --")
 from app.ui import rotator_tab                                                # noqa: E402
 
-check("engine events become the log's kinds", [rotator_tab._log_kind(e) for e in (
+check("engine events become the log's kinds", [rotator_tab.log_kind(e) for e in (
     ProgressEvent("move", "Moved f1", 1, 3),
     ProgressEvent("return", "Returned f2", 1, 3),
     ProgressEvent("return", "DUPLICATE: f3 already in reserve", 2, 3, level="WARN"),

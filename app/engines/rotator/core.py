@@ -4,29 +4,107 @@ from __future__ import annotations
 import os
 import random
 import shutil
-import uuid
+from collections import Counter
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Callable, Optional
 
-from .config import Config, History, RunRecord
+from .config import Config, History, RunRecord, new_run_id
 
 
 # ---- Progress event types -------------------------------------------------
 
 class ProgressEvent:
+    """One thing a piece of work did or is doing.
+
+    `phase` is the engine's (scan, delete, return, select, move, playlist,
+    done, stopped, cancelled, error, …); `current` / `total` the count within
+    it (0 / 0 when there is none). `kind` is the log line's kind, in the
+    LogPanel's words (moved, returned, dupe, skip, fail, error, warn, step,
+    done, deleted, info); it is worked out from the message when not given.
+    `step` is set by a run (`runner.RotationRun`): the index, in the run's
+    `steps`, of the step the event belongs to — None outside a run.
+    """
+
     def __init__(self, phase: str, message: str, current: int = 0, total: int = 0,
-                 level: str = "INFO"):
+                 level: str = "INFO", *, kind: str = "", step: int | None = None):
         self.phase = phase
         self.message = message
         self.current = current
         self.total = total
         self.level = level
+        self.kind = kind or _kind_of(phase, message, level)
+        self.step = step
+
+    def __repr__(self) -> str:
+        return (f"ProgressEvent({self.phase!r}, {self.message!r}, {self.current}/{self.total}, "
+                f"{self.level}, kind={self.kind!r}, step={self.step})")
+
+
+def _kind_of(phase: str, message: str, level: str) -> str:
+    """The log kind of an event that did not name one: the older emitters'."""
+    if message.startswith("DUPLICATE"):
+        return "dupe"
+    if message.startswith(("SKIP", "Skipping")):
+        return "skip"
+    if level == "ERROR":
+        return "fail" if message.startswith("Failed") else "error"
+    if level == "WARN":
+        return "warn"
+    if message.startswith("Moved"):
+        return "moved"
+    if message.startswith("Returned"):
+        return "returned"
+    if message.startswith("Deleted"):
+        return "deleted"
+    return {"done": "done", "select": "step", "stopped": "stop",
+            "cancelled": "stop"}.get(phase, "info")
+
+
+def log_kind(e: ProgressEvent) -> str:
+    """The LogPanel kind of an event: what its line in the run log is."""
+    return e.kind
 
 
 ProgressCallback = Callable[[ProgressEvent], None]
 CancelCheck = Callable[[], bool]
+
+
+# ---- The steps of a rotation -------------------------------------------------
+#
+# In the order the engine really runs them (REDESIGN_PLAN §6.2.1), which is not
+# the order the design drew: the check for broken folders comes first and is
+# optional (it is its own worker, with a confirmation between it and the rest);
+# duplicates are set aside *during* the return, not after the move; the
+# playlist is rebuilt last, and only with `Config.refresh_playlist`.
+
+@dataclass(frozen=True)
+class Step:
+    key: str
+    title: str
+    phases: tuple[str, ...]         # the ProgressEvent phases that belong to it
+
+
+STEPS: tuple[Step, ...] = (
+    Step("check", "Check the folders for a project.json", ("scan", "delete")),
+    Step("return", "Return the previous batch to the reserve", ("return",)),
+    Step("move", "Draw and move the new batch in", ("select", "move")),
+    Step("playlist", "Rebuild the playlist in Wallpaper Engine", ("playlist",)),
+)
+STEP_KEYS = tuple(s.key for s in STEPS)
+
+
+def step(key: str) -> Step:
+    return next(s for s in STEPS if s.key == key)
+
+
+def run_steps(*, check: bool = True, playlist: bool = True) -> tuple[Step, ...]:
+    """The steps one run goes through, in order: the check when the run began
+    with one, the playlist when it rebuilds it. A ProgressEvent's `step` is an
+    index into this."""
+    return tuple(s for s in STEPS
+                 if (s.key != "check" or check) and (s.key != "playlist" or playlist))
 
 
 # ---- Folders that are not set -----------------------------------------------
@@ -91,19 +169,35 @@ def list_subfolders(path: str | Path) -> list[str]:
         return []
 
 
-def folder_size(path: str | Path) -> int:
-    """Total size in bytes (best-effort)."""
-    total = 0
-    try:
-        for root, _dirs, files in __import__("os").walk(path):
-            for f in files:
+def folder_measure(path: str | Path) -> tuple[int, int]:
+    """(bytes, files) under a folder, best-effort. Links and junctions are not
+    followed. Reads the disk: off the GUI thread."""
+    total = files = 0
+    stack = [str(path)]
+    while stack:
+        try:
+            entries = os.scandir(stack.pop())
+        except OSError:
+            continue
+        with entries:
+            for entry in entries:
                 try:
-                    total += (Path(root) / f).stat().st_size
+                    if entry.is_symlink() or entry.is_junction():
+                        continue            # never counted twice, never a loop
+                    if entry.is_dir(follow_symlinks=False):
+                        stack.append(entry.path)
+                    elif entry.is_file(follow_symlinks=False):
+                        # On Windows the listing already holds the size.
+                        total += entry.stat(follow_symlinks=False).st_size
+                        files += 1
                 except OSError:
                     pass
-    except OSError:
-        pass
-    return total
+    return total, files
+
+
+def folder_size(path: str | Path) -> int:
+    """Total size in bytes (best-effort)."""
+    return folder_measure(path)[0]
 
 
 def _unique_target(folder: Path, name: str) -> Path:
@@ -302,12 +396,58 @@ def delete_broken(paths: list[str], progress: ProgressCallback = _noop) -> list[
 
 # ---- The rotation ---------------------------------------------------------
 
+@dataclass
+class RetryResult:
+    """What a retry of a run's failures came to."""
+    retried: int = 0
+    fixed: int = 0                  # moved where the failed step meant them to go
+    resolved: int = 0               # no longer there to move: taken care of elsewhere
+    returned: int = 0
+    duplicates: list[str] = field(default_factory=list)
+    moved: list[str] = field(default_factory=list)
+    still_failed: list[str] = field(default_factory=list)
+    # Failed in a step nothing recorded (a run from before run_meta.json):
+    # left as they are rather than guessed at.
+    unknown: list[str] = field(default_factory=list)
+    cancelled: bool = False
+
+    @property
+    def changed(self) -> bool:
+        """Whether anything moved, so myprojects is not what it was."""
+        return bool(self.returned or self.duplicates or self.moved)
+
+
 class Rotator:
+    """One rotation: return myprojects to the reserve, then draw and move in.
+
+    After `run()`:
+    - `completed`: the move went through (even cut short by a cancel) and the
+      run is recorded — what the playlist is rebuilt after.
+    - `recorded`: the run is in the history. A run is recorded once it has
+      moved anything, either way, whatever stopped it; one that touched
+      nothing is not.
+    - `stopped_after`: the step a stop between steps came after ("return" or
+      "move"), or "".
+    - `cancelled`: stopped part-way through a step (the per-folder cancel).
+    - `error`: why it ended early, when something did.
+    - `returned_failed` / `moved_failed`: the failures, by step, in the order
+      of `record.failed`.
+    """
+
     def __init__(self, config: Config, history: History):
         self.config = config
         self.history = history
         # Set once a run has gone all the way through and been recorded.
         self.completed = False
+        self.recorded = False
+        self.stopped_after = ""
+        self.cancelled = False
+        self.error = ""
+        self.record: RunRecord | None = None
+        self.protected = 0
+        self.batch = 0
+        self.returned_failed: list[str] = []
+        self.moved_failed: list[str] = []
 
     def validate(self) -> Optional[str]:
         # All three, before anything else: an unset reserve or myprojects is the
@@ -360,68 +500,147 @@ class Rotator:
         }
 
     def run(self, progress: ProgressCallback = _noop,
-            cancelled: CancelCheck = _never_cancel) -> RunRecord:
+            cancelled: CancelCheck = _never_cancel, *,
+            stop_after_step: CancelCheck = _never_cancel,
+            record_id: str | None = None,
+            on_step: Callable[[str], None] | None = None) -> RunRecord:
+        """Return, then draw and move in; record the run.
+
+        `cancelled` is looked at before each folder, `stop_after_step` between
+        the return and the draw, and after the move. `on_step(key)` is called
+        as each step begins ("return", "move"). A run that had moved anything
+        by the time it ended is recorded, however it ended — the folders it
+        moved are where the history says, and the next run does not draw them
+        again — and an exception is raised again after that.
+        """
         # The worker validates first; this is for any caller that does not.
         problem = self.validate()
         if problem:
             raise ValueError(problem)
-        cfg = self.config
-        src = Path(cfg.source)
-        dst = Path(cfg.destination)
-        dup_dir = Path(cfg.duplicates)
-        dup_dir.mkdir(parents=True, exist_ok=True)
-
-        self.completed = False
+        step_to = on_step or (lambda _key: None)
+        self.completed = self.recorded = self.cancelled = False
+        self.stopped_after = self.error = ""
+        self.returned_failed, self.moved_failed = [], []
+        self.batch = self.config.count
         record = RunRecord(
-            id=uuid.uuid4().hex[:8],
+            id=record_id or new_run_id(),
             timestamp=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         )
+        self.record = record
+        try:
+            Path(self.config.duplicates).mkdir(parents=True, exist_ok=True)
+            step_to("return")
+            if not self._return_phase(record, progress, cancelled):
+                self._record_if_touched(record)
+                return record
+            if stop_after_step():
+                self.stopped_after = "return"
+                progress(ProgressEvent(
+                    "stopped", "Stopped after the return, as asked — nothing new was "
+                    "moved into myprojects.", level="WARN", kind="stop"))
+                self._record_if_touched(record)
+                return record
+            step_to("move")
+            if not self._move_phase(record, progress, cancelled):
+                self._record_if_touched(record)
+                return record
+        except BaseException as err:
+            self.error = self.error or f"{type(err).__name__}: {err}"
+            try:
+                self._record_if_touched(record)
+            except Exception:  # noqa: BLE001 — the first error is the one to report
+                pass
+            raise
 
-        # ---- Phase 1: return myprojects -> reserve (dups -> duplicates) ----
+        progress(ProgressEvent("done",
+            f"Done. Moved {record.moved_count}, returned {record.returned}, "
+            f"duplicates {record.duplicate_count}, failed {len(record.failed)}."))
+        self.history.add(record)
+        self.recorded = self.completed = True
+        if not self.cancelled and stop_after_step():
+            self.stopped_after = "move"
+            progress(ProgressEvent(
+                "stopped", "Stopped after the move, as asked — the playlist was not "
+                "rebuilt.", level="WARN", kind="stop"))
+        return record
+
+    def _record_if_touched(self, record: RunRecord) -> None:
+        if any(r is record for r in self.history.runs):
+            return          # added already; an error while saving it brought us back
+        if record.moved or record.duplicates or record.returned or record.failed:
+            self.history.add(record)
+            self.recorded = True
+
+    def _return_phase(self, record: RunRecord, progress: ProgressCallback,
+                      cancelled: CancelCheck) -> bool:
+        """Every folder in myprojects but the protected back to the reserve, or
+        to the duplicates folder when the reserve has one of that name. False
+        when cancelled part-way."""
+        src, dst = Path(self.config.source), Path(self.config.destination)
+        dup_dir = Path(self.config.duplicates)
         existing_all = list_subfolders(dst)
         protected = [n for n in existing_all if is_protected(n)]
         existing = [n for n in existing_all if not is_protected(n)]
+        self.protected = len(protected)
         reserve_names = {n.lower() for n in list_subfolders(src)}
+        total = len(existing)
         if protected:
             progress(ProgressEvent("return",
                 f"Skipping {len(protected)} protected folder(s) "
                 f"('{PROTECTED_PREFIX}' prefix) — left in myprojects.",
-                0, len(existing), level="WARN"))
-        progress(ProgressEvent("return", f"Returning {len(existing)} folders from myprojects...",
-                               0, len(existing)))
+                0, total, level="WARN", kind="skip"))
+        progress(ProgressEvent("return", f"Returning {total} folders from myprojects...",
+                               0, total, kind="step"))
         for i, name in enumerate(existing, 1):
             if cancelled():
-                progress(ProgressEvent("cancelled", "Cancelled during return phase.", level="WARN"))
-                return record
+                self.cancelled = True
+                progress(ProgressEvent("cancelled", "Cancelled during return phase.",
+                                       level="WARN"))
+                return False
             srcpath = dst / name
             if name.lower() in reserve_names:
                 target = _unique_target(dup_dir, name)
-                progress(ProgressEvent("return",
-                    f"DUPLICATE: {name} already in reserve -> duplicated_wallpapers",
-                    i, len(existing), level="WARN"))
                 try:
                     shutil.move(str(srcpath), str(target))
                     record.duplicates.append(name)
+                    progress(ProgressEvent("return",
+                        f"DUPLICATE: {name} already in reserve -> duplicated_wallpapers",
+                        i, total, level="WARN", kind="dupe"))
                 except OSError as e:
+                    self._failed(record, self.returned_failed, name)
                     progress(ProgressEvent("return", f"Failed to move duplicate {name}: {e}",
-                                           i, len(existing), level="ERROR"))
-                    record.failed.append(name)
+                                           i, total, level="ERROR", kind="fail"))
             else:
                 try:
                     shutil.move(str(srcpath), str(src / name))
                     reserve_names.add(name.lower())
                     record.returned += 1
+                    progress(ProgressEvent("return", f"Returned {name}", i, total,
+                                           kind="returned"))
                 except OSError as e:
+                    self._failed(record, self.returned_failed, name)
                     progress(ProgressEvent("return", f"Failed to return {name}: {e}",
-                                           i, len(existing), level="ERROR"))
-                    record.failed.append(name)
-            progress(ProgressEvent("return", f"Returned {name}", i, len(existing)))
+                                           i, total, level="ERROR", kind="fail"))
+        left = len(self.returned_failed)
+        parts = [f"{record.returned} folders returned to the reserve"]
+        if record.duplicates:
+            parts.append(f"{len(record.duplicates)} set aside as duplicates")
+        if left:
+            parts.append(f"{left} left behind")
+        progress(ProgressEvent("return", ", ".join(parts), total, total, kind="step"))
+        return True
 
-        # ---- Phase 2: compute selection -----------------------------------
+    def _move_phase(self, record: RunRecord, progress: ProgressCallback,
+                    cancelled: CancelCheck) -> bool:
+        """Draw the batch and move it in. False when there was nothing to draw
+        from; a cancel part-way ends the move but still counts as moved."""
+        cfg = self.config
+        src, dst = Path(cfg.source), Path(cfg.destination)
         all_folders = list_subfolders(src)
         if not all_folders:
+            self.error = "No folders in reserve."
             progress(ProgressEvent("error", "No folders in reserve. Aborting.", level="ERROR"))
-            return record
+            return False
 
         used = self.history.used_set()
         available = [n for n in all_folders if n.lower() not in used]
@@ -436,35 +655,224 @@ class Rotator:
             available = all_folders
 
         pick = random.sample(available, min(cfg.count, len(available)))
-        progress(ProgressEvent("select", f"Selected {len(pick)} folders.", 0, len(pick)))
+        total = len(pick)
+        progress(ProgressEvent("select", f"Selected {total} folders.", 0, total))
+        progress(ProgressEvent("move", f"Moving {total} folders into myprojects...",
+                               0, total, kind="step"))
 
-        # ---- Phase 3: move reserve -> myprojects --------------------------
         dest_names = {n.lower() for n in list_subfolders(dst)}
         for i, name in enumerate(pick, 1):
             if cancelled():
-                progress(ProgressEvent("cancelled", "Cancelled during move phase.", level="WARN"))
+                self.cancelled = True
+                progress(ProgressEvent("cancelled", "Cancelled during move phase.",
+                                       level="WARN"))
                 break
             if name.lower() in dest_names:
+                self._failed(record, self.moved_failed, name)
                 progress(ProgressEvent("move", f"SKIP: {name} already in myprojects.",
-                                       i, len(pick), level="WARN"))
-                record.failed.append(name)
+                                       i, total, level="WARN", kind="fail"))
                 continue
             try:
                 shutil.move(str(src / name), str(dst / name))
                 record.moved.append(name)
+                progress(ProgressEvent("move", f"Moved {name}", i, total, kind="moved"))
             except OSError as e:
+                self._failed(record, self.moved_failed, name)
                 progress(ProgressEvent("move", f"Failed to move {name}: {e}",
-                                       i, len(pick), level="ERROR"))
-                record.failed.append(name)
-            progress(ProgressEvent("move", f"Moved {name}", i, len(pick)))
+                                       i, total, level="ERROR", kind="fail"))
+        parts = [f"{record.moved_count} folders moved into myprojects"]
+        if self.moved_failed:
+            parts.append(f"{len(self.moved_failed)} failed")
+        progress(ProgressEvent("move", ", ".join(parts), total, total, kind="step"))
+        return True
 
-        progress(ProgressEvent("done",
-            f"Done. Moved {record.moved_count}, returned {record.returned}, "
-            f"duplicates {record.duplicate_count}, failed {len(record.failed)}."))
+    @staticmethod
+    def _failed(record: RunRecord, by_step: list[str], name: str) -> None:
+        record.failed.append(name)
+        by_step.append(name)
 
-        self.history.add(record)
-        self.completed = True
-        return record
+    # ---- retrying a run's failures -------------------------------------------
+
+    def retry(self, record: RunRecord, returned_failed: list[str] | None = None,
+              moved_failed: list[str] | None = None,
+              progress: ProgressCallback = _noop, cancelled: CancelCheck = _never_cancel,
+              on_step: Callable[[str], None] | None = None) -> RetryResult:
+        """Try each name in `record.failed` again, in the step it failed in.
+
+        A name that failed in the return goes back to the reserve (or to the
+        duplicates folder, when the reserve has one of that name by now); one
+        that failed in the move goes into myprojects. The side file says which
+        (`returned_failed` / `moved_failed`). A name it does not place — a run
+        from before it — is left alone: where the folder is now cannot tell a
+        failed move from a failed return put right by hand, and guessing wrong
+        would undo that. A name no longer where it failed — moved by hand, or
+        deleted — is taken off the list, and the log says so.
+
+        The record is updated in place — `failed` shrinks; `moved`,
+        `duplicates` and `returned` grow — and the history is saved, in the
+        same shape as ever. The two lists passed in become what still fails.
+        """
+        problem = self.validate()
+        if problem:
+            raise ValueError(problem)
+        step_to = on_step or (lambda _key: None)
+        returning, moving, unknown = self.split_failures(record, returned_failed,
+                                                         moved_failed)
+        result = RetryResult(retried=len(returning) + len(moving), unknown=unknown)
+        if unknown:
+            progress(ProgressEvent(
+                "return" if returning or not moving else "move",
+                f"Not retried, as nothing recorded which step they failed in: "
+                f"{', '.join(unknown)}.", level="WARN", kind="skip"))
+        cleared: list[tuple[str, str]] = []       # (step, name) no longer failing
+        try:
+            if returning:
+                step_to("return")
+                Path(self.config.duplicates).mkdir(parents=True, exist_ok=True)
+                self._retry_returns(record, returning, cleared, result, progress, cancelled)
+            if moving and not result.cancelled:
+                step_to("move")
+                self._retry_moves(record, moving, cleared, result, progress, cancelled)
+        finally:
+            left = Counter(cleared)
+            still_returning = _without(returning, "return", left)
+            still_moving = _without(moving, "move", left)
+            still = Counter(still_returning) + Counter(still_moving) + Counter(unknown)
+            failed = []
+            for name in record.failed:
+                if still[name] > 0:
+                    still[name] -= 1
+                    failed.append(name)
+            record.failed = failed
+            result.still_failed = list(failed)
+            if returned_failed is not None:
+                returned_failed[:] = still_returning
+            if moved_failed is not None:
+                moved_failed[:] = still_moving
+            if result.retried and self.history.find(record.id) is record:
+                self.history.save()
+        return result
+
+    @staticmethod
+    def split_failures(record: RunRecord, returned_failed: list[str] | None,
+                       moved_failed: list[str] | None
+                       ) -> tuple[list[str], list[str], list[str]]:
+        """record.failed, as (names to return, names to move in, names whose
+        step nothing recorded)."""
+        left = Counter(record.failed)
+        returning: list[str] = []
+        moving: list[str] = []
+        for names, into in ((returned_failed or [], returning), (moved_failed or [], moving)):
+            for name in names:
+                if left[name] > 0:
+                    left[name] -= 1
+                    into.append(name)
+        unknown = []
+        for name in record.failed:
+            if left[name] > 0:
+                left[name] -= 1
+                unknown.append(name)
+        return returning, moving, unknown
+
+    def _retry_returns(self, record, names, cleared, result, progress, cancelled) -> None:
+        src, dst = Path(self.config.source), Path(self.config.destination)
+        dup_dir = Path(self.config.duplicates)
+        total = len(names)
+        progress(ProgressEvent("return", f"Returning {total} folders that did not go back...",
+                               0, total, kind="step"))
+        for i, name in enumerate(names, 1):
+            if cancelled():
+                result.cancelled = True
+                progress(ProgressEvent("cancelled", "Cancelled during the retry.", level="WARN"))
+                return
+            srcpath, home = _child(dst, name), _child(src, name)
+            if srcpath is None or home is None:
+                progress(ProgressEvent("return", f"Not a folder name: {name!r}", i, total,
+                                       level="ERROR", kind="fail"))
+                continue
+            if not srcpath.exists():
+                cleared.append(("return", name))
+                result.resolved += 1
+                where = "is back in the reserve" if home.exists() else "is no longer anywhere"
+                progress(ProgressEvent("return", f"{name} {where} — nothing to retry.",
+                                       i, total, level="WARN", kind="skip"))
+                continue
+            try:
+                if home.exists():
+                    shutil.move(str(srcpath), str(_unique_target(dup_dir, name)))
+                    record.duplicates.append(name)
+                    result.duplicates.append(name)
+                    message, level, kind = (f"DUPLICATE: {name} already in reserve -> "
+                                            "duplicated_wallpapers", "WARN", "dupe")
+                else:
+                    shutil.move(str(srcpath), str(home))
+                    record.returned += 1
+                    result.returned += 1
+                    message, level, kind = f"Returned {name}", "INFO", "returned"
+            except OSError as e:
+                progress(ProgressEvent("return", f"Failed to return {name}: {e}", i, total,
+                                       level="ERROR", kind="fail"))
+                continue
+            cleared.append(("return", name))
+            result.fixed += 1
+            progress(ProgressEvent("return", message, i, total, level=level, kind=kind))
+
+    def _retry_moves(self, record, names, cleared, result, progress, cancelled) -> None:
+        src, dst = Path(self.config.source), Path(self.config.destination)
+        total = len(names)
+        progress(ProgressEvent("move", f"Moving {total} folders that did not go in...",
+                               0, total, kind="step"))
+        for i, name in enumerate(names, 1):
+            if cancelled():
+                result.cancelled = True
+                progress(ProgressEvent("cancelled", "Cancelled during the retry.", level="WARN"))
+                return
+            srcpath, target = _child(src, name), _child(dst, name)
+            if srcpath is None or target is None:
+                progress(ProgressEvent("move", f"Not a folder name: {name!r}", i, total,
+                                       level="ERROR", kind="fail"))
+                continue
+            if target.exists():
+                if srcpath.exists():
+                    progress(ProgressEvent("move", f"SKIP: {name} already in myprojects.",
+                                           i, total, level="WARN", kind="fail"))
+                    continue
+                # Moved in by hand since: it is where the run meant it to be.
+                cleared.append(("move", name))
+                result.resolved += 1
+                record.moved.append(name)
+                result.moved.append(name)
+                progress(ProgressEvent("move", f"{name} is in myprojects already — "
+                                       "counted as moved.", i, total, kind="skip"))
+                continue
+            if not srcpath.exists():
+                cleared.append(("move", name))
+                result.resolved += 1
+                progress(ProgressEvent("move", f"{name} is no longer in the reserve — "
+                                       "nothing to retry.", i, total, level="WARN", kind="skip"))
+                continue
+            try:
+                shutil.move(str(srcpath), str(target))
+            except OSError as e:
+                progress(ProgressEvent("move", f"Failed to move {name}: {e}", i, total,
+                                       level="ERROR", kind="fail"))
+                continue
+            cleared.append(("move", name))
+            record.moved.append(name)
+            result.moved.append(name)
+            result.fixed += 1
+            progress(ProgressEvent("move", f"Moved {name}", i, total, kind="moved"))
+
+
+def _without(names: list[str], step_key: str, cleared: Counter) -> list[str]:
+    """`names` less the ones cleared in this step, a name at a time."""
+    still = []
+    for name in names:
+        if cleared[(step_key, name)] > 0:
+            cleared[(step_key, name)] -= 1
+        else:
+            still.append(name)
+    return still
 
 
 # ---- Duplicate management (used by the Duplicates tab) --------------------
@@ -537,3 +945,48 @@ def move_replace_to_reserve(duplicates_dir: str, reserve_dir: str, names: list[s
             progress(ProgressEvent("replace", f"Failed for {name}: {e}", i, total, level="ERROR"))
             failed.append(name)
     return failed
+
+
+@dataclass
+class DuplicateFolder:
+    """A folder in the duplicates folder, for the Duplicates dialog."""
+    name: str
+    size: int = 0
+    files: int = 0
+    modified: float = 0.0           # the folder's mtime, a timestamp
+    in_reserve: bool = False        # a folder of this name is in the reserve now
+
+
+def list_duplicates(duplicates_dir: str, reserve_dir: str = "",
+                    progress: ProgressCallback = _noop,
+                    cancelled: CancelCheck = _never_cancel) -> list[DuplicateFolder]:
+    """What is in the duplicates folder, each with its size, sorted by name.
+
+    Reads every file's size, on the disk the folders are on: run it on a
+    worker. Nothing when the folder is not set — an unset folder is not the
+    working directory. `in_reserve` says whether "Move & replace" would
+    replace a folder in the reserve (only looked for when `reserve_dir` is set).
+    """
+    if not folder_is_set(duplicates_dir):
+        return []
+    base = Path(duplicates_dir)
+    names = list_subfolders(base)
+    reserve = ({n.lower() for n in list_subfolders(reserve_dir)}
+               if folder_is_set(reserve_dir) else set())
+    total = len(names)
+    progress(ProgressEvent("list", f"Measuring {total} folders in the duplicates folder...",
+                           0, total, kind="step"))
+    found: list[DuplicateFolder] = []
+    for i, name in enumerate(names, 1):
+        if cancelled():
+            progress(ProgressEvent("cancelled", "Stopped measuring.", i, total, level="WARN"))
+            break
+        path = base / name
+        size, files = folder_measure(path)
+        try:
+            modified = path.stat().st_mtime
+        except OSError:
+            modified = 0.0
+        found.append(DuplicateFolder(name, size, files, modified, name.lower() in reserve))
+        progress(ProgressEvent("list", name, i, total))
+    return found
