@@ -89,7 +89,7 @@ times are how the tracker rebuilds displays it did not witness. It discards a
 group of at least five files arriving faster than two a second for exactly this
 reason — but a slow rotation on a slow disk can fall under that rate.
 
-**New cycle** resets it.
+**New cycle…** (a monitor's **…** menu on the [Tracker](tracker.md#the-page) page) resets it.
 
 ## The count reset itself and the tray said "Playlist started over"
 

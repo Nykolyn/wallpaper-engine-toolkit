@@ -16,12 +16,13 @@ shuffle, and its playlists are ordered `random`. The Tracker reconstructs it.
 ## When to reach for it
 
 - Continuously, in the background, as a tray icon — that is its normal mode.
-- Open the page when you want the detail: what has been shown, what has not,
-  when the cycle started, and the projected finish.
+- Open the **Tracker** page when you want the detail: what is on screen and
+  for how long, how long it has left, what has been shown and what has not,
+  when the cycle started, and when the playlist should run out.
 
 ## How to use it
 
-Open the Tracker page, or run the tray-only tracker:
+Open the Tracker page (Ctrl+3), or run the tray-only tracker:
 
 ```
 python run_app.py --tracker
@@ -42,8 +43,91 @@ two write the same state file and merge on save, so running both is fine. A
 named mutex keeps autostart and a manual `run_tracker.cmd` from becoming two
 icons both looking, and another keeps the window to one.
 
-**New cycle** resets the count by hand. You should rarely need it — see
-[cycles](#cycles).
+**New cycle…** resets the count by hand, after asking; it is in each
+monitor's **…** menu on the page and in **Playlist settings**. You should rarely
+need it — see [cycles](#cycles).
+
+## The page
+
+- **The leading monitor**, in detail: the ring and `4 / 201` shown this cycle,
+  a preview of the wallpaper on screen, its title and author — with a
+  **Known** chip when the author is in your [authors
+  database](authors-database.md) — and three facts:
+  - **SHOWN FOR**, since it came up;
+  - **REMAINING**, the [countdown](#the-countdown-ring): `≈` when it is
+    estimated, "paused" in amber while Wallpaper Engine has paused that
+    monitor, "— disconnected" in red while Wallpaper Engine is not running;
+  - **CYCLE STARTED**, `~` when it was [worked out
+    afterwards](#when-the-cycle-began) rather than seen.
+
+  Its **…** menu: *Show its playlist below*, *Show on the tray icon* (see
+  [which monitor leads](#which-monitor-leads)) and *New cycle…*. With Wallpaper
+  Engine closed the card keeps the last known wallpaper and count and says so:
+  "last known · Wallpaper Engine is not running".
+- **The other monitors**, as summaries. One whose playlist no rotation built
+  says "follows its own order · not counted for rotation".
+- **Pace**: how long a wallpaper has been on screen on average this cycle —
+  real time, from the cycle's start over what it has shown, so the nights and
+  the paused hours are in it — and when the playlist runs out at that pace:
+  "At this pace the playlist empties ≈21 Sep, about 09:10 — time to rotate
+  (run 39)". The rotation is yours to start. The date comes once 20 have been
+  shown; before that the page says how many to go. Under it, what the count
+  rests on, never hidden: whether it follows [Wallpaper Engine's own
+  record](#wallpaper-engines-own-record) or the file handle, how many times are
+  reconstructed (`~`), how the cycle is dated; and in amber, a pass Wallpaper
+  Engine [threw away](#when-wallpaper-engine-starts-a-playlist-over) and
+  wallpapers deleted from disk.
+- **The whole playlist shown**: the ring closes in green, the count turns
+  green, the card gets a green edge and a note says "Whole playlist shown —
+  time to rotate", with **Open Rotator**. The count in the sidebar turns green
+  too.
+- **The playlist**, as a table: *Already shown this cycle*, newest first, the
+  one on screen at the top and selected; then the *Queue*. The columns:
+  - **#**: the place in the queue of a sorted playlist. A random one has no
+    queue (see [what comes next](#what-comes-next)), so its rows keep the
+    playlist's own order and **#** is the place in the playlist.
+  - **WALLPAPER**, **AUTHOR**, **TYPE**.
+  - **SHOWN**: how long it stayed up — until the next one came up, in real
+    time, like the pace.
+  - **STATE**: on screen, the time it came up, or queued.
+
+  `~` marks a time rebuilt from file times or Wallpaper Engine's record.
+  Filter by title or author, pick an author, jump to *Shown* or *Queue*.
+  Clicking a row opens Explorer on that wallpaper (see [watch out
+  for](#watch-out-for)).
+- **Refresh now** looks at Wallpaper Engine at once and reads the list again;
+  the table's ↻ reads the titles and authors again.
+
+**Where the titles and authors come from.** A wallpaper's title and type are
+in its own `project.json`. Its author is in no file Wallpaper Engine keeps, so
+the page takes the answers [Review](review.md) has already had from Steam
+(`data/steam_cache.sqlite`), however old, and never asks Steam itself: a
+wallpaper Review has not looked up shows "—". Both are read off the window's
+thread and kept until the window closes. The first read of a playlist costs a
+second or two a couple of hundred wallpapers on a hard disk (14 s for 1 756
+measured here); its rows show at once, named by their folders, and fill in.
+
+**The countdown on the page.** While the page is on screen the window keeps a
+countdown of its own. It starts from the tray's, which the tray saves every 15
+seconds, and follows Wallpaper Engine's changes and pause rules from there,
+the way the tray's estimate does. It never reads Wallpaper Engine's memory —
+the tray does that — and never writes the tray's file. To Wallpaper Engine this
+window is an application like any other: focused or maximized on a monitor, it
+pauses that monitor's wallpaper, and the page says so.
+
+**Playlist settings** (the header's button): where the count comes from —
+Wallpaper Engine's `config.json`, how often it also checks, which monitor
+leads, whether it counts in the background, all set on the
+[Settings](settings.md) page, which it links to — then **Rebuild from file
+times** (after asking; see [time nobody was
+watching](#time-nobody-was-watching)) and **New cycle…** for each monitor.
+
+The header's line says whether the count goes on with the window closed:
+"counting in the background" while the tray tracker runs, "counting while this
+window is open" when it does not.
+
+With nothing to show, the page says why: `config.json` was not found (choose it
+in Settings), no monitor plays a playlist, or Wallpaper Engine is not running.
 
 ## Starting with Windows
 
@@ -130,8 +214,8 @@ screen in the playlist and no longer waiting, a deck of this playlist rather
 than another — the count follows it. Credits it contradicts are withdrawn. A
 change looked at as it is written is dated to the second from the write;
 anything drawn between two looks, or while nothing was running, is counted too
-and marked `~`, dated from its file's access time. The card says "following
-Wallpaper Engine's own record of the pass".
+and marked `~`, dated from its file's access time. The page's Pace notes say
+"Read from Wallpaper Engine's own record of the pass".
 
 Checked against the live tracker before the switch, the deck named the same
 wallpaper on screen as the handle probe on both monitors, and disagreed with the
@@ -200,8 +284,8 @@ So the tracker is a **reconciler**, not a counter. It re-reads those stamps when
 it adopts a playlist it has not been watching, when a look finds more than five
 minutes passed since the last, and in any case every ten minutes. Recovered
 entries are marked `~` and counted separately, so observation and reconstruction
-are never confused. Where last-access updates are off, the page says so and falls
-back to counting only what it sees.
+are never confused. Where last-access updates are off, Playlist settings says
+so, and the tracker counts only what it sees.
 
 An access time is not proof of a display, though. Plenty of things read the
 whole library at once — Wallpaper Engine refreshing its browser, a rotation
@@ -232,7 +316,7 @@ folders with the playlist *is* its starting moment. Otherwise the start is taken
 from the break in the access times — inside a running cycle wallpapers are shown
 day after day, so only a gap of several days reads as "the previous playlist
 ended here". If neither is conclusive the tracker refuses to guess and starts
-counting from now. The card always says which of the three applied.
+counting from now. The page's Pace notes always say which of the three applied.
 
 ### What comes next
 
@@ -248,17 +332,20 @@ roll (196 changes on a 189-wallpaper playlist repeated one wallpaper, where
 drawing with replacement repeats about seventy), so every wallpaper still
 waiting is exactly as likely to be next as any other.
 
-The list therefore says which of the two it is showing — "Up next, in playing
-order" or "random order, any of these can be next" — rather than inventing an
-order. To get a real queue, set the playlist to Sorted in Wallpaper Engine.
+The queue's header therefore says which of the two it is showing — "up next, in
+playing order" or "random order, any of these can be next" — rather than
+inventing an order. To get a real queue, set the playlist to Sorted in
+Wallpaper Engine.
 
 ### Which monitor leads
 
-With two monitors running two playlists, the card, the list and the tray number
-all follow the playlist a **rotation built** — that is the one whose end is the
-cue to rotate again. A subscribed or hand-made playlist runs forever and says
-nothing about timing. *Show on the icon* in the tray menu overrides this, and
-the choice is remembered.
+With two monitors running two playlists, the page's detailed card, its table,
+the tray number and "Next in the loop" all follow the playlist a **rotation
+built** — that is the one whose end is the cue to rotate again. A subscribed or
+hand-made playlist runs forever and says nothing about timing. *Show on the
+icon* in the tray menu, *Show on the tray icon* in a card's menu and **Lead
+monitor** on the Settings page override this, and the choice is remembered.
+(*Show its playlist below* only changes which list the table shows.)
 
 ### When Wallpaper Engine starts a playlist over
 
@@ -278,17 +365,18 @@ So on every look, when at least half of what the cycle counts as shown (and no
 fewer than three) is back in the engine's deck, the cycle is archived with the
 reason and a new one begins from what the engine has drawn — credited from the
 engine's record and marked `~`. A deck that does not fit the playlist is
-ignored. The tray says when it happens ("Playlist started over") and the card
-says what the old count reached.
+ignored. The tray says when it happens ("Playlist started over") and the
+page's Pace notes say, in amber, what the old count had reached.
 
 A pass that ran to its **end** begins again the same way, and is told apart by
 what was left: nothing, or only the wallpaper now on screen. That covers both
 things Wallpaper Engine might do at the end — write out an empty deck first, or
 shuffle the next pass as it draws the last wallpaper, in which case the finished
 cycle is never seen whole. Either way the tray says "Playlist finished" once,
-and the card says the next pass began after all of the last one was shown.
+and the page's Pace notes say the next pass began after all of the last one
+was shown.
 
-**New cycle** on a followed pass sets aside what the pass has drawn so far,
+**New cycle…** on a followed pass sets aside what the pass has drawn so far,
 since the engine's record would otherwise restore the whole count at the next
 look. The set-aside wallpapers count again once Wallpaper Engine deals them
 again.
@@ -420,9 +508,9 @@ all: nothing is drawn twice within a pass, so what is left is exactly
 
 Wallpaper time is not wall-clock time — it only passes while Wallpaper Engine is
 running and unpaused, and `playbackfullscreen` / `playbackmaximized` stop the
-timer behind a game. So the card also projects a finish from the pace the cycle
-has actually kept — elapsed time divided by wallpapers seen — which is the
-number that answers "when can I rotate?".
+timer behind a game. So the Pace panel projects the finish from the pace the
+cycle has actually kept — elapsed time divided by wallpapers seen — which is
+the number that answers "when can I rotate?".
 
 ## Files
 
@@ -442,6 +530,9 @@ it. The tracker writes nothing back to Wallpaper Engine; only a rotation does
 - **Clicking a row** opens Explorer on that wallpaper's folder with the file
   selected. A playlist outlives its files, so a row whose file is gone opens the
   nearest folder that still exists instead.
+- The **AUTHOR** column is only as complete as Review's Steam cache: the
+  wallpapers of a rotated-in batch mostly came from the reserve, which Review
+  has not looked up, and show "—".
 - Playlists that change on a schedule or when a video ends have no delay to
   count, and show no ring.
 - Per-application rules (`apprules`) and the on-battery setting are not

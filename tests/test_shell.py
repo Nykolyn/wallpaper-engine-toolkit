@@ -424,6 +424,8 @@ check("progress: a bar and a percentage, under the name",
 c = NavState.count(4, 201)
 check("count: 4/201 and a mini bar", (c.text, c.two_lines, round(c.fraction, 3))
       == ("4/201", True, 0.02))
+check("and both turn ok once all are done",
+      c.tone == "lo" and NavState.count(201, 201).tone == "ok" and NavState.count(0, 0).tone == "lo")
 check("badge: a warn badge, and a warn dot in the rail",
       (NavState.badge(12).text, NavState.badge(12).dot()) == ("12", "warn"))
 check("status: a quiet word at the right, or a toned one under the name",
@@ -479,8 +481,8 @@ going.update("moving", 412, 1000)
 check("while it runs: its bar", nav_for("rotator", center, snap) == NavState.progress(412, 1000))
 check("the Creator and the Copier say idle", nav_for("creator", center, snap).text == "idle")
 snap[PLAYLIST] = Reading(playlist, 1.0)
-check("the Tracker counts the leading monitor", nav_for("tracker", center, snap)
-      == NavState.count(4, 201))
+check("the Tracker has a page of its own now: the old tabs' nav leaves it alone",
+      nav_for("tracker", center, snap) == NavState())
 
 print("-- the title bar and Windows --")
 check("the offscreen window has no native frame to lean on",

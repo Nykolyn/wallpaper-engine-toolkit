@@ -1407,6 +1407,26 @@ def cards_section() -> Section:
     row.addWidget(second, 0, Qt.AlignTop)
     row.addStretch()
     section.body.addLayout(row)
+
+    # The Tracker's card keeps its LEADING badge while REMAINING says what the
+    # timer is doing; a playlist shown to its end turns the card green.
+    section.body.addWidget(overline(
+        "MonitorCard detail — ≈ estimated · timer paused · Wallpaper Engine stopped · finished"))
+    row = QHBoxLayout()
+    row.setSpacing(14)
+    leading = dict(common, author_chip="Known")
+    for view in (MonitorView("Monitor1", "leading", remaining_approx=True, **leading),
+                 MonitorView("Monitor1", "leading", timer="paused", **leading),
+                 MonitorView("Monitor1", "leading", timer="stopped",
+                             note="last known · Wallpaper Engine is not running",
+                             **dict(leading, shown_for=None)),
+                 MonitorView("Monitor1", "leading", **dict(leading, position=201))):
+        card = MonitorCard(view, detail=True)
+        card.set_menu(QMenu(card))
+        card.setFixedWidth(330)
+        row.addWidget(card, 0, Qt.AlignTop)
+    row.addStretch()
+    section.body.addLayout(row)
     return section
 
 

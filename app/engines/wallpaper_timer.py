@@ -705,11 +705,20 @@ def wallpaper_engine_process() -> tuple[int, float] | None:
 
 # ---- The timer ----------------------------------------------------------------
 
+_SAME = object()        # restore from where it saves
+
+
 class WallpaperTimer:
     """Ticks once a second and keeps a Countdown per monitor.
 
     The Windows-facing parts are passed in so the logic can be driven without a
     desktop: `find_engine`, `measure_screens` and `clock` default to the real ones.
+
+    The window runs one of these too, for the Tracker page, as a reader only:
+    `open_memory=None` (the tray is the one that reads Wallpaper Engine's
+    memory), `save_path=None` with `restore_path` the tray's file (it starts
+    from the tray's count and never writes over it), and `follow_files=False`
+    (the window's TrackerFeed already looks at the two files every second).
     """
 
     def __init__(self, config_path: str,
@@ -720,17 +729,23 @@ class WallpaperTimer:
                  save_path: Path | None = SAVE_PATH,
                  open_memory: Callable[[int], "we_memory.Memory"] | None = we_memory.ProcessMemory,
                  background: bool = True,
-                 files: EngineFiles | None = None):
+                 files: EngineFiles | None = None,
+                 restore_path: Path | None | object = _SAME,
+                 follow_files: bool = True):
         self.config_path = Path(config_path)
         self.state_path = self.config_path.parent / STATE_FILE
         # Shared with the tracker when the tray runs both, so the two files are
         # looked at once a second rather than once per reader.
         self.files = files or EngineFiles(self.config_path)
+        self.follow_files = follow_files
         self.find_engine = find_engine
         self.measure_screens = measure_screens
         self.find_displays = find_displays
         self.clock = clock
         self.save_path = save_path
+        # Where a count left by an earlier timer is picked up from: the file
+        # this one saves to, unless it is told otherwise.
+        self.restore_path = save_path if restore_path is _SAME else restore_path
 
         self.settings: dict[str, TimerSettings] = {}
         self.rules = PlaybackRules()
@@ -765,6 +780,12 @@ class WallpaperTimer:
         self._search_misses = 0
         self._search_cost = (0.0, 0.0)                # megabytes read, seconds taken
         self.log: Callable[[str], None] = lambda _message: None
+
+    @property
+    def engine(self) -> tuple[int, float] | None:
+        """The running Wallpaper Engine as the last tick found it: (pid, start
+        time), or None when it is not running."""
+        return self._engine
 
     # -- reading Wallpaper Engine -------------------------------------------
 
@@ -985,7 +1006,8 @@ class WallpaperTimer:
                     clock.known = False
                 self._forget_memory()
             self._engine = engine
-        self.files.refresh()
+        if self.follow_files:
+            self.files.refresh()
         self._read_config()
         if self._restored is not None:
             self._apply_saved(now)
@@ -1058,10 +1080,10 @@ class WallpaperTimer:
             pass
 
     def _load_saved(self) -> dict | None:
-        if self.save_path is None:
+        if self.restore_path is None:
             return None
         try:
-            return json.loads(self.save_path.read_text(encoding="utf-8"))
+            return json.loads(Path(self.restore_path).read_text(encoding="utf-8"))
         except (OSError, ValueError):
             return None
 

@@ -1,0 +1,153 @@
+{
+  "//": "Made-up states of the Tracker page for tools/ui_snapshot.py and tests/test_tracker_page.py: each monitor's count (the fields of the tracker's Progress), its countdown, what is on its screen, and how its playlist is laid out. The page builds each playlist from these: 'total' wallpapers (and 'gone' deleted ones) called wallpaper_0001… under 'root', the first 'seen' of a shuffle shown one 'minutes' apart. Titles and authors come from the word lists below. Nothing here is anyone's data: the names are invented and the folders are on X:, which no machine here has. 'frame' is the state of shell.json the frame shows.",
+  "now": "2026-09-19T13:44:00",
+  "root": "X:/Steam/steamapps/common/wallpaper_engine/projects/myprojects",
+  "title_words": ["Harbour", "Lights", "Paper", "Cranes", "Tide", "Pine", "Mist", "Copper",
+                  "Field", "Glass", "River", "Moth", "Orbit", "Signal", "Quiet", "Ember", "Salt",
+                  "Cedar", "Velvet", "Dune", "Hollow", "Prism", "Linen", "Marble", "Fog"],
+  "authors": ["Marlow", "tidewright", "orbit_lab", "North Room", "Pale Harbour", "Lumen Six",
+              "Ferro Works", "Quill", "ashgrove", "Studio Twelve"],
+  "kinds": ["scene", "video", "web"],
+  "states": {
+    "tracking": {
+      "frame": "running",
+      "background": true,
+      "engine": true,
+      "next_run": 39,
+      "monitors": [
+        {"progress": {"monitor": "Monitor1", "seen": 4, "total": 201, "started": "2026-09-19 10:56:00",
+                      "current_since": "2026-09-19 13:30:00", "inferred": 1, "anchor": "rotation history",
+                      "from_rotation": true, "from_engine": true},
+         "countdown": {"remaining": 1560},
+         "resolution": "2560×1440",
+         "wallpaper": {"title": "Paper Lanterns at Dusk", "author": "Marlow", "known": true, "type": "scene"}},
+        {"progress": {"monitor": "Monitor2", "playlist": "subscribed", "seen": 2, "total": 201,
+                      "started": "2026-09-19 13:20:00", "current_since": "2026-09-19 13:41:00",
+                      "anchor": "tracked from now", "from_engine": true},
+         "countdown": {"remaining": 420},
+         "resolution": "1920×1080",
+         "wallpaper": {"title": "Tram Window, Late Rain", "author": "tidewright", "type": "video"}}
+      ]
+    },
+    "paused": {
+      "frame": "idle",
+      "background": true,
+      "engine": true,
+      "next_run": 39,
+      "monitors": [
+        {"progress": {"monitor": "Monitor1", "seen": 118, "total": 201, "started": "2026-09-15 08:30:00",
+                      "current_since": "2026-09-19 13:36:00", "inferred": 9, "anchor": "rotation history",
+                      "from_rotation": true, "from_engine": true},
+         "countdown": {"remaining": 1260, "paused": true},
+         "resolution": "2560×1440",
+         "playlist": {"minutes": 51},
+         "wallpaper": {"title": "Paper Lanterns at Dusk", "author": "Marlow", "known": true, "type": "scene"}},
+        {"progress": {"monitor": "Monitor2", "playlist": "subscribed", "seen": 64, "total": 1386,
+                      "started": "2026-09-17 21:05:00", "current_since": "2026-09-19 13:39:00",
+                      "anchor": "tracked from now", "from_engine": true},
+         "countdown": {"remaining": 300},
+         "resolution": "1920×1080",
+         "wallpaper": {"title": "Tram Window, Late Rain", "author": "tidewright", "type": "video"}}
+      ]
+    },
+    "disconnected": {
+      "frame": "we-off",
+      "background": true,
+      "engine": false,
+      "next_run": 39,
+      "monitors": [
+        {"progress": {"monitor": "Monitor1", "seen": 118, "total": 201, "started": "2026-09-15 08:30:00",
+                      "current_since": "2026-09-19 11:52:00", "live": false, "inferred": 9,
+                      "anchor": "rotation history", "from_rotation": true, "from_engine": true},
+         "resolution": "2560×1440",
+         "playlist": {"minutes": 51},
+         "wallpaper": {"title": "Paper Lanterns at Dusk", "author": "Marlow", "known": true, "type": "scene"}},
+        {"progress": {"monitor": "Monitor2", "playlist": "subscribed", "seen": 64, "total": 1386,
+                      "started": "2026-09-17 21:05:00", "current_since": "2026-09-19 11:50:00",
+                      "live": false, "anchor": "tracked from now", "from_engine": true},
+         "resolution": "1920×1080",
+         "wallpaper": {"title": "Tram Window, Late Rain", "author": "tidewright", "type": "video"}}
+      ]
+    },
+    "finished": {
+      "frame": "idle",
+      "background": true,
+      "engine": true,
+      "next_run": 39,
+      "monitors": [
+        {"progress": {"monitor": "Monitor1", "seen": 201, "total": 201, "started": "2026-09-13 09:10:00",
+                      "current_since": "2026-09-19 13:31:00", "inferred": 14, "anchor": "rotation history",
+                      "from_rotation": true, "from_engine": true},
+         "countdown": {"remaining": 780},
+         "resolution": "2560×1440",
+         "playlist": {"minutes": 44},
+         "wallpaper": {"title": "Salt Marsh, First Light", "author": "orbit_lab", "type": "scene"}},
+        {"progress": {"monitor": "Monitor2", "playlist": "subscribed", "seen": 311, "total": 1386,
+                      "started": "2026-09-17 21:05:00", "current_since": "2026-09-19 13:39:00",
+                      "anchor": "tracked from now", "from_engine": true},
+         "countdown": {"remaining": 300},
+         "resolution": "1920×1080",
+         "wallpaper": {"title": "Tram Window, Late Rain", "author": "tidewright", "type": "video"}}
+      ]
+    },
+    "restarted": {
+      "frame": "idle",
+      "background": false,
+      "engine": true,
+      "next_run": 39,
+      "monitors": [
+        {"progress": {"monitor": "Monitor1", "seen": 23, "total": 195, "started": "2026-09-19 07:20:00",
+                      "current_since": "2026-09-19 13:39:00", "inferred": 21,
+                      "anchor": "Wallpaper Engine starting the playlist over", "from_rotation": true,
+                      "from_engine": true, "restarted_at": "2026-09-19 11:02:00",
+                      "restarted_from": "81/195", "previous_id": "fixture0"},
+         "countdown": {"remaining": 290, "approximate": true},
+         "resolution": "2560×1440",
+         "playlist": {"minutes": 16},
+         "wallpaper": {"title": "Copper Tide", "author": "North Room", "known": true, "type": "web"}},
+        {"progress": {"monitor": "Monitor2", "playlist": "subscribed", "seen": 64, "total": 1386,
+                      "started": "2026-09-17 21:05:00", "current_since": "2026-09-19 13:41:00",
+                      "anchor": "tracked from now", "from_engine": true},
+         "countdown": {"remaining": 420},
+         "resolution": "1920×1080",
+         "wallpaper": {"title": "Tram Window, Late Rain", "author": "tidewright", "type": "video"}}
+      ]
+    },
+    "we-off": {
+      "frame": "we-off",
+      "background": false,
+      "engine": false,
+      "error": "No active playlist in config.json. Apply a playlist in Wallpaper Engine and restart it — the config is only written on exit.",
+      "monitors": []
+    },
+    "single-monitor": {
+      "frame": "idle",
+      "background": true,
+      "engine": true,
+      "next_run": 39,
+      "monitors": [
+        {"progress": {"monitor": "Monitor1", "seen": 57, "total": 140, "gone": 3, "order": "sorted",
+                      "started": "2026-09-16 19:40:00", "current_since": "2026-09-19 13:37:00",
+                      "anchor": "rotation history", "from_rotation": true, "from_engine": false},
+         "countdown": {"remaining": 180},
+         "resolution": "2560×1440",
+         "playlist": {"minutes": 70, "stride": 1},
+         "wallpaper": {"title": "Linen Dune", "author": "Quill", "type": "video"}}
+      ]
+    },
+    "no-config": {
+      "frame": "empty",
+      "background": false,
+      "engine": false,
+      "error": "Cannot read Wallpaper Engine's config.json: it is not there",
+      "monitors": []
+    },
+    "no-playlist": {
+      "frame": "empty",
+      "background": true,
+      "engine": true,
+      "error": "No active playlist in config.json. Apply a playlist in Wallpaper Engine and restart it — the config is only written on exit.",
+      "monitors": []
+    }
+  }
+}

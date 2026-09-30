@@ -11,7 +11,8 @@
   a 298 × 84 preview, the title, the author with a chip, and a footer of SHOWN
   FOR / REMAINING / CYCLE STARTED. Its states are the monitor's: leading,
   summary (a second monitor, following its own order), paused and
-  disconnected.
+  disconnected. A playlist shown to its end closes the ring in ok, turns the
+  count green and gives the card an ok edge; a count that moves flashes.
 
 A page never builds a MonitorCard's text itself: it fills a `MonitorView`
 from the engine and hands it over, and the card writes every number through
@@ -262,6 +263,10 @@ BADGES = {"leading": ("Leading", "accent"), "paused": ("Paused", "warn"),
           "disconnected": ("Disconnected", "danger")}
 BAR_TONES = {"leading": "accent", "summary": "muted", "paused": "warn",
              "disconnected": "danger"}
+# What REMAINING says of the timer, whatever the card's state: "" follows the
+# state; "paused" (in warn) and "stopped" (Wallpaper Engine is not running,
+# "— disconnected" in danger) leave the badge alone, as the Tracker's card does.
+TIMER_STATES = ("", "paused", "stopped")
 
 
 @dataclass(frozen=True)
@@ -270,8 +275,11 @@ class MonitorView:
 
     Times are seconds; `cycle_started` and `last_seen` are datetimes (or
     timestamps). `reconstructed` says the cycle's start was rebuilt after a
-    restart rather than seen, which the card marks with `~`. `preview` is the
-    wallpaper's folder (or preview file), read off the GUI thread."""
+    restart rather than seen, which the card marks with `~`;
+    `remaining_approx` says the time left is an estimate (`≈`). `timer` is
+    what REMAINING says of the timer when that is not the card's state (see
+    `TIMER_STATES`). `preview` is the wallpaper's folder (or preview file),
+    read off the GUI thread."""
     name: str
     state: str = "summary"
     resolution: str = ""
@@ -287,11 +295,16 @@ class MonitorView:
     last_seen: object = None
     preview: str | None = None
     note: str = ""                       # "follows its own order · not counted for rotation"
+    remaining_approx: bool = False
+    timer: str = ""
 
     def __post_init__(self) -> None:
         if self.state not in MONITOR_STATES:
             raise ValueError(f"no monitor state {self.state!r}; there are "
                              f"{', '.join(MONITOR_STATES)}")
+        if self.timer not in TIMER_STATES:
+            raise ValueError(f"no timer state {self.timer!r}; there are "
+                             f"{', '.join(repr(s) for s in TIMER_STATES)}")
 
     # -- the words, as the card writes them
 
@@ -326,16 +339,30 @@ class MonitorView:
             return 0.0
         return max(0.0, min(1.0, self.position / self.total))
 
+    def finished(self) -> bool:
+        """The whole playlist has been shown: the moment to rotate."""
+        return 0 < self.total <= self.position
+
     def bar_tone(self) -> str:
+        if self.finished() and self.state != "disconnected":
+            return "ok"
         return BAR_TONES[self.state]
 
     def remaining_parts(self) -> tuple[str, str, str]:
-        """(value, the word after it, tone) for REMAINING: "26 min", "26 min
-        paused" in warn, or "— disconnected"."""
-        if self.state == "disconnected":
+        """(value, the word after it, tone) for REMAINING: "26 min" (or
+        "≈26 min", estimated), "26 min paused" in warn, or "— disconnected"."""
+        timer = self.timer or {"paused": "paused", "disconnected": "stopped"}.get(self.state, "")
+        if timer == "stopped":
             return fmt.DASH, "disconnected", "danger"
-        value = fmt.DASH if self.remaining is None else fmt.duration(self.remaining, exact=False)
-        if self.state == "paused":
+        if self.remaining is None:
+            value = fmt.DASH
+        elif self.remaining <= 0:
+            value = "any moment"
+        else:
+            value = fmt.duration(self.remaining, exact=False)
+            if self.remaining_approx:
+                value = fmt.approx(value)
+        if timer == "paused":
             return value, "paused", "warn"
         return value, "", "text.body"
 
@@ -432,7 +459,7 @@ class _Facts(QWidget):
         for i, (caption, value) in enumerate(facts):
             self._labels[i].setText(caption.upper())
             if i == 1:
-                value_tone = "text.lo" if view.state == "disconnected" else tone
+                value_tone = "text.lo" if word == "disconnected" else tone
                 self._values[i].setText(qualified_html(remaining, value_tone))
                 self._words[i].setText(word)
                 self._words[i].setVisible(bool(word))
@@ -585,7 +612,7 @@ class MonitorCard(GlassPanel):
         return self._view
 
     def set_view(self, view: MonitorView, now=None) -> None:
-        self._view = view
+        before, self._view = self._view, view
         self._glyph.set_icon("monitor", view.icon_tone())
         self._name.setText(view.name)
         self._badge.set_badge(view.badge())
@@ -595,6 +622,7 @@ class MonitorCard(GlassPanel):
         self._note.setText(view.note)
         self._note.setVisible(bool(view.note))
         self._thumb.set_source(view.preview if view.state != "disconnected" else None)
+        done = view.finished() and view.state != "disconnected"
         if self._detail:
             self._meta.setText(view.author or fmt.DASH)
             self._chip.setVisible(bool(view.author_chip) and view.state != "disconnected")
@@ -608,15 +636,32 @@ class MonitorCard(GlassPanel):
             else:
                 self._position.setText(fmt.DASH)
                 self._of.setText("")
-            self._ring.set_value(view.position, view.total)
+            if done:
+                self._ring.set_done()
+            else:
+                self._ring.set_value(view.position, view.total)
             self._facts.set_view(view, now)
+            count, rest = self._position, ("ok" if done else "text.hi")
         else:
             self._meta.setText(view.meta_text(now))
             self._count.setText(view.count_text())
             self._bar.set_tone(view.bar_tone())
             self._bar.set_fraction(view.fraction())
+            count, rest = self._count, ("ok" if done else "text.mid")
+        # The count moves once a delay, on a card nobody may be watching at
+        # that moment: tint it briefly so the change is not missed. The last
+        # one turns it green, fading in from the colour it had.
+        moved = (before is not None and before.name == view.name and before.total == view.total
+                 and before.position != view.position)
+        count.setStyleSheet("")         # what an earlier flash left behind
+        set_tone(count, rest.removeprefix("text."))
+        if moved:
+            was = "text.hi" if self._detail else "text.mid"
+            animations.flash(count, was if done else "accent", rest=rest)
+        self.set_tone("ok" if done else None)
         self.setAccessibleName(view.name)
-        self.setAccessibleDescription(f"{view.title_text()}, {view.count_text()}")
+        self.setAccessibleDescription(f"{view.title_text()}, {view.count_text()}"
+                                      + (", the whole playlist shown" if done else ""))
 
     def set_menu(self, menu) -> None:
         """The overflow button, with this menu; None takes it away."""
@@ -633,9 +678,10 @@ class MonitorCard(GlassPanel):
                "resolution": self._resolution.text(), "title": self._title.text(),
                "meta": self._meta.text(),
                "note": self._note.text() if self._note.isVisibleTo(self) else ""}
+        out["finished"] = self.tone() == "ok"
         if self._detail:
             out["count"] = f"{self._position.text()} {self._of.text()}".strip()
-            out["ring"] = self._ring.label()
+            out["ring"] = self._ring.label() or self._ring.state()
             out["facts"] = " | ".join(self._facts.value_texts())
             out["chip"] = self._chip.text() if self._chip.isVisibleTo(self) else ""
         else:

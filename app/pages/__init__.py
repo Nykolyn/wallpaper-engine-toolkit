@@ -3,6 +3,7 @@
 - base: `Page`, what the frame needs from a page, and `LegacyPage`, an old
   tab in the new frame.
 - overview: the loop at a glance.
+- tracker: each monitor's playlist, counted down.
 - settings: what is set once.
 - legacy: what the old tabs' sidebar items say, until their pages say it.
 
@@ -22,10 +23,10 @@ def build_pages(window) -> list[Page]:
     from ..ui.creator_tab import CreatorTab
     from ..ui.review_tab import ReviewTab
     from ..ui.rotator_tab import RotatorTab
-    from ..ui.tracker_tab import TrackerTab
     from .legacy import LegacyNav
     from .overview import OverviewPage
     from .settings import SettingsPage
+    from .tracker import TrackerPage
 
     settings, feed, services = window.settings, window.feed, window.services
     # One Config for the Rotator tab and the Settings page: what one saves the
@@ -33,15 +34,13 @@ def build_pages(window) -> list[Page]:
     # (the page's Rotator fields are read-only while it runs).
     config = Config.load()
     rotator = RotatorTab(config)
-    tracker = TrackerTab(settings, feed)
     review = ReviewTab(settings)
     creator = CreatorTab(settings)
     copier = CopierTab(settings)
+    rotator_page = LegacyPage("rotator", "Rotator", "rotator", rotator,
+                              "Swaps a batch of folders between the reserve and myprojects")
+    tracker_page = TrackerPage(feed, services, settings=settings)
     legacy = [
-        LegacyPage("rotator", "Rotator", "rotator", rotator,
-                   "Swaps a batch of folders between the reserve and myprojects"),
-        LegacyPage("tracker", "Tracker", "tracker", tracker,
-                   "Counts each monitor's playlist down"),
         LegacyPage("review", "Review", "review", review,
                    "What is new from the authors in your library"),
         LegacyPage("creator", "Creator", "creator", creator,
@@ -58,5 +57,6 @@ def build_pages(window) -> list[Page]:
             rotator.refresh_all()
 
     settings_page.changed.connect(changed)
-    window._legacy_nav = LegacyNav(legacy, services, window)
-    return [OverviewPage(services, feed, settings=settings), *legacy, settings_page]
+    window._legacy_nav = LegacyNav([rotator_page, *legacy], services, window)
+    return [OverviewPage(services, feed, settings=settings), rotator_page, tracker_page,
+            *legacy, settings_page]
