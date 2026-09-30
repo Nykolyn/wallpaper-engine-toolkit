@@ -344,6 +344,8 @@ TYPE: dict[str, TypeSpec] = {
     "type.nav": TypeSpec(12.5, 1.3),                       # a page's name in the sidebar
     "type.step": TypeSpec(12, 1.35),                       # a StepList title
     "type.lead": TypeSpec(12, 1.6),                        # an EmptyState's body
+    "type.folder": TypeSpec(12, 1.35, 600, mono=True),     # a folder's name in the Rotator's tables
+    "type.runCount": TypeSpec(16, 1.0, 600, mono=True),    # the "/ 1 000" after a running count
     # A dialog's title: type.h3's weight at the 14 px the confirmation (frame 09)
     # draws it at, a step up from a card's title in the panel over the scrim.
     "type.dialog": TypeSpec(14, 1.35, 600),
@@ -926,6 +928,31 @@ TRACKER_AUTHORS = 140         # the author list, at the least
 # design's 52 px, which cuts "1 h 10 min")
 TRACKER_COLUMNS = {"number": 32, "author": 88, "type": 48, "shown": 64, "state": 64}
 
+# -- the Rotator (RotatorIdle, RotatorRunning, RotatorDone, RotatorProblems)
+
+ROTATOR_SIDE = 330            # the left column: the next run, the run under way, its result
+ROTATOR_PANEL_GAP = 11        # a left panel's parts
+ROTATOR_FIELDS_GAP = 7        # FOLDERS: its overline and the two fields
+ROTATOR_TOGGLE_GAP = 9        # the toggle and the facts under it
+RUN_PANEL_GAP = 12            # the run and result panels' parts
+RUN_HEAD_GAP = 9              # the pulse or the disc to the panel's title
+RUN_FIGURE_GAP = 14           # the ring to the count beside it
+RUN_COUNT_GAP = 6             # the count to "≈6 min left" under it
+RUN_DISC = 22                 # the result panel's tick, warning or stop, in a circle
+RUN_DISC_ICON = 13
+RUN_FACT_ICON = 13            # the lock before "2 [protected] folders stay"
+ROTATOR_FILTER = 184          # the filter over the tables (as the Tracker's)
+# the reserve's fixed columns (the design's grid, LAST USED wider so its title
+# fits on one line, and "3 Jul 2025" too); the folder's takes the rest
+ROTATOR_COLUMNS = {"author": 80, "type": 44, "size": 56, "used": 70}
+# the history's (RUN · STARTED · TOOK · MOVED · RETURNED · DUPES); RESULT takes the rest
+HISTORY_COLUMNS = {"run": 44, "started": 128, "took": 74, "moved": 70, "returned": 74,
+                   "dupes": 64, "log": 28}
+RUN_LOG_WIDTH = 760           # a run's log read back, in its dialog
+DUPLICATES_WIDTH = 640        # the Duplicates dialog
+DUPLICATES_TABLE = 300        # its table's height
+DUPLICATES_COLUMNS = {"size": 64, "files": 56, "modified": 96, "chip": 92}
+
 
 # ---- Semantic colours the old tabs ask for ---------------------------------
 
@@ -944,12 +971,6 @@ def kind_color(kind: str) -> str:
     """
     token = f"kind.{(kind or '').casefold()}"
     return css(token if token in TOKENS else "surface.raised")
-
-
-def level_color(level: str) -> str:
-    """Colour for a log line by its severity."""
-    return css({"INFO": "console.text", "WARN": "console.warn",
-                "ERROR": "console.err"}.get(level, "console.text"))
 
 
 # ---- Qt palette -----------------------------------------------------------
@@ -1008,31 +1029,6 @@ QWidget {
     color: $(text.body);
 }
 QMainWindow, QDialog, QMessageBox { background: $(bg.solid); }
-
-/* ---- the Rotator tab's own five tabs, until its page replaces them ---- */
-QTabWidget#rotatorTabs::pane {
-    border: none;
-    border-top: 1px solid $(border.hairline);
-    background: transparent;
-    top: -1px;
-}
-QTabWidget#rotatorTabs > QTabBar { qproperty-drawBase: 0; }
-QTabWidget#rotatorTabs > QTabBar::tab {
-    background: transparent;
-    color: $(text.mid);
-    border: 1px solid transparent;
-    border-radius: $(r.row)px;
-    padding: 6px 14px;
-    margin: 6px 4px 6px 0;
-    $(font:type.bodySm)
-    font-weight: 600;
-}
-QTabWidget#rotatorTabs > QTabBar::tab:hover { background: $(surface.wash); color: $(text.body); }
-QTabWidget#rotatorTabs > QTabBar::tab:selected {
-    background: $(nav.selected);
-    border-color: $(nav.selectedSheen);
-    color: $(text.hi);
-}
 
 /* ---- panels ---- */
 QGroupBox {

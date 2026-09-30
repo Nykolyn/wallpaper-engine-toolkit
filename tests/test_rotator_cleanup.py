@@ -6,10 +6,10 @@ Run it directly — there is no test framework in this project:
 
 Everything works on a temporary reserve built here, so nothing on the machine is
 read or deleted. Two sections build real widgets (they need Qt, but never show a
-window): the confirmation dialog, to check what it ticks by default — that
-default is the whole safety story of the feature, so it is worth a test rather
-than a glance — and the Rotator tab with its folders unset, run from a stand-in
-install folder, to check that nothing in it is listed or deleted.
+window): the broken-folders confirmation, to check what it ticks by default —
+that default is the whole safety story of the feature, so it is worth a test
+rather than a glance — and the Rotator page with its folders unset, run from a
+stand-in install folder, to check that nothing in it is listed or deleted.
 """
 from __future__ import annotations
 
@@ -265,13 +265,26 @@ check("sizes are shown in units a person reads",
 # else here: everything obviously dead is ticked, and a folder that still holds
 # media is left for the user to decide about.
 
+import time                                          # noqa: E402
+
 from PySide6.QtWidgets import QApplication          # noqa: E402
 
 app = QApplication.instance() or QApplication(sys.argv)
 from app import theme                               # noqa: E402
-from app.ui.cleanup_dialog import CleanupDialog     # noqa: E402
+from app.pages import rotator as page_module        # noqa: E402
 
 theme.apply(app)
+
+
+def wait_for(condition, ms: int = 20_000) -> bool:
+    end = time.monotonic() + ms / 1000
+    while time.monotonic() < end:
+        app.processEvents()
+        if condition():
+            return True
+        time.sleep(0.005)
+    return condition()
+
 
 broken = [
     core.BrokenFolder("shader-cache", core.REASON_SHADERS, str(RESERVE), files=2, size=8),
@@ -279,108 +292,108 @@ broken = [
     core.BrokenFolder("lost-manifest", core.REASON_ORPHAN, str(RESERVE),
                       files=1, size=11, holds_media=True),
 ]
-dialog = CleanupDialog(broken, scanned=7)
+dialog = page_module.broken_dialog(broken, "the reserve", None, scanned=7, embedded=True)
+
+
+def ticked() -> list[str]:
+    return sorted(Path(row.data).name for row in dialog.checked_rows())
+
+
 check("by default the dialog ticks only what is certainly rubbish",
-      sorted(Path(p).name for p in dialog.paths()) == ["nothing-here", "shader-cache"])
+      ticked() == ["nothing-here", "shader-cache"])
 check("and the running total is filled in from the start",
-      dialog.counts.text().startswith("2 folder(s) ticked"))
-
-dialog._set_all(True)
-check("selecting all reaches the ones holding media too", len(dialog.paths()) == 3)
+      dialog.summary_text().startswith("2 selected"))
+dialog.set_group_checked(1, True)
+check("ticking the media group reaches the ones holding media too", len(ticked()) == 3)
 check("and the button says how many will go",
-      dialog.delete_btn.text() == "Delete 3 folder(s)")
-
-dialog._set_all(False)
-check("with nothing ticked there is nothing to delete", dialog.paths() == [])
-check("and the delete button cannot be pressed", not dialog.delete_btn.isEnabled())
-
-dialog._select_safe()
+      dialog.confirm_button().text() == "Delete 3 permanently")
+dialog.set_group_checked(0, False)
+dialog.set_group_checked(1, False)
+check("with nothing ticked there is nothing to delete", ticked() == [])
+check("and the delete button cannot be pressed", not dialog.confirm_button().isEnabled())
+dialog.set_group_checked(0, True)
 check("the paths handed back are absolute, ready to delete",
-      all(Path(p).is_absolute() for p in dialog.paths()))
-
+      all(Path(row.data).is_absolute() for row in dialog.checked_rows()))
+check("Cancel is where Enter goes: nothing is deleted by a stray key",
+      dialog.is_destructive() and dialog.cancel_button().isDefault())
 dialog.deleteLater()
 
-# ------------------------------------------------ the Rotator tab, unset
+# ------------------------------------------------ the Rotator page, unset
 #
 # The reported case end to end: no duplicates folder, and the working
 # directory holding data\. The Duplicates tab listed data\ and _internal\ and
 # "Delete all" would have deleted them. Every question is answered yes here, so
 # only the guards stand between the click and the delete.
 
-from PySide6.QtWidgets import QMessageBox            # noqa: E402
-from app.ui import rotator_tab                       # noqa: E402
+from app.engines.library_index import LibraryIndex  # noqa: E402
 
-shown: list[tuple[str, str]] = []
-
-
-def _box(kind: str):
-    def show(_parent, _title, text, *_rest):
-        shown.append((kind, text))
-        return QMessageBox.Yes
-    return staticmethod(show)
-
-
-class Boxes:
-    Yes = QMessageBox.Yes
-    question = _box("question")
-    information = _box("information")
-    warning = _box("warning")
-    critical = _box("critical")
-
-
-rotator_tab.QMessageBox = Boxes
 rotator_config.CONFIG_PATH.write_text(json.dumps(
     {"source": "", "destination": "", "duplicates": "", "count": 1,
      "refresh_playlist": False}), encoding="utf-8")
+asked: list = []
 
-tab = rotator_tab.RotatorTab()
-dup_buttons = (tab.del_sel_btn, tab.del_all_btn, tab.mv_sel_btn, tab.mv_all_btn)
-check("with no duplicates folder the Duplicates tab lists nothing",
-      tab.dup_panel.model.rowCount() == 0)
-check("and says the folder is not set",
-      tab.dup_panel.count_label.text() == "Duplicates (not set): 0")
-check("and none of its actions can be pressed",
-      not any(b.isEnabled() for b in dup_buttons))
-check("the reserve and myprojects lists are empty and say why too",
-      tab.reserve_panel.model.rowCount() == tab.transferred_panel.model.rowCount() == 0
-      and "(not set)" in tab.reserve_panel.count_label.text()
-      and "(not set)" in tab.transferred_panel.count_label.text())
 
+def yes(dialog):
+    """Every question answered yes; the Duplicates dialog with all of it chosen."""
+    asked.append(dialog)
+    if isinstance(dialog, page_module.DuplicatesDialog):
+        wait_for(lambda: bool(dialog.model.items()))
+        dialog.table.selectAll()
+        dialog._act("delete")
+        return dialog.result_value()
+    if dialog.__class__.__name__ == "ConfirmDialog":
+        dialog._answer(True)
+        return dialog.result_value()
+    return True
+
+
+page = page_module.RotatorPage(Config.load(), index=LibraryIndex(TMP / "library_meta.json"))
+page._answer = yes
+page._ensure_loaded()
+page._render()
+check("with the folders unset, the tables list nothing and say why",
+      page.models["reserve"].items() == [] and page.models["current"].items() == []
+      and page.summary.items() == ["The reserve folder is not set"])
+check("the next run says what is missing, and cannot start",
+      page.texts()["next"]["problem"] == "The reserve folder is not set."
+      and not page.plan.start.isEnabled())
+
+page.messages.clear()
+page.open_duplicates()
+check("with no duplicates folder the Duplicates dialog does not open, and says why",
+      asked == [] and page.messages[-1][0] == "warn"
+      and "duplicates folder is not set" in page.messages[-1][1] and untouched())
 for action in ("delete", "replace"):
-    shown.clear()
-    tab._dup_action(action, True)
-    check(f"'{action} all' stops before asking, and says the folder is not set",
-          tab.dup_worker is None and [k for k, _ in shown] == ["warning"]
-          and "duplicates folder is not set" in shown[0][1] and untouched())
+    page.messages.clear()
+    page._dup_action(action, ["data", "_internal"])
+    check(f"'{action}' stops before starting, and says the folder is not set",
+          page.dup_worker is None and "duplicates folder is not set" in page.messages[-1][1]
+          and untouched())
 
-shown.clear()
-tab.check_folders()
+page.messages.clear()
+page.check_folders()
 check("Check folders with nothing set says so and checks nothing",
-      tab.scan_worker is None and [k for k, _ in shown] == ["critical"]
-      and "reserve folder is not set" in shown[0][1])
-shown.clear()
-tab.start_rotation()
+      wait_for(lambda: page.messages) and page.scan_worker is None
+      and page.messages[-1][0] == "danger" and "reserve folder is not set" in page.messages[-1][1])
+page.messages.clear()
+page.start_rotation()
 check("and a rotation will not start",
-      tab.rotation_worker is None and [k for k, _ in shown] == ["critical"]
-      and shown[0][1] == "The reserve folder is not set." and untouched())
+      wait_for(lambda: page.messages) and page.rotation_worker is None
+      and page.messages[-1] == ("danger", "Cannot start: The reserve folder is not set.")
+      and untouched())
 
-tab.config.duplicates = str(DUPES)
-tab.refresh_duplicates()
-check("once the duplicates folder is set, what is in it is listed",
-      tab.dup_panel.model.rowCount() == 1
-      and tab.dup_panel.count_label.text() == "Duplicates: 1")
-check("deleting is offered, moving back waits for the reserve",
-      tab.del_all_btn.isEnabled() and not tab.mv_all_btn.isEnabled())
-shown.clear()
-tab._dup_action("delete", True)
-tab.dup_worker.wait(10_000)
-app.processEvents()
-check("and Delete all deletes it, having named the folder in the question",
-      not (DUPES / "dup-a").exists() and DUPES.exists()
-      and shown[0][0] == "question" and str(DUPES) in shown[0][1] and untouched())
-check("the buttons come back when it is done", tab.del_all_btn.isEnabled())
+page.config.duplicates = str(DUPES)
+page.messages.clear()
+page.open_duplicates()
+check("once the duplicates folder is set, what is in it is listed, and asked about",
+      len(asked) == 2 and [d.name for d in asked[0].model.items()] == ["dup-a"]
+      and str(DUPES) in asked[1].body() and asked[1].is_destructive())
+check("the Move back button waits for the reserve", not asked[0].replace_button.isEnabled())
+check("and Delete deletes it", wait_for(lambda: page.dup_worker is None)
+      and not (DUPES / "dup-a").exists() and DUPES.exists() and untouched())
+check("and says so when it is done", page.messages[-1] == ("ok", "1 duplicate deleted."))
 
-# ------------------------------------------ a rotation from the tab, reported
+# ------------------------------------------ a rotation from the page, reported
 #
 # The run's id is made before it starts, so its log is a file of its own —
 # logs/rotator/run-<id>.log, the lines the page shows — and its side-file
@@ -396,18 +409,23 @@ services.install(wired)
 for name in ("fresh-a", "fresh-b"):
     folder(name, {"project.json": b'{"file":"a.mp4"}', "a.mp4": b"x"})
 (MYPROJECTS / "old-a").mkdir()
-tab.config.source, tab.config.destination = str(RESERVE), str(MYPROJECTS)
-tab.config.duplicates, tab.config.count, tab.config.refresh_playlist = str(DUPES), 2, False
+page.config.source, page.config.destination = str(RESERVE), str(MYPROJECTS)
+page.config.duplicates, page.config.count, page.config.refresh_playlist = str(DUPES), 2, False
 before = sorted(p.name for p in RESERVE.iterdir()) + ["old-a"]
-shown.clear()
-tab._confirm_and_rotate()
-worker = tab.rotation_worker
-run_id = worker.run_id
-worker.wait(20_000)
-app.processEvents()
+asked.clear()
+page.messages.clear()
+page._confirm_and_rotate()          # the check is tested on its own reserve, in test_rotator_page
+check("a rotation asks, then runs",
+      wait_for(lambda: page.state == "done" or bool(page.messages)))
+start = [d for d in asked if d.__class__.__name__ == "ConfirmDialog"]
+check("the question names the run and what it will do",
+      start and start[-1].title() == "Start run 1?"
+      and start[-1].step_titles()[:2] == ["Return the previous batch to the reserve",
+                                          "Move 2 new folders in"])
+run_id = page.done_view.record.id if page.done_view else ""
 log = TMP / "services" / "logs" / "rotator" / f"run-{run_id}.log"
 lines = log.read_text(encoding="utf-8").splitlines() if log.exists() else []
-check("a rotation from the tab logs to a file of its own, named by the run",
+check("a rotation from the page logs to a file of its own, named by the run",
       len(lines) > 4 and lines[0].split("\t")[1] == "start"
       and sum(line.split("\t")[1] == "moved" for line in lines) == 2
       and any(line.split("\t")[1] == "returned" for line in lines))
@@ -421,8 +439,11 @@ check("the journal has it started and finished, under that id",
 check("every folder is still somewhere",
       sorted([p.name for p in RESERVE.iterdir()] + [p.name for p in MYPROJECTS.iterdir()])
       == sorted(before))
+check("and the page shows it done, cleanly", page.done_view is not None
+      and page.texts()["result"]["title"] == "Run 1 finished cleanly")
 
-tab.deleteLater()
+page.deleteLater()
+app.processEvents()
 os.chdir(HOME)
 shutil.rmtree(TMP, ignore_errors=True)
 

@@ -340,6 +340,18 @@ class SettingsPage(Page):
         if self._services is not None:
             self._services.snapshot.refresh([RESERVE, ROTATION])
 
+    def show_rotator(self) -> None:
+        """Show the Rotator's settings again, as another page saved them."""
+        c = self.config
+        for field, path in ((self.reserve, c.source), (self.myprojects, c.destination),
+                            (self.duplicates, c.duplicates)):
+            if field.path() != path:
+                field.set_path(path)
+        if self.batch.value() != c.count:
+            self.batch.blockSignals(True)
+            self.batch.setValue(c.count)
+            self.batch.blockSignals(False)
+
     def _set(self, section: str, key: str, value) -> None:
         self.settings.set(section, key, value)
         self.settings.save()

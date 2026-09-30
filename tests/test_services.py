@@ -46,7 +46,7 @@ app = QApplication(sys.argv)
 from app import services                                                      # noqa: E402
 from app.engines.rotator import config as rc                                  # noqa: E402
 from app.engines.rotator.config import History, RunRecord                     # noqa: E402
-from app.engines.rotator.core import ProgressEvent, Rotator                   # noqa: E402
+from app.engines.rotator.core import Rotator                                  # noqa: E402
 from app.engines.tracker import ANCHOR_NONE, ANCHOR_ROTATION, Progress        # noqa: E402
 from app.services import activity, jobs, logstore, runs, snapshot, textfile   # noqa: E402
 from app.services.activity import ActivityJournal, Entry, PlaylistWatch       # noqa: E402
@@ -346,15 +346,17 @@ check("an undocumented kind is not", not activity.known_kind("run.done")
 check("every activity names a tool the journal knows",
       all(tool in activity.TOOLS for tool, _ in activity.ACTIVITIES.values())
       and all(tool in activity.TOOLS for tool, _ in activity.EVENTS.values()))
+APP = Path(__file__).resolve().parent.parent / "app"
 source = "\n".join(p.read_text(encoding="utf-8") for p in
-                   (Path(__file__).resolve().parent.parent / "app" / "ui").glob("*_tab.py"))
+                   [*(APP / "ui").glob("*_tab.py"), *(APP / "pages").glob("*.py")])
 used = set(re.findall(r'activity="(\w+)"', source))
 used |= set(re.findall(r'_start_job\(f?"[^"]*",\s*"(\w+)"[,)]', source))
 used |= set(re.findall(r'job=\(f?"[^"]*",\s*"(\w+)"\)', source))
-check("the tabs start every activity documented, and no other",
+check("the tabs and pages start every activity documented, and no other",
       used == set(activity.ACTIVITIES))
 notes = set(re.findall(r'\.note\("([\w.]+)"', source))
-check("every note a tab writes is documented", notes and notes <= set(activity.EVENTS))
+check("every note a tab or page writes is documented",
+      notes and notes <= set(activity.EVENTS))
 
 
 # ==== the Tracker's events ==========================================================
@@ -868,55 +870,6 @@ creator._job = services.begin("creator", "Building 3 wallpapers", activity="buil
 creator._on_finished([])
 check("a build that built nothing, unasked, failed",
       installed.jobs.last_finished("creator").result == "failed")
-
-print("-- the Rotator tab's report --")
-from app.ui import rotator_tab                                                # noqa: E402
-
-check("engine events become the log's kinds", [rotator_tab.log_kind(e) for e in (
-    ProgressEvent("move", "Moved f1", 1, 3),
-    ProgressEvent("return", "Returned f2", 1, 3),
-    ProgressEvent("return", "DUPLICATE: f3 already in reserve", 2, 3, level="WARN"),
-    ProgressEvent("move", "SKIP: f4 already in myprojects.", 1, 3, level="WARN"),
-    ProgressEvent("return", "Skipping 1 protected folder(s)", level="WARN"),
-    ProgressEvent("move", "Failed to move f5: in use", 2, 3, level="ERROR"),
-    ProgressEvent("error", "No folders in reserve. Aborting.", level="ERROR"),
-    ProgressEvent("select", "Selected 3 folders."),
-    ProgressEvent("done", "Done. Moved 3"),
-    ProgressEvent("playlist", "Closing Wallpaper Engine"),
-)] == ["moved", "returned", "dupe", "skip", "skip", "fail", "error", "step", "done", "info"])
-
-tab = rotator_tab.RotatorTab()
-tab._start_job("Run 3", "run")
-tab._job_event(ProgressEvent("return", "Returning 2 folders", 0, 2))
-tab._job_event(ProgressEvent("return", "Returned m1", 1, 2))
-live = installed.jobs.current()
-check("a rotation's phase and count reach the job",
-      live.phase_text == "returning folders to the reserve" and (live.done, live.total) == (1, 2))
-tab._job_event(ProgressEvent("select", "Reserve: 7 | used: 4 | unique available: 4"))
-check("a phase that starts uncounted clears the count before it",
-      live.phase_text == "drawing folders at random" and (live.done, live.total) == (0, 0))
-tab._job_event(ProgressEvent("cancel", "Stop requested"))
-check("an event of no phase the status line knows keeps the phase",
-      live.phase_text == "drawing folders at random")
-record = RunRecord(id="run00003", timestamp="2026-09-28 14:00:00", moved=["r2", "r3"],
-                   duplicates=["m2"], returned=1, failed=["r4"])
-tab.history.runs.insert(0, record)
-tab._report_run(record)
-kinds = [(e.kind, e.title, e.detail, e.run) for e in installed.journal.recent(2)]
-check("a run with a failure ends with problems, numbered from the history",
-      installed.jobs.last_finished("rotator").result == "problems"
-      and kinds[0] == ("run.problems", f"Run {len(tab.history.runs)} finished with 1 problem",
-                       "2 moved in · 1 returned · 1 duplicate · 1 failed", "run00003"))
-check("… and its duplicates set aside are an entry of their own",
-      kinds[1][:2] == ("duplicates.set_aside", "1 duplicate set aside")
-      and kinds[1][3] == "run00003")
-tab._start_job("Run 4", "run")
-tab._cancelled = True
-unrecorded = RunRecord(id="run00004", timestamp="2026-09-28 15:00:00", returned=1)
-tab._report_run(unrecorded)
-entry = installed.journal.recent(1)[0]
-check("a run stopped before it was recorded has no number and no run id",
-      (entry.kind, entry.title, entry.run) == ("run.stopped", "The rotation was stopped", None))
 
 print("-- the Review tab's work --")
 from app.ui.review_tab import ReviewTab                                       # noqa: E402

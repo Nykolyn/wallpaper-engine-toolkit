@@ -15,12 +15,13 @@ it comes on screen and goes off it:
   `tools/ui_snapshot.py`, which never reads this machine's data;
   `frame_fixture(state)`: the frame's state that goes with one of them.
 
-`LegacyPage` puts one of the old tabs in the frame until its own page
-replaces it.
+`SideScroll` is the 330 px column a page's left side is (the Tracker's
+monitors, the Rotator's next run). `LegacyPage` puts one of the old tabs in
+the frame until its own page replaces it.
 """
 from __future__ import annotations
 
-from PySide6.QtCore import QSize, Signal
+from PySide6.QtCore import QSize, Qt, Signal
 from PySide6.QtWidgets import QScrollArea, QVBoxLayout, QWidget
 
 from .. import theme
@@ -105,6 +106,31 @@ class Page(QWidget):
         state of that name says so."""
         raise KeyError(f"the {self.key or type(self).__name__} page has no fixture {state!r}"
                        + (f"; it has {', '.join(self.FIXTURES)}" if self.FIXTURES else ""))
+
+
+class SideScroll(QScrollArea):
+    """A page's left column, `width` px, scrolling when the window is too
+    short for it. The scroll bar is added beside the column rather than taken
+    out of it, so the panels keep the width they are drawn for."""
+
+    def __init__(self, column: QWidget, width: int, parent: QWidget | None = None):
+        super().__init__(parent)
+        self._width = width
+        self.setWidgetResizable(True)
+        self.setFrameShape(QScrollArea.NoFrame)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.setWidget(column)
+        column.setFixedWidth(width)
+        self.verticalScrollBar().rangeChanged.connect(self._fit)
+        self._fit()
+
+    def _fit(self, *_args) -> None:
+        bar = self.verticalScrollBar()
+        extra = bar.sizeHint().width() if bar.maximum() > 0 else 0
+        self.setFixedWidth(self._width + extra)
+
+    def scrolls(self) -> bool:
+        return self.verticalScrollBar().maximum() > 0
 
 
 class LegacyPage(Page):

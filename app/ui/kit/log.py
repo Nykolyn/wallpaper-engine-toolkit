@@ -8,9 +8,10 @@ in three columns — time · kind · message — in `type.mono`.
   adds one (`extend` many at once); past the cap the oldest line goes, so a
   run of 30 000 moves costs the same memory as one of 5 000. The whole run
   is in the log file; the panel is for watching.
-- A line's kind decides its colour, as the console does (§3.1): moved and
-  done are ok, skip and dupe warn, fail and error err, step, start and info
-  mid. Any other kind is shown as it is written, in mid.
+- A line's kind decides its colour, as the console does (§3.1): moved,
+  returned, deleted and done are ok, skip, dupe and stop warn, fail and error
+  err, step, start and info mid. Any other kind is shown as it is written, in
+  mid; "step 2" is a step's.
 - ProblemsFilter is the "Problems" half of the All / Problems switch: the
   warn and err lines only, over the same model.
 - LogView follows the newest line while you are at the bottom, and stops
@@ -55,11 +56,14 @@ from .tables import TableFooter
 
 # kind → tone, as the console colours it (REDESIGN_PLAN §3.1)
 KIND_TONES: dict[str, str] = {
-    "moved": "ok", "done": "ok",
-    "skip": "warn", "dupe": "warn",
+    "moved": "ok", "done": "ok", "returned": "ok", "deleted": "ok",
+    "skip": "warn", "dupe": "warn", "stop": "warn",
     "fail": "err", "error": "err",
     "step": "mid", "start": "mid", "info": "mid",
 }
+# What the kind column is as wide as: every kind above, and a numbered step
+# ("step 2", as a rotation's log numbers its steps).
+KIND_WIDEST = (*KIND_TONES, "step 9")
 # The level names the engines already write, so a page can pass one through.
 KIND_ALIASES: dict[str, str] = {"ok": "ok", "warn": "warn", "warning": "warn", "err": "err"}
 TONES = ("ok", "warn", "err", "mid")
@@ -268,7 +272,7 @@ class _Columns:
         self.font = theme.font("type.mono")
         self.metrics = QFontMetricsF(self.font)
         self.time = self.metrics.horizontalAdvance("00:00:00")
-        widest = max(self.metrics.horizontalAdvance(kind) for kind in KIND_TONES)
+        widest = max(self.metrics.horizontalAdvance(kind) for kind in KIND_WIDEST)
         self.kind = widest
         self.row = round(theme.line_height("type.mono"))
 
