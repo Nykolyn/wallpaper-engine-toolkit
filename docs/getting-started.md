@@ -75,7 +75,7 @@ Every page works immediately. Two have something worth knowing:
 | Page | What | Where |
 |---|---|---|
 | Creator | ffmpeg — taken from `PATH`, otherwise the bundled `imageio-ffmpeg` | automatic |
-| Review | a **Steam Web API key** — optional, but without it author lists leave out mature wallpapers | **Steam key…** on the Review page or in Settings |
+| Review | a **Steam Web API key** — optional, but without it author lists leave out mature wallpapers | **Review settings** on the Review page, or **Review settings…** in Settings |
 
 A Steam Web API key is free from
 [steamcommunity.com/dev/apikey](https://steamcommunity.com/dev/apikey). Without

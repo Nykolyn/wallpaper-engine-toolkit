@@ -73,7 +73,8 @@ renderer — loads it and asks for `STEAMUGC_INTERFACE_VERSION020`. A subscripti
 is a local call into the running Steam client, which performs it for whoever is
 signed in.
 
-So the page offers two routes, switched in its toolbar:
+So the page offers two routes, chosen under **Subscribe by** in
+[Review settings](review.md#how-a-click-subscribes):
 
 - **Steam directly** — the same call, from this window. One click and the
   wallpaper is on its way. The process declares app id 431960 while the API is
@@ -84,7 +85,7 @@ So the page offers two routes, switched in its toolbar:
   Wallpaper Engine are all yours, and workshop items are free — but it is
   **unsupported**, and a Steam update could close it.
 
-- **Opening Steam's page** — `steam://url/CommunityFilePage/<id>`, where
+- **Steam's page** — `steam://url/CommunityFilePage/<id>`, where
   Subscribe is one click. Nothing unsupported, one more click.
 
 Either way the page watches the workshop folder and marks a wallpaper as taken
@@ -135,8 +136,9 @@ more than **76 ms** behind.
 
 ### And never at the window's expense
 
-That was not the end of it. On 18 September the window froze again, during
-**Count what is new**, a few authors into clicking through the results — and
+That was not the end of it. On 18 September the window froze again, while it
+counted what each author had published, a few authors into clicking through the
+results — and
 the cause turned out to be one level down, in how Python and Qt share a process.
 
 PySide gives up Python's global lock (the GIL) around every call into Qt and

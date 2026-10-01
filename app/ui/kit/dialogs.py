@@ -47,6 +47,13 @@ a deliberate click deletes. Esc cancels either kind.
 - `confirm_text` is words, or a function of the ticked rows. With a
   checklist, the button is off while nothing is ticked.
 - `actions=[(text, callback)]` are GhostButtons that do not close it.
+- `lines=[...]` lists what a write will do, one mono line each, in a well:
+  the first `CONFIRM_LINES` (14) and "… and N more".
+- `note=(tone, text)` is a Callout under the rest: what to know before
+  saying yes ("3 of these come from lists read without a Steam key…").
+- `safe_default=True` makes Cancel the default and the first focus of a
+  neutral confirmation too — for one whose consequence cannot be undone
+  later, though it deletes nothing.
 - `ask()` returns a ConfirmResult: true when confirmed, with `checked`, the
   rows ticked then — and no rows at all when cancelled.
 
@@ -56,7 +63,9 @@ valid. `add_row(label, field, note, check=…, required=…)` adds one;
 `check(field)` returns None when the field is right and what is wrong with it
 otherwise (False for "not yet", without a message), and says so once the
 field has been touched. `set_check(fn)` checks the form as a whole.
-`ask()` returns True when saved.
+`add_widget(w)` puts anything else between the rows (a note with an icon);
+`add_action(text, callback)` a GhostButton in the footer that does not close
+it ("Authors database…"). `ask()` returns True when saved.
 
 `embedded=True` makes either an ordinary child widget with no scrim, its
 shadow drawn by the surface behind: how the kit preview shows them open.
@@ -79,7 +88,7 @@ from . import format as fmt
 from .base import Caster, Elided, alive, elevation_margins, follow, label, set_tone
 from .buttons import AccentButton, DangerButton, GhostButton, LinkButton, SecondaryButton
 from .inputs import TextInput
-from .panels import Overline
+from .panels import Callout, Overline
 from .selection import Checkbox
 
 # ---- what a checklist is made of --------------------------------------------------------
@@ -678,6 +687,42 @@ class _Checklist(QFrame):
         painter.drawRoundedRect(box.adjusted(0.5, 0.5, -0.5, -0.5), theme.R_ROW - 0.5, theme.R_ROW - 0.5)
 
 
+# ---- a plain list of what will be written ----------------------------------------------------
+
+class _Lines(QFrame):
+    """What a confirmation will write, a line each, in a well: the first
+    `limit` and "… and N more"."""
+
+    def __init__(self, lines: Sequence[str], limit: int, parent: QWidget | None = None):
+        super().__init__(parent)
+        self.lines = [str(line) for line in lines]
+        column = QVBoxLayout(self)
+        pad_v, pad_h = theme.CONFIRM_LINES_PAD
+        column.setContentsMargins(pad_h, pad_v, pad_h, pad_v)
+        column.setSpacing(theme.SP_2)
+        self.shown: list[str] = self.lines[:max(0, limit)]
+        for line in self.shown:
+            words = Elided(line, "type.monoSm", "body")
+            words.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Fixed)
+            words.setToolTip(line)
+            column.addWidget(words)
+        left = len(self.lines) - len(self.shown)
+        self.more = f"… and {fmt.count(left)} more" if left > 0 else ""
+        if self.more:
+            column.addWidget(label(self.more, "type.monoSm", "lo"))
+
+    def paintEvent(self, event) -> None:        # noqa: N802 - Qt's name
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        box = QRectF(self.rect())
+        path = QPainterPath()
+        path.addRoundedRect(box, theme.R_ROW, theme.R_ROW)
+        painter.fillPath(path, theme.color("surface.subtle"))
+        painter.setPen(QPen(theme.color("border.hairline"), 1))
+        painter.setBrush(Qt.NoBrush)
+        painter.drawRoundedRect(box.adjusted(0.5, 0.5, -0.5, -0.5), theme.R_ROW - 0.5, theme.R_ROW - 0.5)
+
+
 # ---- ConfirmDialog ----------------------------------------------------------------------------
 
 class ConfirmDialog(OverlayDialog):
@@ -691,8 +736,9 @@ class ConfirmDialog(OverlayDialog):
                  confirm_text: str | Callable[[list[CheckRow]], str] | None = None,
                  cancel_text: str = "Cancel",
                  actions: Sequence[tuple[str, Callable[[], None]]] = (),
-                 embedded: bool = False):
-        super().__init__(parent, width=theme.DIALOG_WIDE if groups else theme.DIALOG_WIDTH,
+                 lines: Sequence[str] = (), note: tuple[str, str] | None = None,
+                 safe_default: bool = False, embedded: bool = False):
+        super().__init__(parent, width=theme.DIALOG_WIDE if groups or lines else theme.DIALOG_WIDTH,
                          embedded=embedded)
         self._destructive = destructive
         self._result = ConfirmResult(False)
@@ -706,6 +752,15 @@ class ConfirmDialog(OverlayDialog):
         if groups:
             self._checklist = _Checklist(groups, self._refresh, self.place)
             self.body_column.addWidget(self._checklist)
+        self._lines: _Lines | None = None
+        if lines:
+            self._lines = _Lines(lines, theme.CONFIRM_LINES)
+            self.body_column.addWidget(self._lines)
+        self._note: Callout | None = None
+        if note is not None:
+            tone, text = note
+            self._note = Callout(text, tone=tone)
+            self.body_column.addWidget(self._note)
         self._summary = summary
         self._confirm_text = confirm_text or ("Delete" if destructive else "Continue")
 
@@ -722,7 +777,8 @@ class ConfirmDialog(OverlayDialog):
         self._confirm.clicked.connect(self.accept)
         self.footer.buttons.addWidget(self._cancel)
         self.footer.buttons.addWidget(self._confirm)
-        if destructive:
+        self._safe = destructive or safe_default
+        if self._safe:
             # Enter, and the focus the dialog opens with, go to Cancel
             self._cancel.setDefault(True)
             self._initial = self._cancel
@@ -735,6 +791,19 @@ class ConfirmDialog(OverlayDialog):
 
     def is_destructive(self) -> bool:
         return self._destructive
+
+    def cancel_is_default(self) -> bool:
+        """Whether Enter, and the first focus, go to Cancel."""
+        return self._safe
+
+    def listed_lines(self) -> list[str]:
+        """The lines shown, and "… and N more" when there are more."""
+        if self._lines is None:
+            return []
+        return self._lines.shown + ([self._lines.more] if self._lines.more else [])
+
+    def note_text(self) -> str:
+        return self._note.body() if self._note is not None else ""
 
     def confirm_button(self):
         return self._confirm
@@ -931,6 +1000,21 @@ class FormDialog(OverlayDialog):
             self._initial = field
         self.revalidate()
         return field
+
+    def add_widget(self, widget: QWidget) -> QWidget:
+        """Something that is not a labelled field — a note with an icon —
+        after the rows so far."""
+        self._fields.addWidget(widget)
+        return widget
+
+    def add_action(self, text: str, callback: Callable[[], None]) -> GhostButton:
+        """A GhostButton in the footer, on the left of Cancel; it does not
+        close the dialog."""
+        button = GhostButton(text)
+        button.setAutoDefault(False)
+        button.clicked.connect(lambda _=False, fn=callback: fn())
+        self.footer.actions.addWidget(button)
+        return button
 
     def set_check(self, check: Callable[[FormDialog], Any] | None) -> None:
         """A check of the form as a whole, for what no one field can say

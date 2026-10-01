@@ -871,33 +871,55 @@ creator._on_finished([])
 check("a build that built nothing, unasked, failed",
       installed.jobs.last_finished("creator").result == "failed")
 
-print("-- the Review tab's work --")
-from app.ui.review_tab import ReviewTab                                       # noqa: E402
+print("-- the Review page's work --")
+from app.engines import review as review_engine                               # noqa: E402
+from app.pages.review import ReviewPage                                       # noqa: E402
 
-review = ReviewTab(Settings({}))
-done_with: list = []
-review._run(lambda step: (step("authors", 1, 2), "result")[1],
-            lambda result: (done_with.append(result),
-                            review._end_job("clean", "counted", title="Counted")),
-            "Asking Steam…", job=("Counting what is new", "count"))
-check("a Review task is a job while it runs, and ends with its result",
-      wait_for(lambda: done_with == ["result"])
+
+class EmptyLibrary:
+    """No workshop folder, nothing subscribed: a scan finds nothing to ask about."""
+
+    def listable(self):
+        return set()
+
+    def subscribed(self):
+        return set()
+
+    def added_at(self, ids):
+        return {}
+
+
+class NoSteam:
+    has_key = True
+
+    def run_each(self, func, jobs):
+        return [func(job) for job in jobs]
+
+
+empty_config = TMP / "we-config.json"
+empty_config.write_text('{"steamuser": {"general": {"browser": {"folders": []}}}}',
+                        encoding="utf-8")
+review = ReviewPage(Settings({}), installed, config_path=empty_config, data_dir=wired_dir,
+                    prepare=lambda step: review_engine.Review(None, NoSteam(), EmptyLibrary()))
+review.start_scan()
+check("a Review scan is a job while it runs, and ends with its result",
+      wait_for(lambda: review.state == "reviewing")
       and installed.jobs.last_finished("review").result == "clean"
-      and installed.journal.recent(1)[0].kind == "count.clean")
-wait_for(lambda: review._task is None)
+      and installed.journal.recent(1)[0].kind == "scan.clean"
+      and installed.journal.recent(1)[0].title == "Nothing new to look at")
 
 
-def broken(step):
+def locked(step):
     raise RuntimeError("the authors database is locked")
 
 
-review._run(broken, lambda _r: None, "Writing…", job=("Updating the authors database",
-                                                    "database"))
-check("a Review task that fails ends failed, and is journalled so",
-      wait_for(lambda: installed.jobs.last_finished("review").result == "failed")
-      and installed.journal.recent(1)[0].kind == "database.failed"
-      and installed.journal.recent(1)[0].detail == "the authors database is locked")
-wait_for(lambda: review._task is None)
+review._prepare_fn = locked
+review.start_scan()
+check("a Review scan that fails ends failed, and is journalled so, with why",
+      wait_for(lambda: review.state == "stopped")
+      and installed.jobs.last_finished("review").result == "failed"
+      and installed.journal.recent(1)[0].kind == "scan.failed"
+      and "the authors database is locked" in installed.journal.recent(1)[0].detail)
 
 print("-- the window's services --")
 installed.start()

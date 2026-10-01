@@ -1394,7 +1394,15 @@ class ListRow:
     them an optional time column (`when`, recent activity), a glyph, a square
     thumb (the author list), chips, and a trailing mono note (`#1234567890`).
     `chips` is a tuple of (variant, text or None). `icon=""` keeps the glyph's
-    room without drawing one, so a column of titles stays aligned."""
+    room without drawing one, so a column of titles stays aligned.
+
+    `title_note` follows the title in text.lo ("was Old Name"); `tick` ends
+    the row with an ok check (an author gone through), and `dimmed` sets such
+    a row back: its title in text.mid, the row at LIST_ROW_DIM. `meta_tone`
+    colours the meta line (a warning). `thumb_size` is the thumb's side; 0 is
+    LIST_ROW_THUMB. `chips_inline` draws the chips right after the title, on
+    its line, instead of at the row's right: the meta line under them then
+    has the row's whole width."""
     title: str
     meta: str = ""
     when: str = ""
@@ -1403,13 +1411,20 @@ class ListRow:
     thumb: bool = False
     chips: tuple = ()
     trailing: str = ""
+    title_note: str = ""
+    tick: bool = False
+    dimmed: bool = False
+    meta_tone: str = "text.lo"
+    thumb_size: int = 0
+    chips_inline: bool = False
 
 
 def list_row_height(row: ListRow | None = None) -> int:
     lines = theme.line_height("type.bodySm")
     if row is None or row.meta:
         lines += theme.SP_2 + theme.line_height("type.monoXs")
-    inner = max(math.ceil(lines), theme.LIST_ROW_THUMB if row is None or row.thumb else 0)
+    side = (row.thumb_size or theme.LIST_ROW_THUMB) if row is not None else theme.LIST_ROW_THUMB
+    inner = max(math.ceil(lines), side if row is None or row.thumb else 0)
     return inner + 2 * theme.LIST_ROW_PAD[0]
 
 
@@ -1428,6 +1443,8 @@ def paint_list_row(painter: QPainter, rect: QRectF, row: ListRow, state: str = "
     painter.save()
     if state == "disabled":
         painter.setOpacity(theme.DISABLED_FIELD_OPACITY)
+    elif row.dimmed:
+        painter.setOpacity(theme.LIST_ROW_DIM)
     pad_v, pad_h = theme.LIST_ROW_PAD
     x, right = rect.left() + pad_h, rect.right() - pad_h
     middle = rect.center().y()
@@ -1443,33 +1460,58 @@ def paint_list_row(painter: QPainter, rect: QRectF, row: ListRow, state: str = "
                                icons.pixmap(row.icon, row.icon_tone, size, dpr))
         x += size + theme.SP_2 + gap
     if row.thumb:
-        side = theme.LIST_ROW_THUMB
+        side = row.thumb_size or theme.LIST_ROW_THUMB
         paint_thumb(painter, QRectF(x, middle - side / 2, side, side), pixmap,
                     "image" if pixmap is not None else "loading", theme.R_SM + 1)
         x += side + gap
+    if row.tick:
+        size = theme.LIST_ROW_TICK
+        painter.drawPixmap(QPointF(right - size, middle - size / 2),
+                           icons.pixmap("check", "ok", size, dpr))
+        right -= size + gap
     if row.trailing:
         width = _draw_text(painter, _list_fonts, QRectF(x, rect.top(), right - x, rect.height()),
                            row.trailing, "type.monoSm", "text.lo", Qt.AlignRight)
         right -= width + gap
-    for variant, text in reversed(row.chips):
-        size = chip_size(variant, text)
-        ring = theme.FOCUS_RING
-        left = right - size.width()
-        painter.drawPixmap(QPointF(left - ring, middle - size.height() / 2 - ring),
-                           chip_pixmap(variant, text, "disabled" if state == "disabled"
-                                       else "default", dpr))
-        right = left - theme.SP_6
-    right -= gap - theme.SP_6 if row.chips else 0
+    chip_state = "disabled" if state == "disabled" else "default"
+    ring = theme.FOCUS_RING
+    if not row.chips_inline:
+        for variant, text in reversed(row.chips):
+            size = chip_size(variant, text)
+            left = right - size.width()
+            painter.drawPixmap(QPointF(left - ring, middle - size.height() / 2 - ring),
+                               chip_pixmap(variant, text, chip_state, dpr))
+            right = left - theme.SP_6
+        right -= gap - theme.SP_6 if row.chips else 0
     title_h = theme.line_height("type.bodySm")
     meta_h = theme.line_height("type.monoXs") if row.meta else 0.0
     block = title_h + (theme.SP_2 + meta_h if row.meta else 0.0)
     top = middle - block / 2
-    title_tone = "text.lo" if state == "disabled" else "text.body"
-    _draw_text(painter, _list_fonts, QRectF(x, top, right - x, title_h), row.title,
-               "type.bodySm", title_tone, Qt.AlignLeft)
+    title_tone = "text.lo" if state == "disabled" else "text.mid" if row.dimmed else "text.body"
+    inline = 0.0
+    if row.chips_inline and row.chips:
+        inline = sum(chip_size(v, t).width() + theme.SP_6 for v, t in row.chips)
+    title_right = max(x, right - inline)
+    used = _draw_text(painter, _list_fonts, QRectF(x, top, title_right - x, title_h), row.title,
+                      "type.bodySm", title_tone, Qt.AlignLeft)
+    after = x + used
+    if row.chips_inline:
+        line_middle = top + title_h / 2
+        for variant, text in row.chips:
+            size = chip_size(variant, text)
+            left = after + theme.SP_6
+            painter.drawPixmap(QPointF(left - ring, line_middle - size.height() / 2 - ring),
+                               chip_pixmap(variant, text, chip_state, dpr))
+            after = left + size.width()
+    if row.title_note:
+        left = after + theme.SP_6
+        if right - left > theme.LIST_ROW_NOTE_MIN:
+            _draw_text(painter, _list_fonts, QRectF(left, top, right - left, title_h),
+                       row.title_note, "type.bodySm", "text.lo", Qt.AlignLeft)
     if row.meta:
         _draw_text(painter, _list_fonts, QRectF(x, top + title_h + theme.SP_2, right - x, meta_h),
-                   row.meta, "type.monoXs", "text.lo", Qt.AlignLeft)
+                   row.meta, "type.monoXs", "text.lo" if state == "disabled" else row.meta_tone,
+                   Qt.AlignLeft)
     painter.restore()
 
 
@@ -1505,6 +1547,81 @@ class ListRowDelegate(QStyledItemDelegate):
         pixmap = index.data(LIST_PIXMAP_ROLE)
         paint_list_row(painter, QRectF(option.rect), row, state,
                        pixmap=pixmap if isinstance(pixmap, QPixmap) else None)
+
+
+class SkeletonRows(QWidget):
+    """Rows standing where a list will be: a well and two bars each, as many
+    as fit. Live, they shimmer (`anim.shimmer`, each row a little after the
+    one above) while the list is being filled; `live=False` draws them still,
+    faint and set back — a list that stopped filling. Painted, one shared
+    clock: no animation per row (plan §2.4)."""
+
+    def __init__(self, parent: QWidget | None = None, *, live: bool = True):
+        super().__init__(parent)
+        self._live = False
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.setAccessibleName("Loading")
+        self.set_live(live)
+
+    def is_live(self) -> bool:
+        return self._live
+
+    def set_live(self, on: bool) -> None:
+        self._live = bool(on)
+        driver = animations.loop("shimmer")
+        if self._live:
+            driver.subscribe(self)
+        else:
+            driver.unsubscribe(self)
+        self.update()
+
+    @staticmethod
+    def row_height() -> int:
+        pad = theme.SKELETON_ROW_PAD[0]
+        return theme.SKELETON_WELL + 2 * pad
+
+    def rows(self) -> int:
+        """How many rows the widget's height holds."""
+        return max(0, self.height() // self.row_height())
+
+    def sizeHint(self) -> QSize:                # noqa: N802 - Qt's name
+        return QSize(theme.SKELETON_WELL * 6, self.row_height() * 4)
+
+    def paintEvent(self, event) -> None:        # noqa: N802 - Qt's name
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        painter.setPen(Qt.NoPen)
+        driver = animations.loop("shimmer")
+        if not self._live:
+            painter.setOpacity(theme.SKELETON_STILL_OPACITY)
+        pad_v, pad_h = theme.SKELETON_ROW_PAD
+        well = theme.SKELETON_WELL
+        widths = theme.SKELETON_WIDTHS
+        text_w = max(0.0, self.width() - 2 * pad_h - well - theme.SKELETON_GAP)
+        block = sum(h for h, _ in theme.SKELETON_BARS) + theme.SKELETON_BAR_GAP
+        for i in range(self.rows()):
+            top = i * self.row_height() + pad_v
+            delay = i * theme.SKELETON_ROW_STAGGER
+            box = QRectF(pad_h, top, well, well)
+            if self._live:
+                painter.setBrush(theme.color("surface.raised", driver.value(delay)))
+                painter.drawRoundedRect(box, theme.R_SM + 1, theme.R_SM + 1)
+            else:
+                paint_thumb(painter, box, None, "loading", theme.R_SM + 1)
+                painter.setPen(Qt.NoPen)
+            x = box.right() + theme.SKELETON_GAP
+            bars = theme.SKELETON_BARS if self._live else theme.SKELETON_BARS[:1]
+            y = top + (well - (block if self._live else bars[0][0])) / 2
+            for b, (height, radius) in enumerate(bars):
+                width = min(1.0, widths[i % len(widths)] if b == 0 else theme.SKELETON_SECOND)
+                if self._live:
+                    tone = theme.color("surface.raised",
+                                       driver.value(delay + b * theme.SKELETON_BAR_STAGGER))
+                else:
+                    tone = theme.color("surface.still")
+                painter.setBrush(tone)
+                painter.drawRoundedRect(QRectF(x, y, text_w * width, height), radius, radius)
+                y += height + theme.SKELETON_BAR_GAP
 
 
 class RowList(QListView):

@@ -702,6 +702,225 @@ check("a fetch that works clears the error of the one before", flaky.error == ""
 
 library.subscribed, library.ever_had = real_subscribed, real_ever
 
+
+# ---- One flow: find the authors, then count them, as it goes ----------------
+#
+# "Scan" and "Count what is new" were two buttons; they are one flow now. What
+# has to hold: the authors are counted in the scan's order and said as they
+# are, Steam not answering stops the flow at the author it was on (keeping the
+# ones counted), carrying on starts at that author and asks nobody twice, and a
+# cancel stops at the next author.
+
+import app.engines.review_flow as rf                                     # noqa: E402
+from app.engines.authors_store import StoreDamaged                      # noqa: E402
+from app.engines.steam_api import SteamAuthError, SteamError, SteamUnreachable  # noqa: E402
+from app.services.snapshot import ReviewState                            # noqa: E402
+
+WEEK = [f"7656119800000020{i}" for i in range(1, 6)]
+NAMES = ["Ann", "Ben", "Cat", "Dan", "Eve"]
+week_ids = [f"600{i}" for i in range(1, 6)]
+subscribed(*week_ids)
+WEEK_CONFIG = TMP / "week-config.json"
+WEEK_CONFIG.write_text(json.dumps({
+    "steamuser": {"general": {"browser": {"folders": [
+        {"title": "week", "items": {i: 1 for i in week_ids}, "subfolders": [], "type": 0},
+    ]}}},
+}), encoding="utf-8")
+
+
+class WeekSteam(FakeSteam):
+    """One author after another, so the order can be checked; `fail` holds
+    authors Steam does not answer for, `broken` ones it answers 404 for, and
+    `on_call` runs before each author's request."""
+
+    def __init__(self):
+        works = {a: [wallpaper(f"7{n}{k}", a, k + 1) for k in range(n)]
+                 for n, a in enumerate(WEEK, 1)}
+        items = {i: wallpaper(i, WEEK[n], 1) for n, i in enumerate(week_ids)}
+        super().__init__(items=items, authors=works,
+                         profiles={a: Profile(id64=a, name=NAMES[n]) for n, a in enumerate(WEEK)})
+        self.fail: set[str] = set()
+        self.broken: set[str] = set()
+        self.on_call = None
+
+    def run_each(self, func, jobs):
+        return [func(job) for job in jobs]
+
+    def author_items(self, id64, since=None, refresh=False, **kwargs):
+        if self.on_call is not None:
+            self.on_call(id64)
+        if id64 in self.fail:
+            raise SteamUnreachable("timed out", host="api.steampowered.com",
+                                   reason="timed out", attempts=3)
+        if id64 in self.broken:
+            raise SteamError("HTTP 404 from steamcommunity.com/profiles/x")
+        return super().author_items(id64, since, refresh, **kwargs)
+
+
+def week_flow(steam_, *, prepare=None):
+    events: list[rf.FlowEvent] = []
+    engine = rv.Review(FakeDb([]), steam_, library)
+    flow = rf.ScanFlow(prepare or (lambda step: (step("opening the authors database"), engine)[1]),
+                       "folder:week", emit=events.append, config_path=WEEK_CONFIG)
+    return flow, events
+
+
+steam5 = WeekSteam()
+flow, events = week_flow(steam5)
+outcome = flow.run()
+check("a scan for new items finds the authors and counts every one of them",
+      outcome.state == rf.DONE and outcome.checked == 5 and outcome.total == 5
+      and all(c.filled for c in outcome.result.cards))
+check("it says first what it is doing, then how many authors there are",
+      [e.kind for e in events][:3] == ["step", "step", "found"]
+      and events[2].total == 5 and events[2].done == 0)
+order = [(e.kind, e.index) for e in events if e.kind in ("checking", "checked")]
+check("each author is said as it starts and as it ends, in the scan's order",
+      order == [(k, i) for i in range(5) for k in ("checking", "checked")])
+check("with the count of authors checked so far going up one at a time",
+      [e.done for e in events if e.kind == "checked"] == [1, 2, 3, 4, 5])
+check("the scan's order is the list's: authors already known first, then by name",
+      [c.name for c in outcome.result.cards] == NAMES)
+check("what you had before is worked out once, at the end, for every author "
+      "with something new", any(e.kind == "owned" for e in events)
+      and all(c.owned_checked for c in outcome.result.cards if c.badge))
+
+steam5 = WeekSteam()
+steam5.fail = {WEEK[2]}
+flow, events = week_flow(steam5)
+stopped = flow.run()
+check("Steam not answering stops the scan at the author it was on",
+      stopped.state == rf.STOPPED and stopped.phase == "count" and stopped.stopped_at == 2)
+check("and says why in words", stopped.reason.startswith("Steam did not answer")
+      and "timed out" in stopped.reason and "3 tries" in stopped.reason)
+check("the authors before it are kept, counted; that one and the rest are not",
+      [c.filled for c in stopped.result.cards] == [True, True, False, False, False]
+      and stopped.checked == 2 and stopped.can_carry_on)
+check("the author Steam did not answer for is not marked failed for ever",
+      stopped.result.cards[2].error == "")
+asked_before = list(steam5.author_calls)
+steam5.fail.clear()
+events.clear()
+carried = flow.resume()
+check("carrying on finishes the count", carried.state == rf.DONE and carried.checked == 5)
+check("it starts at the author the scan stopped at",
+      [e.index for e in events if e.kind == "checking"] == [2, 3, 4])
+check("and asks nobody already counted a second time",
+      [c[0] for c in steam5.author_calls[len(asked_before):]] == WEEK[2:])
+check("it starts from where it was, not from nought",
+      [e for e in events if e.kind == "found"][0].done == 2)
+
+steam5 = WeekSteam()
+flow, events = week_flow(steam5)
+steam5.on_call = lambda id64: flow.cancel() if id64 == WEEK[1] else None
+cancelled = flow.run()
+check("a cancel stops the count at the next author",
+      cancelled.state == rf.CANCELLED and cancelled.stopped_at == 2
+      and [c.filled for c in cancelled.result.cards] == [True, True, False, False, False])
+check("and what was counted can be carried on from there too", cancelled.can_carry_on)
+steam5.on_call = None
+check("after which the count finishes as if it had never stopped",
+      flow.resume().state == rf.DONE and all(c.filled for c in flow.result.cards))
+
+steam5 = WeekSteam()
+steam5.broken = {WEEK[3]}
+flow, events = week_flow(steam5)
+one_bad = flow.run()
+check("one author Steam has no answer for is that author's problem, not the scan's",
+      one_bad.state == rf.DONE and one_bad.checked == 5
+      and "404" in one_bad.result.cards[3].error)
+
+
+def damaged(step):
+    step("opening the authors database")
+    raise StoreDamaged("authors.sqlite is damaged: file is not a database")
+
+
+flow, events = week_flow(WeekSteam(), prepare=damaged)
+broken_db = flow.run()
+check("a database that will not open stops the flow before the scan, and says so",
+      broken_db.state == rf.STOPPED and broken_db.phase == "prepare"
+      and "damaged" in broken_db.reason and broken_db.result is None
+      and not broken_db.can_carry_on)
+
+
+class RefusedSteam(WeekSteam):
+    def details(self, ids, on_progress=None):
+        raise SteamAuthError("Steam refused the Web API key (HTTP 403)")
+
+
+flow, events = week_flow(RefusedSteam())
+refused = flow.run()
+check("a key Steam refuses stops the scan while it finds the authors",
+      refused.state == rf.STOPPED and refused.phase == "scan"
+      and "refused the Web API key" in refused.reason)
+
+
+# ---- The session, and review_last.json ----------------------------------------
+
+week = flow_result = week_flow(WeekSteam())[0]
+done_outcome = week.run()
+cards5 = done_outcome.result.cards
+cards5[1].items = []                       # Ben: nothing new
+cards5[3].error, cards5[3].items = "HTTP 404", []
+when = datetime(2026, 9, 18, 9, 10)
+session = rf.Session.from_result(done_outcome.result, scanned=when)
+check("the session lists the authors with something new, in the scan's order",
+      [a.name for a in session.authors] == ["Ann", "Cat", "Eve"])
+check("and counts the rest: nothing new, and could not be read",
+      session.checked == 5 and session.nothing_new == 1 and session.unread == 1)
+check("its new items are the authors' badges together",
+      session.items == sum(c.badge for c in cards5 if c.badge and not c.error))
+check("an author is waiting until gone through", session.waiting == 3
+      and session.next_waiting() == WEEK[0])
+check("the next author waiting follows the list as it is shown, round to the start",
+      session.next_waiting(after=WEEK[4], order=[WEEK[4], WEEK[2], WEEK[0]]) == WEEK[2]
+      and session.next_waiting(after=WEEK[2], order=[WEEK[4], WEEK[2], WEEK[0]]) == WEEK[0])
+session.mark_done(WEEK[0])
+check("marking one done moves on to the next", session.waiting == 2
+      and session.next_waiting(after=WEEK[0]) == WEEK[2])
+check("marking it done again changes nothing", not session.mark_done(WEEK[0]))
+session.note_subscribed(WEEK[2], "9999")
+session.note_subscribed(WEEK[2], "9999")
+check("a wallpaper subscribed is counted once for its author", session.subscribed == 1)
+
+data = session.to_json()
+state = ReviewState.from_json(data)
+check("what the page writes is what Overview and the badge read",
+      state.scanned == when and state.items == session.items and state.authors == 3
+      and state.waiting == 2 and state.finished is None and state.checked == 5)
+check("the file names the authors by account as well as by name",
+      [a["id"] for a in data["authors"]] == [WEEK[0], WEEK[2], WEEK[4]])
+
+last_file = TMP / "review_last.json"
+rf.save_last(last_file, data)
+check("the summary is written whole, with nothing left beside it",
+      rf.load_last(last_file) == json.loads(json.dumps(data))
+      and not (TMP / "review_last.json.tmp").exists())
+session.finished = datetime(2026, 9, 18, 9, 52)
+for a in session.authors:
+    a.done = True
+rf.save_last(last_file, session.to_json())
+finished = ReviewState.from_json(rf.load_last(last_file))
+check("a finished review has nobody waiting", finished.finished is not None
+      and finished.waiting == 0)
+
+check("no file is no last review", rf.load_last(TMP / "nowhere.json") is None)
+(TMP / "torn.json").write_text('{"scanned": "2026-09-18T09:1', encoding="utf-8")
+check("a torn file is no last review, rather than an error",
+      rf.load_last(TMP / "torn.json") is None)
+(TMP / "list.json").write_text("[1, 2]", encoding="utf-8")
+check("and so is a file that does not hold a summary", rf.load_last(TMP / "list.json") is None)
+odd = ReviewState.from_json({**data, "checked": "lots", "items": -3, "future_key": {"x": 1},
+                             "authors": [{"name": "x", "done": "yes"}, "not an author"]})
+check("a field of the wrong kind is not known, and one this build has never heard of "
+      "is ignored", odd.checked is None and odd.items is None and odd.authors == 1
+      and odd.waiting == 1)
+older = {k: data[k] for k in ("scanned", "scope", "since", "items", "authors", "finished")}
+check("a summary from before `checked` existed still reads",
+      ReviewState.from_json(older).items == session.items
+      and ReviewState.from_json(older).checked is None)
+
 print()
 print("PASSED %d/%d" % (sum(results), len(results)))
 sys.exit(0 if all(results) else 1)

@@ -31,9 +31,9 @@ def run() -> tuple[bool, str]:
     for module, why in (("PySide6.QtWidgets", "the window"),
                         ("sqlite3", "the authors database and the Steam cache"),
                         ("app.engines.authors_store", "the authors database"),
-                        ("app.ui.authors_dialog", "its backups and restoring one"),
                         ("app.engines.review", "the review itself"),
-                        ("app.ui.review_tab", "the Review tab"),
+                        ("app.engines.review_flow",
+                         "a scan as one flow, carrying on, review_last.json"),
                         ("app.engines.steam_ugc", "subscribing from the gallery"),
                         ("app.secrets", "the stored Steam key"),
                         ("PySide6.QtNetwork", "one window, raised from the tray"),
@@ -53,6 +53,10 @@ def run() -> tuple[bool, str]:
                          "the Rotator page: the next run, a run under way, the history"),
                         ("app.pages.tracker",
                          "the Tracker page, its titles and authors read off the window's thread"),
+                        ("app.pages.review",
+                         "the Review page: the scan, the authors, finishing a review"),
+                        ("app.pages.review_settings",
+                         "Review settings, the authors database and its backups"),
                         ("app.window_frame", "the window's own title bar")):
         try:
             __import__(module)

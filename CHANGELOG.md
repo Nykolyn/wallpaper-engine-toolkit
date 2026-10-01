@@ -6,6 +6,77 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [3.6.0] - 2026-10-01
+
+The eleventh step of the redesign: Review as one flow — scan, go through the
+authors, finish. The toolbar of buttons is gone; the page says at each point
+what it is doing and what comes next. See [Review](docs/review.md). The
+gallery itself is unchanged until the next step.
+
+### Changed
+
+- **Review is one flow.** **Scan for new items** finds the authors behind the
+  wallpapers in the chosen folder and counts what each has published since
+  your last visit, in one go — *34 / 118 authors checked · ≈1 min left*, the
+  author it is on, and the authors with something new listed as they are
+  found. "Scan" and "Count what is new" were two buttons.
+- **The gallery opens when the scan finishes**, on the first author with
+  something new. The list on the left holds only those authors — *106 authors
+  had nothing new* under it — with *3 / 12* gone through above it.
+  **Done with <author> →** ticks one and opens the next.
+- **Finish review** writes the visit dates after showing the plan: *3 authors
+  to create, 21 visit dates to move, 2 names to bring up to date*, then the
+  changes themselves. It replaces **Update the database**. When a visit date
+  would move past wallpapers a keyless list left out, it says so and Cancel is
+  the default, as before. **Skip for now** leaves without writing anything.
+- **When a scan stops it says why**, in plain words, with the last lines of
+  its log: Steam not answering, a key Steam refuses, a database that will not
+  open. **Carry on from author 34** counts the authors it had not reached,
+  keeping the ones it had and asking nobody twice; **Start over** scans again.
+  One author Steam has no answer for no longer stands for all the rest: it is
+  counted and said, and the scan goes on.
+- **A finished review says how it went**: how many authors went through, what
+  was subscribed, the new items found and how many were yours before, the
+  last scan — and **Reopen review**. No scan runs on its own (gate G4), so
+  the page shows the last one rather than a next one.
+- **Review settings** replaces **Steam key…**: what a scan reads (Wallpaper
+  Engine's folders with how many wallpapers each holds, or the three across
+  them), how a click subscribes (Steam directly or Steam's page — it was the
+  toolbar's switch), the Steam Web API key with **Show**, **Test** and **Get a
+  key**, the second folder for the authors database's backups (it was in
+  **Authors database…**), and **Authors database…**. On the Settings page,
+  **Review settings…** opens the same dialog.
+- **Authors database…** lists the backups in a table, reads them without
+  holding the window, and restores one after a confirmation that names the
+  count — *Restore 38 897 authors* — with Cancel the default.
+- What you had before is worked out once, at the end of the scan, for every
+  author with something new, rather than when a gallery is first opened; the
+  counts the review finishes with are whole.
+- The messages of the old status line are toasts; the scan, a carry-on and
+  the write are jobs in the status line and the activity journal, with their
+  logs in `logs/review/`.
+
+### Added
+
+- `data/review_last.json`: the last scan — when, what it read, the authors
+  with new items and which are done, what was subscribed, when the review was
+  finished. Overview's **New since last review**, the sidebar's badge (the
+  authors waiting) and the page's own empty state read it. Written whole or
+  not at all; a newer file's keys are ignored by an older build.
+- In the kit, for later pages: `SkeletonRows`, `ConsoleExcerpt`, `Spinner`;
+  `EmptyState.add_content` and `width=`; `ListRow`'s `title_note`, `tick`,
+  `dimmed`, `meta_tone`, `thumb_size` and `chips_inline`; `ConfirmDialog`'s
+  `lines`, `note` and `safe_default`; `FormDialog.add_widget` and
+  `add_action`; `Callout.body()`. In the engine: `ScanFlow`, `Session`,
+  `SteamUnreachable`, and `Review.fill(stop_on=)`.
+
+### Removed
+
+- The Review tab and its toolbar (Look at, Scan, Count what is new, Subscribe
+  by, Steam key…, Authors database…, Update the database), its status line and
+  keyless banner as they were, the Steam key dialog and the old authors
+  database dialog.
+
 ## [3.5.0] - 2026-10-01
 
 The tenth step of the redesign: the Rotator's page. Its five inner tabs are
@@ -948,7 +1019,8 @@ restructured yet; the tabs keep their layout and take on the new look.
   was right for one library and wrong for every other. Nothing is tagged now
   unless you ask for it.
 
-[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.5.0...HEAD
+[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.6.0...HEAD
+[3.6.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.5.0...v3.6.0
 [3.5.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.4.1...v3.5.0
 [3.4.1]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.4.0...v3.4.1
 [3.4.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.3.0...v3.4.0

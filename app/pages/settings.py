@@ -15,7 +15,9 @@ two (REDESIGN_PLAN §2.3).
   announces a change.
 - Tracker and tray: counting in the background (a logon task, asked about on a
   worker: `schtasks` takes a moment), and the monitor the tray leads with.
-- Review and Steam: the Steam key and the authors database dialogs.
+- Review and Steam: Review's own dialogs — Review settings (the source, how a
+  click subscribes, the Steam key, the second backup folder) and the authors
+  database.
 - About: the name and version, the data and log folders, the selfcheck.
 """
 from __future__ import annotations
@@ -101,7 +103,7 @@ class SettingsPage(Page):
     changed = Signal(str)
 
     def __init__(self, settings: Settings, config: Config, *, feed=None, services=None,
-                 on_steam_key=None, on_authors=None, parent: QWidget | None = None):
+                 on_review_settings=None, on_authors=None, parent: QWidget | None = None):
         super().__init__(parent)
         self.settings = settings
         self.config = config
@@ -150,7 +152,7 @@ class SettingsPage(Page):
             feed.updated.connect(self._fill_monitors)
         self._jobs_changed()
         self._fill_monitors()
-        self.connect_review(on_steam_key, on_authors)
+        self.connect_review(on_review_settings, on_authors)
 
     # ---- the panels ------------------------------------------------------------
 
@@ -262,14 +264,15 @@ class SettingsPage(Page):
 
     def _review_panel(self) -> GlassPanel:
         panel, column = self._panel("Review and Steam")
-        key = SecondaryButton("Steam key…")
+        review = SecondaryButton("Review settings…")
         authors = SecondaryButton("Authors database…")
-        column.addWidget(_Row("Steam Web API key", _left(key),
-                              "Review asks Steam with it. It is kept encrypted for this "
-                              "Windows account."))
+        column.addWidget(_Row("Review settings", _left(review),
+                              "What a scan reads, how a click subscribes, and the Steam Web API "
+                              "key Review asks Steam with — kept encrypted for this Windows "
+                              "account."))
         column.addWidget(_Row("Authors database", _left(authors),
                               "The authors you have reviewed, and the backups of that list."))
-        self.steam_key_button, self.authors_button = key, authors
+        self.review_settings_button, self.authors_button = review, authors
         return panel
 
     def _about_panel(self) -> GlassPanel:
@@ -314,10 +317,10 @@ class SettingsPage(Page):
 
     # ---- wiring the Review buttons once the window has made the Review tab ------------
 
-    def connect_review(self, on_steam_key=None, on_authors=None) -> None:
-        """What "Steam key…" and "Authors database…" open. They are the Review
-        page's dialogs, so the page can drop what it read with the old ones."""
-        for button, callback in ((self.steam_key_button, on_steam_key),
+    def connect_review(self, on_review_settings=None, on_authors=None) -> None:
+        """What "Review settings…" and "Authors database…" open. They are the
+        Review page's dialogs, so the page hears what changed."""
+        for button, callback in ((self.review_settings_button, on_review_settings),
                                  (self.authors_button, on_authors)):
             button.setEnabled(callback is not None)
             if callback is not None:

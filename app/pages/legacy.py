@@ -1,9 +1,9 @@
 """What the old tabs' sidebar items say, until their own pages say it.
 
 An old tab knows nothing of the sidebar, so its item is worked out here from
-the services: a job of that tool running (a bar and a percentage, or
-"working"). Each page step moves its tool's part into its own page and
-deletes it from here (the Tracker's went in step 08, the Rotator's in 10).
+the services: a job of that tool running ("working"), or "idle". Each page
+step moves its tool's part into its own page and deletes it from here (the
+Tracker's went in step 08, the Rotator's in 10, Review's in 11).
 """
 from __future__ import annotations
 
@@ -11,18 +11,10 @@ from PySide6.QtCore import QObject
 
 from ..ui.kit import NavState
 
-# Tools whose sidebar item shows a bar while they work; the others say "working".
-_BARS = ("review",)
-
-
 def nav_for(key: str, jobs, snapshot=None) -> NavState:
     """The sidebar state of the old tab `key`, from the JobCenter."""
-    running = [job for job in jobs.running() if job.tool == key]
-    if running:
-        job = running[0]
-        if key in _BARS and job.total > 0:
-            return NavState.progress(job.done, job.total)
-        return NavState.status("working", below=key in _BARS)
+    if any(job.tool == key for job in jobs.running()):
+        return NavState.status("working")
     if key in ("creator", "copier"):
         return NavState.status("idle")
     return NavState()

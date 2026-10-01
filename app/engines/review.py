@@ -368,7 +368,8 @@ class Review:
 
     def scan(self, scope: str = DEFAULT_SCOPE,
              config_path: str | Path | None = None,
-             only_present: bool = True) -> ReviewResult:
+             only_present: bool = True,
+             on_progress: Callable[[str, int, int], None] | None = None) -> ReviewResult:
         """Identify every author behind the chosen wallpapers. Seconds, no more.
 
         ``scope`` is one folder of Wallpaper Engine's, or one of the three
@@ -383,7 +384,11 @@ class Review:
         against, 2 155 ids are remembered and 19 are wallpapers you still have.
         Reviewing the other 2 136 would mean re-reviewing everything ever put
         aside and since deleted.
+
+        ``on_progress`` is where this scan reports ("items", done, total) and
+        ("authors", done, total); without it, the hook the review was made with.
         """
+        progress = on_progress or self._progress
         self._config_path = config_path
         folders = we_folders(config_path)
         here = self.library.listable()
@@ -397,7 +402,7 @@ class Review:
             return result
 
         described = self.steam.details(
-            queue, on_progress=lambda d, n: self._progress("items", d, n))
+            queue, on_progress=lambda d, n: progress("items", d, n))
         by_author: dict[str, list[str]] = {}
         for item_id in queue:
             found = described.get(item_id)
@@ -417,7 +422,7 @@ class Review:
         # the cache, which is at most two weeks old, and fetches only the new.
         profiles = self.steam.profiles(
             list(by_author), refresh=self.steam.has_key,
-            on_progress=lambda d, n: self._progress("authors", d, n))
+            on_progress=lambda d, n: progress("authors", d, n))
         found_records = self.db.lookup_many(
             {key: (profiles[key].keys if key in profiles else [key])
              for key in by_author})
@@ -439,7 +444,8 @@ class Review:
 
     def fill(self, card: AuthorCard, full: bool = False,
              refresh: bool = False, subscribed: set[str] | None = None,
-             owned: set[str] | None = None) -> AuthorCard:
+             owned: set[str] | None = None,
+             stop_on: tuple[type[BaseException], ...] = ()) -> AuthorCard:
         """Work out what this author has that is not here, and mark it up.
 
         For an author already in the database only what was published after
@@ -457,16 +463,23 @@ class Review:
         That is :meth:`mark_owned`, and it is separate because counting a week
         is four hundred of these and nobody is looking at a gallery yet. Pass
         ``owned`` to have it done here anyway.
+
+        A failure is the card's own (``card.error``, and the card counts as
+        filled) unless it is one of ``stop_on``: those are raised, and the card
+        is left as it was, unfilled — a scan stops on "Steam did not answer"
+        rather than writing it on every author left, and carries on from the
+        same card later.
         """
         with self._filling_guard:
             lock = self._filling.setdefault(card.id64, threading.Lock())
         with lock:
             if card.filled and card.deep and not refresh:
                 return card
-            return self._fill(card, refresh, subscribed, owned)
+            return self._fill(card, refresh, subscribed, owned, stop_on)
 
     def _fill(self, card: AuthorCard, refresh: bool, subscribed: set[str] | None,
-              owned: set[str] | None) -> AuthorCard:
+              owned: set[str] | None,
+              stop_on: tuple[type[BaseException], ...] = ()) -> AuthorCard:
         # Re-read from disk each time it is asked for, so a batch hands it in
         # once rather than rebuilding it per card.
         subscribed = self.library.subscribed() if subscribed is None else subscribed
@@ -477,6 +490,8 @@ class Review:
             found: AuthorItems = self.steam.author_items(
                 card.id64, since=since, refresh=refresh)
         except Exception as err:  # noqa: BLE001 — one bad author must not stop a run
+            if stop_on and isinstance(err, stop_on):
+                raise
             card.error = str(err)
             card.filled = True
             return card

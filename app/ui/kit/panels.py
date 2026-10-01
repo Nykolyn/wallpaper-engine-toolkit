@@ -274,6 +274,9 @@ class Callout(QFrame):
     def tone(self) -> str:
         return self._tone
 
+    def body(self) -> str:
+        return self._body.text()
+
     def set_body(self, text: str) -> None:
         self._body.setText(text)
         self._body.setVisible(bool(text))
@@ -458,13 +461,16 @@ class EmptyState(QWidget):
     `tone` is "neutral", "ok" (the work ended well) or "danger" (it stopped);
     it colours only the icon tile. `drop_zone=True` draws the dashed edge
     round it and emits `dropped(paths)` for folders dragged onto it.
+    `width` is the column's measure when it holds more than words (a console
+    excerpt, a MetricStrip: `add_content`), which go between the body and
+    the actions.
     """
 
     dropped = Signal(list)
 
     def __init__(self, title: str = "", body: str = "", parent: QWidget | None = None, *,
                  icon: str = "info", tone: str = "neutral", drop_zone: bool = False,
-                 meta: str = "", meta_icon: str = "clock"):
+                 meta: str = "", meta_icon: str = "clock", width: int | None = None):
         super().__init__(parent)
         if tone not in EMPTY_TONES:
             raise KeyError(f"no EmptyState tone {tone!r}; there are {', '.join(EMPTY_TONES)}")
@@ -484,9 +490,10 @@ class EmptyState(QWidget):
         # The column has the design's measure as a fixed width, so its wrapped
         # lines are measured at the width they are drawn at.
         pad_v, pad_h = theme.DROP_PAD if drop_zone else (0, 0)
-        measure = theme.DROP_BODY_WIDTH if drop_zone else theme.EMPTY_BODY_WIDTH
+        measure = width or (theme.DROP_BODY_WIDTH if drop_zone else theme.EMPTY_BODY_WIDTH)
         self._zone.setFixedWidth(measure + 2 * pad_h)
         column = QVBoxLayout(self._zone)
+        self._column = column
         column.setContentsMargins(pad_h, pad_v, pad_h, pad_v)
         column.setSpacing(theme.EMPTY_GAP)
         self._tile = _Tile(icon, tone)
@@ -563,6 +570,12 @@ class EmptyState(QWidget):
         first, then quieter ones."""
         self._actions.insertWidget(self._actions.count() - 1, widget)
         self._actions_row.show()
+        return widget
+
+    def add_content(self, widget: QWidget) -> QWidget:
+        """Something more than words, under the body and above the actions:
+        a console excerpt, a MetricStrip. It is as wide as the column."""
+        self._column.insertWidget(self._column.indexOf(self._actions_row), widget)
         return widget
 
     # -- drops
@@ -755,13 +768,14 @@ class StepList(QWidget):
 
 # ---- ActivityLine ---------------------------------------------------------------------------------
 
-class _Spinner(QWidget):
-    """Half a ring turning on the shared "spin" clock, over the rest of it."""
+class Spinner(QWidget):
+    """Half a ring turning on the shared "spin" clock, over the rest of it:
+    `size` px across (the ActivityLine's 14 by default)."""
 
-    def __init__(self, parent: QWidget | None = None):
+    def __init__(self, parent: QWidget | None = None, *, size: int = theme.ACTIVITY_SPINNER):
         super().__init__(parent)
-        side = theme.ACTIVITY_SPINNER
-        self.setFixedSize(side, side)
+        self.setFixedSize(size, size)
+        self.setAccessibleName("Working")
         animations.loop("spin").subscribe(self)
 
     def paintEvent(self, event) -> None:        # noqa: N802 - Qt's name
@@ -791,7 +805,7 @@ class ActivityLine(QWidget):
         pad_v, pad_h = theme.ACTIVITY_PAD
         row.setContentsMargins(pad_h, pad_v, pad_h, pad_v)
         row.setSpacing(theme.ACTIVITY_GAP)
-        self._spinner = _Spinner()
+        self._spinner = Spinner()
         self._thumb = Thumb("xs")
         self._thumb.hide()
         row.addWidget(self._spinner)
