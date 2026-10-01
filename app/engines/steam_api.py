@@ -143,6 +143,21 @@ class SteamAuthError(SteamError):
     """The Web API key is missing, wrong, or not allowed to ask this."""
 
 
+class SteamUnreachable(SteamError):
+    """Steam did not answer: every attempt timed out, could not connect, or
+    was answered with a server error or "slow down". Not about the thing
+    asked for, so asking for the next thing would fail the same way — a
+    Review scan stops on it rather than marking every author left as failed.
+    """
+
+    def __init__(self, message: str, *, host: str = "", reason: str = "",
+                 attempts: int = 0):
+        super().__init__(message)
+        self.host = host
+        self.reason = reason
+        self.attempts = attempts
+
+
 # ---- What Steam gives back -------------------------------------------------
 
 @dataclass
@@ -634,7 +649,9 @@ class SteamClient:
             if attempt + 1 < self.retries:
                 time.sleep(pause)
         self._count("failures")
-        raise SteamError(f"{_safe(url)} failed after {self.retries} attempts: {last}")
+        raise SteamUnreachable(f"{_safe(url)} failed after {self.retries} attempts: {last}",
+                               host=urllib.parse.urlsplit(url).hostname or "",
+                               reason=_reason(last), attempts=self.retries)
 
     def _api(self, url: str, params: dict) -> dict:
         """A Web API GET returning its ``response`` object."""
@@ -1082,3 +1099,20 @@ def _stamp(when: datetime | int | None) -> int | None:
 def _safe(url: str) -> str:
     """A url fit for a log line: the Web API key taken back out of it."""
     return re.sub(r"([?&]key=)[^&]*", r"\1<hidden>", url)
+
+
+def _reason(err: Exception | None) -> str:
+    """Why a request failed, in a few words: "timed out", "HTTP 503",
+    "connection refused"."""
+    if err is None:
+        return "no answer"
+    if isinstance(err, urllib.error.HTTPError):
+        return "asked to slow down (HTTP 429)" if err.code == 429 else f"HTTP {err.code}"
+    if isinstance(err, urllib.error.URLError):
+        if not isinstance(err.reason, Exception):
+            return "timed out" if "timed out" in str(err.reason).lower() else str(err.reason)
+        err = err.reason
+    if isinstance(err, TimeoutError) or "timed out" in str(err).lower():
+        return "timed out"
+    text = getattr(err, "strerror", None) or str(err) or type(err).__name__
+    return str(text).rstrip(".")

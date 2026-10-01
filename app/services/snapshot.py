@@ -152,19 +152,22 @@ def parse_estimate(estimate: str | None, now: datetime) -> datetime | None:
 
 @dataclass(frozen=True)
 class ReviewState:
-    """The last review, as `review_last.json` holds it. Step 11 writes the file:
+    """The last review, as `review_last.json` holds it. The Review page writes
+    the file (`engines/review_flow.Session.to_json`):
 
         {"scanned": "2026-09-18T09:10:00",   when the scan finished
-         "scope": "new",                      the Wallpaper Engine folder it read
+         "scope": "folder:new",               what it read (`engines/review` scopes)
          "since": "2026-09-13",               the oldest last visit among the authors
          "items": 89,                         new items found, every author together
          "authors": [{"name": "…", "new": 14, "done": false}, …],
                                               the authors with new items; done once
                                               gone through in the gallery
+         "checked": 118,                      authors counted
          "finished": null}                    when "Finish review" wrote the database
 
-    A field that is missing or of the wrong kind is not known (None), never 0;
-    fields this build does not know are ignored.
+    and a few more the page reads back itself. A field that is missing or of
+    the wrong kind is not known (None), never 0; fields this build does not
+    know are ignored.
     """
     scanned: datetime | None = None
     scope: str = ""
@@ -173,6 +176,7 @@ class ReviewState:
     authors: int | None = None      # with new items
     waiting: int | None = None      # of them, not gone through yet
     finished: datetime | None = None
+    checked: int | None = None      # authors counted, with something new or not
 
     @classmethod
     def from_json(cls, data) -> "ReviewState":
@@ -191,7 +195,7 @@ class ReviewState:
                    scope=scope if isinstance(scope, str) else "",
                    since=since.date() if since else None, items=_count(data.get("items")),
                    authors=count, waiting=0 if finished and waiting is None else waiting,
-                   finished=finished)
+                   finished=finished, checked=_count(data.get("checked")))
 
 
 def _count(value) -> int | None:

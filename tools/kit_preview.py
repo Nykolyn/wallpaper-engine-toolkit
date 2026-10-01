@@ -1579,6 +1579,32 @@ def tables_section() -> Section:
     rows.addWidget(activity, 0, Qt.AlignTop)
     rows.addStretch()
     section.body.addLayout(rows)
+
+    # Review's author list: the chip on the title's line (`chips_inline`), the name the
+    # database still has (`title_note`), a tick and the row set back once gone through.
+    rows = QHBoxLayout()
+    rows.setSpacing(14)
+    authors = GlassPanel(padding="none")
+    inside = QVBoxLayout(authors)
+    inside.setContentsMargins(4, 4, 4, 4)
+    names = RowList()
+    people = QStandardItemModel(names)
+    for title, meta, chip, note, done, tone in (
+            ("Harbor Lights", "6 new · 2 subscribed", "Known", "", True, "text.lo"),
+            ("Paper Kites", "14 new", "Known", "was Kites on Paper", False, "text.lo"),
+            ("Copper Moth", "31 new · first time seen", "NewAuthor", "", False, "text.lo"),
+            ("Second Story", "8 new · list incomplete", "Known", "", False, "warn")):
+        item = QStandardItem()
+        item.setData(ListRow(title, meta, thumb=True, thumb_size=theme.REVIEW_AVATAR,
+                             chips=((chip, None),), chips_inline=True, title_note=note,
+                             tick=done, dimmed=done, meta_tone=tone), LIST_ROW_ROLE)
+        people.appendRow(item)
+    names.setModel(people)
+    names.setFixedSize(theme.REVIEW_SIDE - 8, 4 * list_row_height(ListRow("", "x", thumb=True)))
+    inside.addWidget(names)
+    rows.addWidget(authors, 0, Qt.AlignTop)
+    rows.addStretch()
+    section.body.addLayout(rows)
     return section
 
 
@@ -1586,7 +1612,8 @@ def tables_section() -> Section:
 
 def empty_section() -> Section:
     from app.ui.kit import (
-        AccentButton, ActivityLine, EmptyState, GhostButton, GlassPanel, SecondaryButton, StepList,
+        AccentButton, ActivityLine, ConsoleExcerpt, EmptyState, GhostButton, GlassPanel,
+        MetricStrip, SecondaryButton, SkeletonRows, StepList,
     )
 
     previews = synthetic_previews()
@@ -1595,7 +1622,7 @@ def empty_section() -> Section:
                       "tile takes the page's verdict. The drop zone is dashed. A StepList "
                       "walks a run; an ActivityLine names the one thing in hand.")
 
-    def panel(widget: QWidget, tone=None, height: int = 400) -> GlassPanel:
+    def panel(widget: QWidget, tone=None, height: int = 470) -> GlassPanel:
         card = GlassPanel(tone=tone, padding="none")
         inside = QVBoxLayout(card)
         inside.setContentsMargins(40, 30, 40, 30)
@@ -1615,6 +1642,9 @@ def empty_section() -> Section:
                          "Steam did not answer for 30 seconds. Nothing was changed — the 6 "
                          "authors already found are kept and the scan can carry on.",
                          icon="warn", tone="danger")
+    stopped.add_content(ConsoleExcerpt([
+        ("13:46:02", "error", "steamcommunity.com — timed out after 3 tries"),
+        ("13:46:02", "info", "stopped at Copper Moth (34 / 118)")]))
     stopped.add_action(AccentButton("Carry on from author 34"))
     stopped.add_action(SecondaryButton("Start over"))
     stopped.add_action(GhostButton("Open log folder"))
@@ -1622,8 +1652,9 @@ def empty_section() -> Section:
     finished = EmptyState("Review finished",
                           "All 12 authors went through. 23 wallpapers were subscribed and are "
                           "downloading in Steam.", icon="check", tone="ok",
-                          meta="next scan due Saturday 26 September")
-    finished.add_action(AccentButton("Send 23 to Copier"))
+                          meta="last scan Friday 09:10 · 12 authors had new items")
+    finished.add_content(MetricStrip([(89, "new items found"), (23, "subscribed", "info"),
+                                      (2, "were yours", "ok")]))
     finished.add_action(SecondaryButton("Open review as a list"))
     grid.addWidget(panel(finished, "ok"), 1, 0)
     drop = EmptyState("Drop folders here, or paste a path",
@@ -1671,6 +1702,21 @@ def empty_section() -> Section:
     inside.addStretch()
     card.setFixedWidth(330)
     row.addWidget(card)
+    row.addStretch()
+    section.body.addLayout(row)
+    row = QHBoxLayout()
+    row.setSpacing(14)
+    for title, live in (("SkeletonRows — filling", True), ("SkeletonRows — stopped", False)):
+        card = GlassPanel(padding="lg")
+        inside = QVBoxLayout(card)
+        inside.setSpacing(11)
+        inside.addWidget(overline(title))
+        rows_ = SkeletonRows(live=live)
+        rows_.setFixedHeight(4 * SkeletonRows.row_height())
+        inside.addWidget(rows_)
+        inside.addStretch()
+        card.setFixedWidth(240)
+        row.addWidget(card)
     row.addStretch()
     section.body.addLayout(row)
     return section
@@ -1740,6 +1786,27 @@ def confirm_neutral(parent=None, *, embedded: bool = False):
                ("Return the previous batch to the reserve", "1 000 folders → W:\\wallpaper_reserve"),
                ("Move 1 000 new folders in", "drawn at random from 8 204 never used"),
                ("Rebuild the playlist and start Wallpaper Engine again", "")])
+
+
+def confirm_written(parent=None, *, embedded: bool = False):
+    from app.ui.kit import ConfirmDialog
+
+    lines = [f"create {name} (765611980001000{n:02d})"
+             for n, name in enumerate(("Copper Moth", "Fable Grove", "Orchard Loop"), 1)]
+    lines += [f"update {name} (765611980001001{n:02d}): visited: 2026-09-13 → 2026-09-30"
+              for n, name in enumerate(("Harbor Lights", "Moss & Ember", "Paper Kites",
+                                        "Northwind", "Glasswork", "Tidepool", "Quiet Static",
+                                        "Low Tide", "Second Story", "Ivy Hall", "Rain Desk",
+                                        "Kettle Hum", "Slow Bloom", "North Pier"), 1)]
+    return ConfirmDialog(
+        "Write the review to the authors database?",
+        "3 authors to create, 14 visit dates to move, 0 names to bring up to date. It is "
+        "written in one go — all of it or none — and backed up straight after.",
+        parent, icon="review", embedded=embedded, confirm_text="Write to the database",
+        lines=lines, safe_default=True,
+        note=("warn", "1 of these comes from a list read without a Steam key. Steam leaves "
+                      "mature wallpapers out of those, and moving the visit date past them "
+                      "means they will not be offered later."))
 
 
 def review_form(parent=None, *, embedded: bool = False):
@@ -1892,7 +1959,8 @@ def feedback_section() -> Section:
     opens = QHBoxLayout()
     opens.setSpacing(10)
     for words, make in (("Destructive confirmation", confirm_destructive),
-                        ("Neutral confirmation", confirm_neutral), ("Form", review_form)):
+                        ("Neutral confirmation", confirm_neutral),
+                        ("A plan, Cancel first", confirm_written), ("Form", review_form)):
         button = GhostButton(words, outlined=True)
         button.clicked.connect(lambda _=False, m=make, b=button: m(b.window()).ask())
         opens.addWidget(button)
@@ -1906,12 +1974,19 @@ def feedback_section() -> Section:
     section.body.addLayout(row)
     row = QHBoxLayout()
     row.setSpacing(40)
+    row.addWidget(confirm_written(embedded=True), 0, Qt.AlignTop)
+    row.addStretch()
+    section.body.addLayout(row)
+    row = QHBoxLayout()
+    row.setSpacing(40)
     row.addWidget(review_form(embedded=True), 0, Qt.AlignTop)
     note = text("Destructive: Cancel is the default and has focus when it opens; the Danger "
                 "button follows the ticks and is off with none. A group's box ticks or clears "
                 "all of it, including the rows folded under “N more like these”. Esc cancels "
-                "either kind. A form's Save stays off until every field is right, and a "
-                "field says what is wrong once it has been touched.",
+                "either kind. A plan lists its first 14 lines and how many more; with a "
+                "note that makes it one to think twice about, Cancel is the default there "
+                "too. A form's Save stays off until every field is right, and a field says "
+                "what is wrong once it has been touched.",
                 "type.bodySm", "text.mid", wrap=True)
     note.setFixedWidth(420)
     row.addWidget(note, 0, Qt.AlignTop)
@@ -2054,7 +2129,7 @@ class SampleWindow(QWidget):
 
 
 DIALOG_GRABS = {"confirm-neutral": confirm_neutral, "confirm-destructive": confirm_destructive,
-                "form": review_form}
+                "confirm-written": confirm_written, "form": review_form}
 
 
 def grab_dialogs(folder: Path) -> list[Path]:

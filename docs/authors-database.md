@@ -19,7 +19,8 @@ with the other things the toolkit keeps — `%LOCALAPPDATA%\WallpaperEngineToolk
 in a built copy, the project folder's `data\` when run from source.
 
 There is nothing to set up. The file is made the first time the Review page
-needs it, and **Authors database…** in the page says how many authors it holds,
+needs it, and **Authors database…** — in Review settings, or on the
+[Settings page](settings.md#review-and-steam) — says how many authors it holds,
 where the file is, and what backups there are.
 
 It is a SQLite database: one file, no server, and read by the Python standard
@@ -49,7 +50,8 @@ and `o0p` are one key, and one author.
 ## Nothing is written without saying what it would write
 
 Every change is **planned first** and shown as a line of English —
-`create New Person (76561199999999999)` — before anything is written. You
+`create New Person (76561199999999999)` — before anything is written: **Finish
+review** on the Review page lists them, how many of each kind, and asks. You
 approve the plan, not the intention.
 
 Then it is written **in one transaction**: all of it, or — if any part fails —
@@ -78,24 +80,27 @@ a year**. Only files named like a snapshot are ever touched.
 ### A second copy somewhere else
 
 A backup on the same disk as the database survives mistakes, not the disk
-failing. In **Authors database…**, **Second copy in** picks a folder — another
-drive, or one OneDrive or Dropbox syncs — and every snapshot is copied there as
-well, verified, and pruned by the same rules.
+failing. In **Review settings**, **Second copy of the authors backups** picks a
+folder — another drive, or one OneDrive or Dropbox syncs — and every snapshot is
+copied there as well, verified, and pruned by the same rules.
 
-It is off until you choose one, and the dialog says what that risks. If the
+It is off until you choose one, and **Authors database…** says what that risks. If the
 folder cannot be reached when a change is written — an unplugged drive — the
 change still happens and is still backed up in `data/`; the page says the copy
 was not made, and the next change makes it.
 
 ### Restoring
 
-**Authors database…** lists every snapshot in both places, newest first. Pick
-one and press **Restore selected…**: the dialog says how many authors are there
-now and how many the backup holds, and asks. The current state is snapshotted
-first, so a restore is undone the same way it is done.
+**Authors database…** lists every snapshot in both places, newest first, with
+how many authors each holds and its size. Pick one and press
+**Restore selected…**: a confirmation says how many authors are there now and
+how many the backup holds, and its button names the count — *Restore 38 897
+authors*; Cancel is the default. The current state is snapshotted first, so a
+restore is undone the same way it is done. The Review page then drops what it
+had read and asks for a new scan.
 
-If the database file is ever damaged, the page says so when it opens it and
-offers the backups straight away. The damaged file is set aside as
+If the database file is ever damaged, a scan stops when it opens it, says so,
+and offers **Open the backups…**. The damaged file is set aside as
 `authors.sqlite.damaged1`, never deleted.
 
 ## Why an author can have two keys

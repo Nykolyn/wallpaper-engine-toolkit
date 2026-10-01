@@ -5,6 +5,8 @@
 - overview: the loop at a glance.
 - rotator: a batch of folders swapped between the reserve and myprojects.
 - tracker: each monitor's playlist, counted down.
+- review: what is new from the authors behind the wallpapers you put aside;
+  review_settings holds its two dialogs, review_fixtures its made-up states.
 - settings: what is set once.
 - legacy: what the old tabs' sidebar items say, until their pages say it.
 
@@ -22,9 +24,9 @@ def build_pages(window) -> list[Page]:
     from ..engines.rotator.config import Config
     from ..ui.copier_tab import CopierTab
     from ..ui.creator_tab import CreatorTab
-    from ..ui.review_tab import ReviewTab
     from .legacy import LegacyNav
     from .overview import OverviewPage
+    from .review import ReviewPage
     from .rotator import RotatorPage
     from .settings import SettingsPage
     from .tracker import TrackerPage
@@ -34,22 +36,20 @@ def build_pages(window) -> list[Page]:
     # other has, and a run is never handed a config the page is changing
     # (the Settings page's Rotator fields are read-only while it runs).
     config = Config.load()
-    review = ReviewTab(settings)
     creator = CreatorTab(settings)
     copier = CopierTab(settings)
     rotator_page = RotatorPage(config, services)
     tracker_page = TrackerPage(feed, services, settings=settings)
+    review_page = ReviewPage(settings, services)
     legacy = [
-        LegacyPage("review", "Review", "review", review,
-                   "What is new from the authors in your library"),
         LegacyPage("creator", "Creator", "creator", creator,
                    "Wallpapers made from video clips"),
         LegacyPage("copier", "Copier", "copier", copier,
                    "Copies of folders, so a playlist shows them more often"),
     ]
     settings_page = SettingsPage(settings, config, feed=feed, services=services,
-                                 on_steam_key=review.edit_credentials,
-                                 on_authors=review.edit_authors)
+                                 on_review_settings=review_page.edit_settings,
+                                 on_authors=review_page.edit_authors)
 
     def changed(what: str) -> None:
         if what == "rotator":
@@ -59,4 +59,4 @@ def build_pages(window) -> list[Page]:
     rotator_page.config_edited.connect(settings_page.show_rotator)
     window._legacy_nav = LegacyNav(legacy, services, window)
     return [OverviewPage(services, feed, settings=settings), rotator_page, tracker_page,
-            *legacy, settings_page]
+            review_page, *legacy, settings_page]

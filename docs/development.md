@@ -22,6 +22,8 @@ app/
 │   ├── overview.py       the loop at a glance
 │   ├── rotator.py        the next run, a run under way, how it ended; reserve, current, history
 │   ├── tracker.py        each monitor's playlist, counted down; its table
+│   ├── review.py         scan, go through the authors, finish; review_settings.py its
+│   │                       two dialogs, review_fixtures.py its made-up states
 │   ├── settings.py       what is set once
 │   └── legacy.py         what the old tabs' sidebar items say
 ├── theme.py              the design tokens: colour, type, space, radius, shadows, the stylesheet
@@ -57,6 +59,7 @@ app/
 │   ├── library_index.py  every folder of the reserve and myprojects described: library_meta.json
 │   ├── authors_store.py  the authors database: SQLite, snapshots, the journal
 │   ├── review.py         the weekly walk itself
+│   ├── review_flow.py    a scan as one flow (find, count, carry on); review_last.json
 │   └── rotator/
 │       ├── config.py     Config, RunRecord, History (+ never saved over unread), Usage
 │       ├── core.py       the steps, the rotation, stop between steps, retry, the reserve check
@@ -70,9 +73,7 @@ app/
     │                       cards, tables, thumbs), feedback (log, toast,
     │                       statusline, dialogs), and the frame (shell)
     ├── copier_tab.py, creator_tab.py
-    ├── review_tab.py, gallery.py
-    ├── credentials.py    the optional Steam key
-    └── authors_dialog.py the authors database, its backups, restoring one
+    └── gallery.py        Review's wall of previews (restyled in step 12)
 ```
 
 `tools/kit_preview.py` and `tools/ui_snapshot.py` sit outside the app: a
@@ -248,6 +249,67 @@ aside and failed (per step), the folder last moved and the playlist's fate;
   leave their dialog open as `page.fixture_dialog`, which `ui_snapshot`
   draws over the window.
 
+**Review** (`app/pages/review.py`) is one flow — scan, go through the authors,
+finish — in five `state`s: `empty`, `scanning`, `stopped`, `reviewing`,
+`done`. On the left the author panel (262 px): a placeholder before a scan,
+`SkeletonRows` while one runs (still and set back once it stopped), then
+`AuthorList` (a `RowList` of `author_row`s: the chip on the title's line, the
+name the database still has, a tick once gone through) with filter, sort,
+"3 / 12" and "106 authors had nothing new". On the right a stack: the empty
+state (and the keyless `Callout`), the scan panel and "Found so far", the
+stopped state (an `EmptyState` with a `ConsoleExcerpt` of the last log lines),
+an author's gallery (today's `GalleryView` in a panel, with **Done with
+<author> →**), and the finished state (`MetricStrip`, **Reopen review**). Its
+words are plain functions — `empty_text`, the five subtitles, `ScanProgress`
+(the scan's events → the panel's figure, bar, activity line, the status line's
+words), `found_row`, `author_row`, `gallery_subtitle`, `list_foot`,
+`stopped_text`, `finish_plan`, `written_blind`, `written_line`, `done_text`,
+`nav_state` — which `tests/test_review_page.py` calls directly.
+
+- **The scan is `engines/review_flow.ScanFlow`**, without Qt, on a thread:
+  `prepare(step)` makes what it needs the first time (the authors database,
+  the Steam client, the libraries — on the scan's thread), `Review.scan`
+  finds the authors (`on_progress` for its stages), then `Review.fill` counts
+  them through the client's pool, each said as it starts and ends
+  (`FlowEvent`). A `SteamUnreachable` or `SteamAuthError` (`STOPS`) stops it
+  at the author it was on — `Review.fill(stop_on=)` lets those through and
+  leaves the card unfilled — and `resume()` counts the unfilled ones; any
+  other failure is that author's `card.error`. At the end, `owned_before` is
+  parsed once and every author with something new is marked. A
+  `ScanOutcome` says how it ended (`done`, `stopped` with a `reason` in plain
+  words — `plain_reason` — or `cancelled`) and where (`stopped_at`). The page
+  starts it as `begin("review", …, activity="scan")`, a carry-on as
+  `activity="count"`, and the finish as `activity="database"`.
+- **The session** is `review_flow.Session`: the authors with new items in the
+  scan's order (`SessionAuthor`: new, were yours, done, subscribed), counted
+  and nothing new, when finished and what was written. `to_json()` is
+  `data/review_last.json`, saved (`save_last`, whole or not at all) when a
+  scan finishes, an author is done and at the finish; the snapshot's
+  `ReviewState` reads it back for Overview, the page's own empty state and
+  badge. Galleries are not kept between starts.
+- **Finish review** plans with `Review.plan`, asks with a `ConfirmDialog`
+  listing the changes (`lines=`), with the keyless warning as its `note` and
+  Cancel the default (`safe_default=`) when a visit date would move from a
+  list read without a key, then writes on a thread and absorbs the changes.
+- **Settings and the database** are `app/pages/review_settings.py`:
+  `ReviewSettingsDialog` (a `FormDialog`: the source from `we_folders()` read
+  on a thread, Subscribe by, the key with Show and Test, the second backup
+  folder, "Authors database…"), `save_settings` (the settings file, and the
+  key through `secrets`), and `AuthorsDialog` (an `OverlayDialog` with a
+  `Table` of backups; it reads on a thread, and restores after a destructive
+  confirmation). The Settings page's **Review settings…** and **Authors
+  database…** open the same dialogs.
+- Nothing about Steam, the libraries or Wallpaper Engine's folders is read on
+  the window's thread: the scan, the subscriptions (`SubscribeQueue`, one
+  thread and one Steamworks connection), the look for subscriptions made
+  elsewhere (every 4 s while an author is open), the folder counts and the
+  key's test all run on threads. The constructor reads nothing (the test
+  patches the file functions to raise there).
+- Fixtures: `tests/fixtures/ui/review.json` (`empty`, `scanning`, `error`,
+  `reviewing`, `done`, `settings`, `authors`) — twelve invented authors and a
+  week of counts; `app/pages/review_fixtures.py` builds the cards, the result
+  and the session as a scan would have left them, with no previews to fetch.
+
 **Window requests** (`window_instance`): a second launch or the tray sends one
 line — `show <page>`, which every version understands, or the command form
 `<verb>:<argument>` (`show:rotator`; `rotate:confirm` is the tray's, to
@@ -332,8 +394,9 @@ has the run, `from_side_file`), `PLAYLIST`
 (`PlaylistProgress` of the leading monitor, from the feed; `from_engine` says
 whether "not live" means Wallpaper Engine is not running) and `REVIEW` (the
 dict in `review_last.json`, or None; `ReviewState.from_json` reads it, and
-its docstring is the file's shape for step 11 to write: `scanned`, `scope`,
-`since`, `items`, `authors` as `[{name, new, done}]`, `finished`).
+its docstring is the file's shape — `scanned`, `scope`, `since`, `items`,
+`authors` as `[{name, new, done}]`, `checked`, `finished` — which the Review
+page writes, with more it reads back itself).
 `parse_estimate(text, now)` turns the tracker's "21 Sep 09:10" into a moment. `refresh(keys=None)` returns at once:
 the playlist is read from the feed in memory, everything else on one worker
 thread, one refresh at a time (asking during one queues the keys).
@@ -444,8 +507,9 @@ for %f in (tests\test_*.py) do .venv\Scripts\python.exe %f
 | `test_animations.py` | motion, by sampling real widgets over real time; the curve, the loops, reduced motion |
 | `test_steam_api.py` | the Web API client and its cache |
 | `test_authors_store.py` | the authors database: transactions, snapshots, pruning, the second folder, restoring, damaged files |
-| `test_review.py` | the weekly walk |
-| `test_gallery.py` | every delegate, painted in every state; memory and animation bounds |
+| `test_review.py` | the weekly walk; the scan as one flow — the authors said in order, a stop on Steam at the author it was on, carrying on from there asking nobody twice, a cancel, a database or a key that stops it first; the session and `review_last.json`, read back as Overview reads it, tolerant of torn files and unknown fields |
+| `test_review_page.py` | every state's words (the subtitles, the empty and stopped states, the scan's figure, the rows, the plan and its keyless default, the finished state, the sidebar); the page end to end on a Steam of dictionaries: a scan, Done with, subscribing a page and noticing subscriptions made elsewhere, Skip for now, Finish review writing the database, a keyless review warned about, Steam stopping and carrying on, a cancel, a restore during a scan; the author list's keys; Review settings and the authors dialog's restore; no file read in the constructor |
+| `test_gallery.py` | every delegate and the author rows, painted in every state; memory and animation bounds; one Steamworks queue for every subscription |
 | `test_hang_watch.py` | a stuck GUI thread leaves its stacks in the hang log |
 | `test_window_instance.py` | one window, raised from the tray, in a process of its own; the plain request and the command form on the socket |
 | `test_shell.py` | pages in the loop's order, the sidebar and Ctrl+number; `--tab` names; the window command parser; the rail below 1 200 px; the status line bound to the JobCenter (Show, problems until seen); the cross-fade, and none with motion off; the Settings page writing `config.json` and `suite.json`, read-only while the Rotator works; the window and the tray reading each other's `suite.json`; the title bar's hit testing; `ui_snapshot` at a size and scale |
@@ -602,8 +666,9 @@ the loops stand on their resting frame.
 
 `app/ui/kit/` holds the components the redesigned pages are built from. Each
 class is named as in the design, and each has all of the design's states.
-The pages move onto them one step at a time: the frame, Settings and
-Overview are built from it; the Review gallery uses its preview loader.
+The pages move onto them one step at a time: the frame, Settings,
+Overview, the Tracker, the Rotator and Review are built from it; the Review
+gallery (until step 12) uses its preview loader.
 
 | Module | Classes |
 |---|---|
@@ -611,19 +676,19 @@ Overview are built from it; the Review gallery uses its preview loader.
 | `inputs.py` | `TextInput` (`search=True`, `set_error(message)`), `SpinBox` (mono, `1 000` with a no-break space), `Dropdown` (`add_item(text, data, count=)`, `add_section`, `add_separator`, `prefix="SORT"`) and its list, `DropdownPopup` |
 | `selection.py` | `Checkbox`, `Toggle` (`knob_position`), `SegmentedControl` (two or three segments, `changed`), `Pagination` (`page_changed`), `page_numbers(pages, current)` |
 | `chips.py` | `Chip(variant, text=None)` in exactly fourteen variants; `chip_pixmap` and `chip_size` for delegates |
-| `panels.py` | `GlassPanel` (`tone=`, `padding=`), `Overline`, `Rule` (a hairline between two parts of a panel), `IconDisc` (a glyph in a tinted circle before a panel's title: a clean run's tick), `CardTitle`, `Callout` (`tone=`, `title=`, `add_action`), `MetricStrip` |
+| `panels.py` | `GlassPanel` (`tone=`, `padding=`), `Overline`, `Rule` (a hairline between two parts of a panel), `IconDisc` (a glyph in a tinted circle before a panel's title: a clean run's tick), `CardTitle`, `Callout` (`tone=`, `title=`, `add_action`), `MetricStrip`, `EmptyState` (`width=`, `add_content` for a console excerpt or numbers between the words and the actions), `StepList`, `ActivityLine`, `Spinner` |
 | `base.py` | the state model and the surfaces, below; `label(text, type, tone)`, `Glyph`, `Elided` (one line cut with an ellipsis, whole in its tool tip) and `LiveDot` (the pulse of a running job) |
 | `format.py` | how every number is written: `count` (`33 421`), `size` (`1.1 GB`), `duration` (`4 min 12 s`), `left` (`≈6 min left`), `approx` / `reconstructed` (`≈`, `~`), `clock` (`13:47`, or `13:47:02` for a log line), `date_table`, `date_activity`, `date_long`, `day`, `ratio` (`4 / 201`, `4/201`, `412 of 1 000`), `percent`. Pages never format numbers themselves. |
 | `paths.py` | `PathField`: empty (type, paste or Browse…), compact (path elided from the left, ✓, a folder button), invalid ("folder not found"), disabled; a drop target. `path_changed` for the user's choice, `validity_changed` when a worker has checked the folder. `kind="file"` (with `file_filter=`) holds one file instead: Wallpaper Engine's `config.json`. |
 | `tags.py` | `TagSelect` (pills, `3 / 25`, a popup of the Creator's `WE_TAGS` in four columns); `per_file=True` adds the clip's three states — `value()` None follows the batch, a list is its own, `[]` is none. `TagPopup` is the open state. |
 | `progress.py` | `ProgressBar` (3–8 px; determinate, eased over `motion.slow`; indeterminate; error; success; optional caption row) and `ProgressRing` (58, 52, 34 px; percentage, spin, done) |
 | `cards.py` | `StatCard` (default, hover when `clickable` — an empty one too, `set_loading`, empty, `set_empty(why, link=True)` for a reason written as a link, tone `lo` for the last known), `MonitorCard` (compact or `detail=True`; a playlist shown to its end closes the ring in ok, turns the count green with a flash and gives the card an ok edge) and `MonitorView`, the plain values a page fills it from (`remaining_approx` for `≈`; `timer` "paused" or "stopped" says so in REMAINING without changing the badge), `ToolTile` (a tool of the loop on the Overview: status line and tone, thin bar, mono meta; `set_active` accents the one whose job runs, with a pulsing dot; `clicked` on a click, Enter or Space) |
-| `tables.py` | `Table`, `TableModel`, `Column`, `Cell`, `ChipCell`, `Group`, `RowDelegate`, `TableHeader`, `TableBar`, `TableSummary`, `TableFooter`; `ListRow`, `paint_list_row`, `RowList`; `Thumb` and `paint_thumb` |
+| `tables.py` | `Table`, `TableModel`, `Column`, `Cell`, `ChipCell`, `Group`, `RowDelegate`, `TableHeader`, `TableBar`, `TableSummary`, `TableFooter`; `ListRow` (`title_note`, `tick`, `dimmed`, `meta_tone`, `thumb_size`, `chips_inline`), `paint_list_row`, `RowList`; `SkeletonRows` (placeholder rows, shimmering or still); `Thumb` and `paint_thumb` |
 | `thumbs.py` | `ThumbLoader`: Steam previews for the gallery (`request`), and a wallpaper folder's own preview (`request_local`), read on a worker and kept in `data/thumbs/local/` |
-| `log.py` | `LogPanel` (a job's log as a card: `append(time, kind, message)`, All / Problems, copy, live dot, "writing to rotator.log" — or a file only read back, `set_file(name, writing=False)` — closes to its header with a problem badge; `fill=True` takes its layout's height and keeps the console open while collapsed, the Overview's glance), `LogModel` (the last 5 000 lines in a ring), `ProblemsFilter`, `LogView` |
+| `log.py` | `LogPanel` (a job's log as a card: `append(time, kind, message)`, All / Problems, copy, live dot, "writing to rotator.log" — or a file only read back, `set_file(name, writing=False)` — closes to its header with a problem badge; `fill=True` takes its layout's height and keeps the console open while collapsed, the Overview's glance), `LogModel` (the last 5 000 lines in a ring), `ProblemsFilter`, `LogView`, `ConsoleExcerpt` (a few lines quoted in a console well) |
 | `toast.py` | `Toast` (ok, info, warn, danger; an action link; close) and `ToastHost` (stacks a page's toasts bottom-right, at most four) |
 | `statusline.py` | `StatusLine`: `set_running(text, done, total, count_text, on_show)`, `set_idle(text)`, `set_warn(text, action, callback)`, `set_error(...)` |
-| `dialogs.py` | `ConfirmDialog` (neutral or destructive; numbered `steps`; a checklist of `CheckGroup`s of `CheckRow`s; a summary; returns a `ConfirmResult`), `FormDialog` (labelled rows, Save once valid), and their chrome, `OverlayDialog` |
+| `dialogs.py` | `ConfirmDialog` (neutral or destructive; numbered `steps`; a checklist of `CheckGroup`s of `CheckRow`s; `lines` of a plan, the first 14 and "… and N more"; a `note` Callout; `safe_default` for Cancel first; a summary; returns a `ConfirmResult`), `FormDialog` (labelled rows, Save once valid; `add_widget`, `add_action`), and their chrome, `OverlayDialog` |
 | `shell.py` | the frame: `TitleBar` (the mark, the name, `CaptionButton`s), `Sidebar` (`add_section`, `add_item`, `set_current`, `set_state`, `set_rail`, `page_requested`), `NavSection`, `NavItem`, `NavState`, `NextInLoop`, `PageHeader` (`set_title`, `set_subtitle`, `set_actions`), `BrandMark` — see [The frame and its pages](#the-frame-and-its-pages) |
 
 **States.** Every interactive control follows the design's five: default,
@@ -810,12 +875,13 @@ empty) as jobs put in the JobCenter, a reading put in the Snapshot
 the loop; `MainWindow.load_fixture(state)` applies one, then the page's own
 `load_fixture` (its state of that name, or its first). A page with more to
 make up keeps it in a file of its own: `overview.json`, `tracker.json`,
-`rotator.json`. A
+`rotator.json`, `review.json`. A
 page's own states (`--list` prints them per page: the Tracker's `tracking`,
 `paused`, `disconnected`, `finished`, …) are asked for the same way; the page's
 `frame_fixture(state)` says which of the frame's states goes with each, and
 what of it the page changes (its sidebar item, "Next in the loop").
-A page state that opens a dialog (the Rotator's `confirm` and `broken`) keeps it
+A page state that opens a dialog (the Rotator's `confirm` and `broken`, Review's
+`settings` and `authors`) keeps it
 as `page.fixture_dialog`; the tool draws its grab over the window's, scrim and
 all. Folders in fixtures are on a drive `X:` the tool reports as present. `--scale
 1.5` is the user's 150 %; the PNG is then 1.5 × the size.

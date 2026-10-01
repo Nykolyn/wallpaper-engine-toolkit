@@ -68,6 +68,7 @@ TOKENS: dict[str, str] = {
     "surface.tile": "rgba(255,255,255,.05)",    # an EmptyState's icon tile
     "surface.rowHover": "rgba(255,255,255,.08)",  # a TagSelect option under the pointer
     "surface.tileActive": "rgba(255,255,255,.10)",  # the loop's tile of the job that runs
+    "surface.still": "rgba(255,255,255,.07)",   # a placeholder row of a list that stopped filling
     # A Thumb with no picture: two diagonals, white .28 drawn at .4 opacity.
     "thumb.cross": "rgba(255,255,255,.11)",
 
@@ -769,6 +770,21 @@ TABLE_ICON_GAP = 7
 LIST_ROW_PAD = (8, 11)
 LIST_ROW_GAP = 11
 LIST_ROW_THUMB = 30      # a list row's square thumb
+LIST_ROW_TICK = 13       # the check that ends a row gone through
+LIST_ROW_DIM = 0.75      # such a row, set back
+LIST_ROW_NOTE_MIN = 40   # room a title's note needs to be drawn at all
+# SkeletonRows: a placeholder row's padding (vertical, horizontal), its well, its two
+# bars (height, radius) and the gap between them; widths are fractions of the text column
+SKELETON_ROW_PAD = (8, 8)
+SKELETON_WELL = 26
+SKELETON_GAP = 9          # the well to the bars
+SKELETON_BARS = ((8, 3), (7, 3))
+SKELETON_BAR_GAP = 5
+SKELETON_WIDTHS = (0.52, 0.65, 0.78, 0.91, 0.57, 0.70, 0.83, 0.96, 0.62)
+SKELETON_SECOND = 0.38    # the second bar, shorter
+SKELETON_ROW_STAGGER = 90     # ms from one row's shimmer to the next
+SKELETON_BAR_STAGGER = 120    # and from a row's first bar to its second
+SKELETON_STILL_OPACITY = 0.5  # rows that stopped: set back, and still
 LIST_ROW_TIME = 58       # the time column of an activity list
 
 PATH_PAD = (6, 9)        # a compact PathField
@@ -820,6 +836,9 @@ LOG_COLUMN_GAP = 12      # time · kind · message
 LOG_BODY = 232           # the console's height, expanded
 LOG_CAP = 5_000          # lines a LogPanel keeps; the file keeps the rest
 LOG_BADGE_PAD = (2, 7)   # the problem count on a collapsed panel
+EXCERPT_PAD = (10, 12)   # a ConsoleExcerpt's well: vertical, horizontal
+EXCERPT_LINE = 18        # one of its lines (10.5 px mono at 1.7)
+EXCERPT_RADIUS = 8
 
 TOAST_WIDTH = 344
 TOAST_PAD = (11, 12)
@@ -855,6 +874,8 @@ CHECK_ROW_GAP = 10
 CHECK_SIZE_WIDTH = 64    # the right-aligned size column
 CHECK_LIMIT = 5          # rows a group shows before "N more like these"
 CHECKLIST_MAX = 300      # the checklist's height before it scrolls
+CONFIRM_LINES = 14       # lines a confirmation lists before "… and N more"
+CONFIRM_LINES_PAD = (8, 11)  # their well: vertical, horizontal
 
 # -- the frame: title bar, sidebar, page header (the status line is above)
 
@@ -952,6 +973,34 @@ RUN_LOG_WIDTH = 760           # a run's log read back, in its dialog
 DUPLICATES_WIDTH = 640        # the Duplicates dialog
 DUPLICATES_TABLE = 300        # its table's height
 DUPLICATES_COLUMNS = {"size": 64, "files": 56, "modified": 96, "chip": 92}
+
+# -- Review (ReviewEmpty, ReviewScanning, ReviewError, ReviewDone; frame 16)
+
+REVIEW_SIDE = 262             # the author panel
+REVIEW_HEAD_PAD = (11, 13)    # its header: vertical, horizontal
+REVIEW_HEAD_GAP = 8           # its title row, bar, filter and sort
+REVIEW_AVATAR = 26            # an author's well in a row
+REVIEW_LIST_PAD = 4           # the rows' inset from the panel's sides
+REVIEW_FOOT_PAD = (8, 13)     # the panel's foot: "106 authors had nothing new"
+REVIEW_SCAN_PAD = (16, 18)    # the scan panel
+REVIEW_SCAN_GAP = 13          # its title, figure, bar and current author
+REVIEW_FIGURE_GAP = 10        # the count to "authors checked · ≈70 s left"
+REVIEW_TOTAL_GAP = 6          # "34" to "/ 118"
+REVIEW_SPINNER = 15           # the spinner before "Scanning the Workshop"
+REVIEW_FOUND_HEAD_PAD = (10, 14)  # "Found so far"
+REVIEW_STOPPED_WIDTH = 470    # the stopped state's column (with its console excerpt)
+REVIEW_DONE_WIDTH = 520       # the finished state's column (with its numbers)
+REVIEW_EMPTY_PAD = 40         # the empty and stopped panels' inner margin
+REVIEW_DONE_PAD = 34
+REVIEW_GALLERY_HEAD_PAD = (11, 14)  # an author's name and what is new, over the gallery
+REVIEW_BAR_PAD = (9, 14)      # the gallery's bottom bar
+REVIEW_FILTER_WIDTH = 0       # the author filter takes the panel's width
+REVIEW_SETTLE_MS = 220        # the arrow keys open an author once the selection rests
+REVIEW_WATCH_MS = 4000        # a look for wallpapers subscribed elsewhere
+REVIEW_RENDER_MS = 80         # a scan's events, drawn together
+AUTHORS_WIDTH = 600           # the authors database dialog
+AUTHORS_TABLE = 220           # its table of backups
+AUTHORS_COLUMNS = {"taken": 112, "authors": 64, "size": 60}
 
 
 # ---- Semantic colours the old tabs ask for ---------------------------------

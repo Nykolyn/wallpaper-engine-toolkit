@@ -15,7 +15,8 @@ workshop, find the first wallpaper published after that date, and browse
 forward. Measured on one real week: 39 wallpapers, **26 distinct authors**,
 seven of whom had never been added.
 
-This page is that, done for you.
+This page is that, done for you, as one flow: **scan → go through the authors →
+finish**.
 
 ## When to reach for it
 
@@ -28,7 +29,7 @@ This page is that, done for you.
 
 ## What you need first
 
-Nothing. Press **Scan**.
+Nothing. Press **Scan for new items**.
 
 - The **authors database** is a file, `data/authors.sqlite`, made the first
   time the page needs it and backed up after every change. See
@@ -37,28 +38,68 @@ Nothing. Press **Scan**.
   works, with less — see [what the key is for](#what-a-steam-web-api-key-is-for).
   It is free from
   [steamcommunity.com/dev/apikey](https://steamcommunity.com/dev/apikey) and
-  goes in **Steam key…**, which has a **Test** button and stores the key
-  DPAPI-encrypted.
+  goes in **Review settings** (the button in the page's header, or
+  **Review settings…** on the [Settings page](settings.md)), which has **Show**,
+  a **Test** button and keeps the key encrypted for this Windows account.
 
 ## How to use it
 
 1. Put wallpapers in Wallpaper Engine's `new` folder during the week.
-2. Open the page, pick what to **look at**, and press **Scan**. The left list
-   fills with one card per author: their name, whether the database has heard
-   of them, and a badge counting what they have published since your last
-   visit that you are **not** subscribed to.
-3. Click a card to open [their gallery](gallery.md) — everything of theirs not
-   currently subscribed, newest first, as previews.
-4. Subscribe to what you want.
-5. Press **Update the database**. Authors that were new are created; the rest
-   have their visit date moved on. The change is listed before it is written,
-   written in one go — all of it or none — and backed up straight after.
+2. Open the page and press **Scan for new items**. The page says what it is
+   doing as it does it: how many authors it has checked of how many, the time
+   left once it has a rate to go by, the author it is on — and, on the right,
+   **Found so far**: every author with something new, as they are found.
+   **Cancel scan** stops it at the next author.
+3. When the scan finishes, the authors with new items are listed on the left
+   and the first is opened: everything of theirs you are not subscribed to and
+   have not seen since your last visit, newest first, as
+   [a gallery](gallery.md). Subscribe to what you want.
+4. Press **Done with <author> →**. The author is ticked, the next one opens,
+   and the count at the top of the list moves on: **3 / 12**.
+5. Press **Finish review** in the header. The page lists what it will write
+   first — *3 authors to create, 21 visit dates to move, 2 names to bring up to
+   date*, and the changes themselves — and writes it only when you say so: in
+   one go, all of it or none, backed up straight after. The page then says how
+   the review went.
+
+**Skip for now** leaves the page without writing anything. The review is still
+there when you come back — until the toolkit is closed: galleries are not kept
+from one start to the next, so a review left unfinished then needs a new scan.
+
+### The page, state by state
+
+| State | What it shows |
+|---|---|
+| **Nothing scanned** | what a scan does, **Scan for new items**, and the last scan: *last scan Fri 09:10 · 12 authors had new items* |
+| **Scanning** | the scan as it goes, *34 / 118 authors checked · ≈1 min left*, the author being checked, **Found so far** |
+| **Stopped** | why, in plain words, with the last lines of its log; **Carry on from author 34**, **Start over**, **Open log folder** |
+| **Reviewing** | the authors with new items on the left, ticked as you go; an author's gallery on the right; **Skip for now** and **Finish review** |
+| **Finished** | how many authors went through, what was subscribed, the numbers, the last scan, and **Reopen review** |
+
+The sidebar's Review item says the same in a word: a bar while it scans, a
+badge with the authors still waiting, *stopped*, or *finished*.
+
+### When a scan stops
+
+A scan stops on **Steam**, not on an author. One author Steam has no answer for
+(a private profile, a 404) is that author's problem: it is counted, said under
+the list (*2 could not be read*) and the scan goes on. Steam not answering at
+all — every attempt timing out, a server error, being told to slow down — would
+fail every author left the same way, one slow timeout each, so the scan stops
+there instead, and so does a key Steam refuses, or an authors database that
+will not open.
+
+Nothing was changed when it stops, and what was counted is kept. **Carry on
+from author 34** counts the authors it had not reached — the first one not
+counted and every one after it — and asks nobody a second time. **Start over**
+scans from the beginning.
 
 ### What gets reviewed
 
-The **Look at** box holds Wallpaper Engine's own folders, read out of its
-`config.json` every time the page opens, so a folder you made this morning is
-in the list this afternoon. Under them are three that cross folders:
+**Review source** in Review settings holds Wallpaper Engine's own folders, read
+out of its `config.json` each time the dialog opens (with how many wallpapers
+each holds), so a folder you made this morning is in the list this afternoon.
+Under them are three that cross folders:
 
 | Choice | What it reviews |
 |---|---|
@@ -75,6 +116,12 @@ before this it could not be reached at all.
 Whatever you choose, only wallpapers Wallpaper Engine can actually show are
 reviewed — see [below](#what-is-in-the-folder-is-not-what-the-folder-remembers).
 
+### How a click subscribes
+
+**Subscribe by** in Review settings: **Steam directly** subscribes from this
+window, **Steam's page** opens the wallpaper in Steam to press Subscribe there.
+See [Subscribing](gallery.md#subscribing) for why both exist.
+
 ### What is in the folder is not what the folder remembers
 
 Unsubscribing from a wallpaper does not take it out of a folder — its id stays
@@ -83,11 +130,10 @@ entries with nothing behind them. On one real folder: **2 155 ids remembered,
 39 still on disk**.
 
 Wallpaper Engine shows the 39, because those are the ones it has files for, and
-so does this page. The difference is stated rather than hidden. Reading the
-folder literally would mean re-reviewing every wallpaper ever put aside and
-since deleted, turning a week's 26 authors into 453.
+so does this page. Reading the folder literally would mean re-reviewing every
+wallpaper ever put aside and since deleted, turning a week's 26 authors into 453.
 
-### Whether you have had a wallpaper before is asked separately
+### Whether you have had a wallpaper before
 
 A card in a gallery says **was yours** when this machine has had that wallpaper
 at some point, and **new to you** when it never has. Two records answer that,
@@ -104,34 +150,48 @@ the folder. **14 915** ids on this machine are in that state, and only 425 of
 them were in the copies index, so before this they came back around looking as
 though they had never been seen.
 
-The answer costs a parse of a 2.35 MB `config.json`, so it is worked out **when
-you open an author**, on a thread, and shared by every gallery afterwards —
-0.02 s for the first, nothing at all for the rest. Pressing **Count what is
-new** does not ask it: that is four hundred authors and nobody is looking at a
-gallery yet. Until it has been asked, a card claims neither answer.
+The answer costs a parse of a 2.35 MB `config.json` — 0.02 s — so it is worked
+out once, at the end of the scan, for every author with something new; after
+that it is a lookup per wallpaper. That is also what makes the finished
+review's *were yours* a whole count rather than one for the galleries you
+happened to open.
 
-### The visit date moves to the newest wallpaper the review covered
+### Finishing: the visit date moves to the newest wallpaper the review covered
 
 Not to "now". An author who publishes something while the window is open would
 otherwise be skipped for good, and the entire purpose of the date is that
 nothing is skipped.
 
+**Finish review** writes, for every author the scan counted:
+
+- a new author: created, with the visit date;
+- a known one: the visit date moved, and the name Steam uses now when the
+  database still has an older one.
+
+An author nobody opened still gets their current name; an author with nothing
+new is still created, so next week knows them. What *Done with* marks is how
+far you have gone through the list — it is kept in `review_last.json`, not
+written to the database.
+
+The confirmation lists every change (the first 14, then *… and N more*). The
+result is said when it is written — *3 created, 23 updated. Backup:
+authors-20260930-141200-38901.json.gz* — in the status line and the activity
+journal too.
+
 ## How it works
 
-### Two phases, because they cost differently
+### One flow, two costs
 
 **Naming the authors takes seconds.** The wallpapers are described in batches of
 200, a hundred profiles come back per request, and the authors database is a
 local file — 616 authors looked up by both of their keys in 11 ms.
 
-**Counting what each has published since is a request apiece.** Opening one
-author's whole back catalogue is a dozen. So the list appears first and fills in
-behind itself, and a gallery is fetched only when its card is clicked.
-
-Those requests go out through the Steam client's own pool rather than one after
-another — measured at **17.9 s for the 85 authors** of an ordinary week. The
-workshop folder is read once for the whole count instead of once per author,
-and what you used to own is not asked at all.
+**Counting what each has published since is a request apiece**, and the scan
+does it straight after, author by author, saying each as it starts and ends
+(`engines/review_flow.ScanFlow`). The requests go out through the Steam
+client's own pool rather than one after another — measured at **17.9 s for the
+85 authors** of an ordinary week. The workshop folder is read once for the
+whole count instead of once per author.
 
 ### What a Steam Web API key is for
 
@@ -153,11 +213,11 @@ is read through it and the lists are whole.
 The key is still optional, because the page is useful without it — but going
 without is said, not discovered:
 
-- A **banner** under the toolbar says what is missing, with **Add a key…** next
-  to it. **Hide** puts it away; the two warnings below stay.
-- An author counted without a key says so under their name: *list incomplete:
-  read without a Steam key*.
-- **Update the database** warns, and defaults to **Cancel**, when a visit date
+- A **banner** on the page, before a scan, says what is missing, with
+  **Add a key…** next to it. **Hide** puts it away; the two warnings below stay.
+- An author counted without a key says so under their name: *list incomplete*,
+  and over their gallery: *read without a Steam key, mature wallpapers left out*.
+- **Finish review** warns, and makes **Cancel** the default, when a visit date
   would be written from such a list. That is the one consequence adding a key
   later does not undo: the date moves past the mature wallpapers that were left
   out, and they are not offered again.
@@ -168,7 +228,8 @@ apart — three minutes for an ordinary week — so a keyless scan takes names f
 the cache, which is at most two weeks old, and fetches only the ones it lacks.
 
 A key Steam refuses stops the scan with a sentence saying so, rather than
-quietly counting less.
+quietly counting less. **Test** in Review settings asks Steam with the key
+before you save it.
 
 ### Where the time goes, measured rather than guessed
 
@@ -192,31 +253,28 @@ asked no harder, the waiting simply overlaps:
 Eight is where the gain stops, and that is the default. At that point the
 throttle is the whole of what is left (52 requests x 0.2 s = 10.4 s).
 
-Opening one author's gallery fetches their whole catalogue, which for a prolific
-author is thirteen pages. Those used to be read one after another, because a
-*shallow* fetch reads them that way on purpose — each page decides whether the
-next is needed at all, which is what turns thirteen requests into one. A full
-fetch has no such decision, and the first response already says how many pages
-there are, so the rest go out together: **17.1 s to 4.3 s** for an author with
-1 271 wallpapers, 10.6 s to 2.2 s for one with 380.
-
 `IPublishedFileService/GetUserFiles` returns items ordered by `time_updated`,
 newest first — measured, not documented, and re-checked by the test script — and
 an item is never updated before it was created. So paging can stop at the first
 page whose contents were all last touched before the visit date: for an author
 with 1 204 wallpapers, one request instead of thirteen.
 
+The page's empty state says how long the last scan took, from the scan itself;
+it never promises a time it has not measured.
+
 ## Files
 
 | File | What it holds |
 |---|---|
 | `data/authors.sqlite` | the authors database: one row per author, with the visit date |
+| `data/review_last.json` | the last scan: when, what it read, the authors with new items and which are done, what was subscribed, when the review was finished. Overview and the sidebar's badge read it |
 | `data/secrets.json` | the Steam API key, DPAPI-encrypted |
 | `data/library.json` | workshop ids found in the local libraries, so the four-minute walk is paid once |
 | Wallpaper Engine's `config.json` | read, never written: its folders are both the review queue and the record of what you have had |
 | `data/thumbs/` | preview images |
 | `data/steam_cache.sqlite` | what Steam has already been asked |
 | `data/authors_backup/` | a snapshot after every change, and `journal.jsonl` of every change — see [Backups](authors-database.md#backups) |
+| `data/logs/review/` | each scan's and each write's log, kept for 30 days |
 
 ## See also
 

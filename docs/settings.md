@@ -60,9 +60,11 @@ to `data/suite.json`. See [Configuration](configuration.md#folder-settings).
 
 ## Review and Steam
 
-- **Steam key…** opens the dialog for the Steam Web API key Review uses. It is
-  kept encrypted for this Windows account — see
-  [Secrets](configuration.md#secrets).
+- **Review settings…** opens the same dialog as the button in the Review page's
+  header: what a scan reads, how a click subscribes, the Steam Web API key
+  (kept encrypted for this Windows account — see
+  [Secrets](configuration.md#secrets)) and the second folder for the authors
+  database's backups. See [Review](review.md).
 - **Authors database…** opens the authors you have reviewed and their
   backups — see [Authors database](authors-database.md).
 

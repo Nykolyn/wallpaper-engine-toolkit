@@ -25,6 +25,7 @@ data/
 ├── run_meta.json           what each run did beyond its record: result, times, failures by step
 ├── secrets.json            the Steam API key, DPAPI-encrypted
 ├── authors.sqlite          the Review page's authors database
+├── review_last.json        the last Review scan: the authors with new items, which are done
 ├── tracker.json            the live cycle per monitor, plus 40 finished ones
 ├── wallpaper_timer.json    the countdown, saved every 15 seconds
 ├── tracker.log             every tray launch, and any crash
@@ -153,6 +154,10 @@ each through its own code, and they stay two files.
 | `config.json` path | [Settings](settings.md#wallpaper-engine) | `suite.json` (`tracker.we_config`) | Wallpaper Engine's, detected |
 | Safety check ("Also check every") | [Settings](settings.md#wallpaper-engine) | `suite.json` (`tracker.heartbeat`, seconds) | 5 min — changes themselves are picked up as Wallpaper Engine writes them |
 | Lead monitor | [Settings](settings.md#tracker-and-tray), a monitor's menu on the [Tracker](tracker.md#the-page) page, or the tray's **Show on the icon** | `suite.json` (`tracker.primary`) | automatic |
+| Review source | [Review settings](review.md#what-gets-reviewed) | `suite.json` (`review.scope`) | the `new` folder |
+| Subscribe by | [Review settings](review.md#how-a-click-subscribes) | `suite.json` (`review.subscribe`: `steam` or `page`) | Steam directly |
+| Second copy of the authors backups | [Review settings](authors-database.md#a-second-copy-somewhere-else) | `suite.json` (`review.backup_mirror`) | none |
+| The author list's order | [Review](review.md) | `suite.json` (`review.sort`, `review.descending`) | known authors first |
 
 The window and the tray both keep `suite.json`. Each reads it again when the
 other has written it, before it relies on or changes the lead monitor.
@@ -209,7 +214,7 @@ have.
 |---|---|
 | `data/tracker.json` | the only record of what has been shown |
 | `data/history.json` and `data/history_backup/` | what keeps a rotation from repeating the last ones, and what dates every cycle; it cannot be rebuilt. The snapshots are made for you — see [the Rotator](rotator.md#the-history-is-not-lost-quietly). |
-| `data/authors.sqlite` and `data/authors_backup/` | every author you have visited, and when — years of review, and nowhere else. The backups are made for you; **Second copy in** under **Authors database…** puts them on another disk as well. See [Backups](authors-database.md#backups). |
+| `data/authors.sqlite` and `data/authors_backup/` | every author you have visited, and when — years of review, and nowhere else. The backups are made for you; **Second copy of the authors backups** in Review settings puts them on another disk as well. See [Backups](authors-database.md#backups). |
 | `data/suite.json`, `data/config.json` | your settings; small, easily lost |
 | `data/run_meta.json` | each run's result, times and failures by step; estimates and Retry read it. Losing it loses those, never the history |
 

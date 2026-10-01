@@ -517,6 +517,74 @@ class _Head(QWidget):
         super().mouseReleaseEvent(event)
 
 
+class ConsoleExcerpt(QWidget):
+    """A few lines of a log quoted where something went wrong — the last
+    ones before a scan stopped: time · kind · message in a console well, the
+    kind coloured as the LogPanel colours it. Lines are `(time, kind,
+    message)`, the time as `LogModel.append` takes it; each is one line,
+    elided."""
+
+    _KIND_COLOURS = {"ok": "console.ok", "warn": "console.warn", "err": "console.err",
+                     "mid": "console.dim"}
+
+    def __init__(self, lines: Iterable = (), parent: QWidget | None = None):
+        super().__init__(parent)
+        self._lines: list[LogLine] = []
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.setAccessibleName("Log excerpt")
+        self.set_lines(lines)
+
+    def set_lines(self, lines: Iterable) -> None:
+        self._lines = [LogLine(_time_text(t), str(k), str(m), kind_tone(str(k)))
+                       for t, k, m in lines]
+        self.setAccessibleDescription(self.text())
+        self.setFixedHeight(self.sizeHint().height())
+        self.updateGeometry()
+        self.update()
+
+    def lines(self) -> list[LogLine]:
+        return list(self._lines)
+
+    def text(self) -> str:
+        return "\n".join(line.text() for line in self._lines)
+
+    def sizeHint(self) -> QSize:                # noqa: N802 - Qt's name
+        pad_v, pad_h = theme.EXCERPT_PAD
+        return QSize(2 * pad_h + 120, 2 * pad_v + max(1, len(self._lines)) * theme.EXCERPT_LINE)
+
+    def paintEvent(self, event) -> None:        # noqa: N802 - Qt's name
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        box = QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5)
+        radius = theme.EXCERPT_RADIUS
+        path = QPainterPath()
+        path.addRoundedRect(box, radius, radius)
+        painter.fillPath(path, theme.color("surface.console"))
+        theme.paint_shadow(painter, box, "elev.inset", radius)
+        painter.setPen(QPen(theme.color("border.hairline"), 1))
+        painter.setBrush(Qt.NoBrush)
+        painter.drawRoundedRect(box, radius, radius)
+        pad_v, pad_h = theme.EXCERPT_PAD
+        font = theme.font("type.monoSm")
+        metrics = QFontMetricsF(font)
+        painter.setFont(font)
+        space = metrics.horizontalAdvance(" ")
+        right = self.width() - pad_h
+        for i, line in enumerate(self._lines):
+            top = pad_v + i * theme.EXCERPT_LINE
+            x = float(pad_h)
+            for text, colour in ((line.time, "text.mid"),
+                                 (line.kind, self._KIND_COLOURS.get(line.tone, "console.dim")),
+                                 (line.message, "text.mid")):
+                if x >= right:
+                    break
+                shown = metrics.elidedText(text, Qt.ElideRight, right - x)
+                painter.setPen(theme.color(colour))
+                painter.drawText(QRectF(x, top, right - x, theme.EXCERPT_LINE),
+                                 Qt.AlignLeft | Qt.AlignVCenter, shown)
+                x += metrics.horizontalAdvance(shown) + space
+
+
 class LogPanel(GlassPanel):
     """A job's log, as a card. Feed it with `append(time, kind, message)`.
 

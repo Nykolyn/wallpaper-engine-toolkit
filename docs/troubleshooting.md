@@ -38,15 +38,16 @@ The file `data/authors.sqlite` failed SQLite's own integrity check when it was
 opened — a disk error, or the file was cut short by something outside the app.
 Nothing is written to it.
 
-The page offers the backups straight away; or open **Authors database…**, pick
-the newest snapshot and press **Restore selected…**. The damaged file is set
+The scan stops there and offers **Open the backups…**; or open
+**Authors database…** (in Review settings, or on the Settings page), pick the
+newest snapshot and press **Restore selected…**. The damaged file is set
 aside as `authors.sqlite.damaged1`, not deleted. A snapshot is taken after
 every change, so the newest one is the database as it was after the last one.
 See [Backups](authors-database.md#backups).
 
 ## "The backup was not copied to …"
 
-The second backup folder set under **Authors database…** could not be reached —
+The second backup folder set in **Review settings** could not be reached —
 an unplugged drive, or a sync client that has the folder locked. The change
 itself was written, and its snapshot is in `data/authors_backup/`. The copy is
 made again with the next change, once the folder is back.
@@ -58,7 +59,8 @@ questionable content, which on one real library was **43%** of it — and for
 some authors the public listing shows *nothing at all*. The author's line in
 the gallery says *list incomplete* when this is why.
 
-Set the key under **Steam key…** in the Review page and press **Test**. See
+Set the key in **Review settings** (the button in the Review page's header)
+and press **Test**. See
 [what the key is for](review.md#what-a-steam-web-api-key-is-for). A key Steam
 refuses stops the scan with a sentence saying so.
 

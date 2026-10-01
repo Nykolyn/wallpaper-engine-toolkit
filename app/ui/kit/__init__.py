@@ -25,10 +25,10 @@ from .dialogs import (
 )
 from .icons import NAMES as ICON_NAMES, icon, pixmap, svg
 from .inputs import Dropdown, DropdownPopup, SpinBox, TextInput
-from .log import LogLine, LogModel, LogPanel, LogView, ProblemsFilter
+from .log import ConsoleExcerpt, LogLine, LogModel, LogPanel, LogView, ProblemsFilter
 from .panels import (
     ActivityLine, Callout, CardTitle, EmptyState, GlassPanel, IconDisc, MetricStrip, Overline,
-    Rule, StepList,
+    Rule, Spinner, StepList,
 )
 from .paths import PathField
 from .progress import ProgressBar, ProgressRing
@@ -39,8 +39,8 @@ from .shell import (
 )
 from .statusline import StatusLine
 from .tables import (
-    Cell, ChipCell, Column, Group, ListRow, ListRowDelegate, RowDelegate, RowList, Table,
-    TableBar, TableFooter, TableHeader, TableModel, TableSummary, Thumb, paint_list_row,
+    Cell, ChipCell, Column, Group, ListRow, ListRowDelegate, RowDelegate, RowList, SkeletonRows,
+    Table, TableBar, TableFooter, TableHeader, TableModel, TableSummary, Thumb, paint_list_row,
     paint_thumb,
 )
 from .tags import TagPopup, TagSelect
@@ -55,14 +55,15 @@ __all__ = [
     "Checkbox", "Toggle", "SegmentedControl", "Pagination", "page_numbers",
     "Chip", "chip_pixmap", "chip_size",
     "GlassPanel", "Overline", "Rule", "CardTitle", "Callout", "MetricStrip", "IconDisc",
-    "EmptyState", "StepList", "ActivityLine",
+    "EmptyState", "StepList", "ActivityLine", "Spinner",
     "PathField", "TagSelect", "TagPopup",
     "ProgressBar", "ProgressRing",
     "StatCard", "MonitorCard", "MonitorView", "ToolTile",
     "Table", "TableModel", "TableHeader", "RowDelegate", "Column", "Cell", "ChipCell", "Group",
     "TableBar", "TableSummary", "TableFooter", "ListRow", "ListRowDelegate", "RowList",
+    "SkeletonRows",
     "paint_list_row", "Thumb", "paint_thumb", "ThumbLoader",
-    "LogPanel", "LogModel", "LogView", "LogLine", "ProblemsFilter",
+    "LogPanel", "LogModel", "LogView", "LogLine", "ProblemsFilter", "ConsoleExcerpt",
     "Toast", "ToastHost", "StatusLine",
     "TitleBar", "CaptionButton", "BrandMark", "Sidebar", "NavSection", "NavItem", "NavState",
     "NextInLoop", "PageHeader",

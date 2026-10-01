@@ -1,8 +1,8 @@
 """Local secret storage — the Steam Web API key.
 
-The Review tab can use a credential that must not live in the source tree, in
+The Review page can use a credential that must not live in the source tree, in
 `suite.json`, or in a log line: the Steam Web API key (optional — see
-:mod:`app.ui.credentials` for what going without one costs). It is kept here
+:mod:`app.pages.review_settings` for what going without one costs). It is kept here
 instead, in `data/secrets.json`, encrypted with **DPAPI** — Windows' own
 per-user data protection.
 

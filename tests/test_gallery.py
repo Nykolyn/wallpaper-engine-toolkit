@@ -25,7 +25,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from PySide6.QtCore import (  # noqa: E402
-    QByteArray, QBuffer, QEvent, QIODevice, QPointF, QRect, Qt)
+    QByteArray, QBuffer, QEvent, QIODevice, QPointF, QRect, QRectF, Qt)
 from PySide6.QtGui import (  # noqa: E402
     QColor, QImage, QMouseEvent, QPainter, QPixmap)
 from PySide6.QtWidgets import (                                              # noqa: E402
@@ -38,7 +38,10 @@ theme.apply(app)
 
 import app.ui.gallery as gal                                # noqa: E402
 import app.ui.kit.thumbs as thumbs                          # noqa: E402
-import app.ui.review_tab as tab_mod                         # noqa: E402
+import app.pages.review as page_mod                         # noqa: E402
+from app.engines.review_flow import SessionAuthor           # noqa: E402
+from app.engines.steam_ugc import UgcError                  # noqa: E402
+from app.ui.kit.tables import paint_list_row                # noqa: E402
 import app.engines.review as rv                             # noqa: E402
 from app.engines.authors_store import Author                # noqa: E402
 from app.engines.steam_api import ItemDetails, Profile      # noqa: E402
@@ -206,48 +209,38 @@ check("painting a row that is not there does nothing rather than raising",
 
 
 # ---- Painting an author row -------------------------------------------------
+#
+# The list is the kit's ListRow now (app/pages/review.py `author_row`): a row
+# per author with new items, its chip, a tick once gone through.
 
-author_delegate = tab_mod.AuthorDelegate()
 known = Author(name="Alice", steam_id="76561198000000001",
                added=datetime(2024, 1, 1, tzinfo=timezone.utc),
                visited=datetime(2026, 1, 1, tzinfo=timezone.utc))
 
 
-class FakeIndex:
-    """Enough of a model index for a delegate: it only reads one role."""
+def painted_row(row, width=262, height=48) -> QImage:
+    pixmap = QPixmap(width, height)
+    pixmap.fill(QColor("#000000"))
+    painter = QPainter(pixmap)
+    try:
+        paint_list_row(painter, QRectF(0, 0, width, height), row)
+    finally:
+        painter.end()
+    return pixmap.toImage()
 
-    def __init__(self, card):
-        self.card = card
 
-    def data(self, role=Qt.DisplayRole):
-        return self.card if role == tab_mod.CARD else None
-
-
-cards = {
-    "a new author": rv.AuthorCard(id64="76561198000000001",
-                                  profile=Profile(id64="1", name="Bob")),
-    "a known one": rv.AuthorCard(id64="76561198000000001",
-                                 profile=Profile(id64="1", name="Alice"),
-                                 records=[known], queued=["1", "2"]),
-    "a duplicated one": rv.AuthorCard(id64="76561198000000001",
-                                      profile=Profile(id64="1", name="Alice"),
-                                      records=[known, known]),
-    "one Steam will not name": rv.AuthorCard(id64="76561198000000001",
-                                             profile=Profile(id64=None, exists=False)),
-}
-for label, card in cards.items():
-    check(f"an author row paints for {label}",
-          has_ink(painted(author_delegate, FakeIndex(card), 300, 54)))
-
-filled = cards["a known one"]
-filled.items = [wallpaper("9")]
-filled.filled = True
-check("a row with its count in paints the badge",
-      has_ink(painted(author_delegate, FakeIndex(filled), 300, 54)))
-check("and a row whose count has not arrived paints a placeholder",
-      has_ink(painted(author_delegate, FakeIndex(cards["a new author"]), 300, 54)))
-check("a row with no card at all is skipped",
-      not has_ink(painted(author_delegate, FakeIndex(None), 300, 54)))
+for label, state in (("a new author", rv.NEW), ("a known one", rv.KNOWN),
+                     ("a duplicated one", rv.DUPLICATE), ("one Steam will not name", rv.UNKNOWN)):
+    author = SessionAuthor(id="76561198000000001", name="Alice", new=3, state=state)
+    check(f"an author row paints for {label}", has_ink(painted_row(page_mod.author_row(author))))
+gone_through = SessionAuthor(id="76561198000000001", name="Alice", new=3, done=True)
+card = rv.AuthorCard(id64="76561198000000001", profile=Profile(id64="1", name="Alice"),
+                     records=[Author(name="Alicia", steam_id="76561198000000001")])
+blank = QPixmap(262, 48)
+blank.fill(QColor("#000000"))
+check("a row gone through, with the name the database still has, paints (set back, so "
+      "fainter than the rest)",
+      painted_row(page_mod.author_row(gone_through, card)) != blank.toImage())
 
 
 # ---- What the mouse does ----------------------------------------------------
@@ -553,7 +546,7 @@ check("type and size are drawn on the card",
       with_facts != without_facts and sized.item.size_text == "")
 
 
-# ---- The tab: one queue for every subscription -------------------------------
+# ---- One queue for every subscription ------------------------------------------
 
 class FakeUgc:
     """Steamworks, counting how often it was opened and what it was asked."""
@@ -564,7 +557,7 @@ class FakeUgc:
 
     def connect(self):
         if FakeUgc.fail_connect:
-            raise tab_mod.UgcError("Steam is not running")
+            raise UgcError("Steam is not running")
         FakeUgc.opened += 1
         return self
 
@@ -576,7 +569,6 @@ class FakeUgc:
         pass
 
 
-tab_mod.SteamUgc = FakeUgc
 
 
 def wait_for(condition, seconds=6.0):
@@ -591,7 +583,7 @@ def wait_for(condition, seconds=6.0):
 
 done_ids: list[str] = []
 failed_ids: list[str] = []
-line = tab_mod.SubscribeQueue()
+line = page_mod.SubscribeQueue(connect=lambda: FakeUgc().connect())
 line.IDLE_SECONDS = 0.2
 line.finished_item.connect(lambda item_id, _state: done_ids.append(item_id))
 line.failed_item.connect(lambda item_id, _msg: failed_ids.append(item_id))
@@ -610,168 +602,6 @@ check("when Steam is not there every waiting wallpaper is told so at once",
       wait_for(lambda: failed_ids == ["e", "f", "g"]))
 FakeUgc.fail_connect = False
 wait_for(lambda: not line.isRunning())
-
-
-# ---- The tab: status, space, keys, and subscribing a page -------------------
-
-# The tab saves its choices as they change. Pointed at the real file, this test
-# once overwrote data/suite.json with nothing but a subscribe mode.
-import tempfile                                                    # noqa: E402
-import app.settings as settings_mod                                # noqa: E402
-settings_mod.SETTINGS_PATH = Path(tempfile.mkdtemp(prefix="wallpaper_gallery_test_")) / "suite.json"
-real_settings = Path(__file__).resolve().parent.parent / "data" / "suite.json"
-before_test = real_settings.read_bytes() if real_settings.exists() else None
-
-tab = tab_mod.ReviewTab(Settings({}))
-tab.resize(1400, 900)
-tab.show()
-app.processEvents()
-
-tab._say("Could not subscribe", "danger")
-red = tab.status.styleSheet()
-tab._say("Subscribed to “something”", "ok")
-check("an error colour does not outlive the error",
-      tab.status.styleSheet() != red and "Subscribed" in tab.status.text())
-
-height = tab.status.height()
-tab._say("x " * 400)
-app.processEvents()
-check("a message too long for the line is cut short, not wrapped onto a second",
-      tab.status.height() == height and tab.status.text().endswith("…"))
-check("and the whole of it is still there to read on hover",
-      tab.status.toolTip().startswith("x x"))
-
-top_of_split = tab.authors.mapTo(tab, tab.authors.rect().topLeft()).y()
-tab._busy(True)
-app.processEvents()
-moved_on_show = tab.authors.mapTo(tab, tab.authors.rect().topLeft()).y()
-tab._busy(False)
-app.processEvents()
-moved_on_hide = tab.authors.mapTo(tab, tab.authors.rect().topLeft()).y()
-check("the loading bar coming and going moves nothing below it",
-      top_of_split == moved_on_show == moved_on_hide)
-
-opened: list[str] = []
-tab.open_author = lambda card: opened.append(card.name)
-tab.authors.chosen.disconnect()
-tab.authors.chosen.connect(tab.open_author)
-people = [author_card_name for author_card_name in ("first", "second", "third")]
-listed = [rv.AuthorCard(id64=f"7656119000000000{i}", profile=Profile(id64=str(i), name=n))
-          for i, n in enumerate(people)]
-tab.authors.set_cards(listed)
-tab.authors.setCurrentIndex(tab.authors.model_.index(1, 0))
-check("moving to an author with the keys opens them, as a click does",
-      wait_for(lambda: opened == ["second"], 2.0))
-opened.clear()
-for row in (2, 0, 1, 2):
-    tab.authors.setCurrentIndex(tab.authors.model_.index(row, 0))
-check("but only where the selection comes to rest, not every row passed on the way",
-      wait_for(lambda: opened == ["third"], 2.0) and opened == ["third"])
-opened.clear()
-tab.authors.select(listed[0])
-app.processEvents()
-time.sleep(0.35)
-app.processEvents()
-check("putting the highlight back after a refresh does not reopen anyone",
-      opened == [])
-
-queued_for_steam: list[list[str]] = []
-tab.subscriptions.add = lambda ids: queued_for_steam.append(list(ids))
-page = [wallpaper("p1"), wallpaper("p2", subscribed=True), wallpaper("p3")]
-tab.gallery.show_items(page)
-tab.mode.setCurrentIndex(0)
-tab._update_subscribe_all()
-check("the button offers what is left on the page",
-      tab.subscribe_all_btn.isEnabled() and "2" in tab.subscribe_all_btn.text())
-tab.subscribe_page()
-check("pressing it subscribes to every wallpaper on the page not already taken",
-      queued_for_steam == [["p1", "p3"]])
-check("and marks each one as on its way", {"p1", "p3"} <= tab.gallery.delegate.busy)
-tab.subscribe_page()
-check("pressing it again does not ask twice for the same wallpapers",
-      queued_for_steam == [["p1", "p3"]])
-
-tab.mode.setCurrentIndex(1)
-check("it is switched off when subscribing means opening Steam's page for each",
-      not tab.subscribe_all_btn.isEnabled())
-
-# Noticing a subscription made elsewhere is a listing of Steam's workshop
-# folder, on a hard disk Wallpaper Engine streams from. It used to run on the
-# GUI thread every four seconds.
-import threading                                                   # noqa: E402
-
-
-class WatchedLibrary:
-    def __init__(self):
-        self.threads = []
-
-    def subscribed(self):
-        self.threads.append(threading.current_thread() is threading.main_thread())
-        return {"w2"}
-
-    def note_subscribed(self, item_id):
-        pass
-
-
-tab.library = WatchedLibrary()
-tab.gallery.show_items([wallpaper("w1"), wallpaper("w2")])
-tab._notice_subscriptions()
-tab._notice_subscriptions()           # while the first look is still out
-check("a wallpaper subscribed elsewhere is noticed",
-      wait_for(lambda: tab.gallery.showing()[1].subscribed))
-check("by looking at the folder off the GUI thread", tab.library.threads == [False])
-check("and only once while a look is already under way", len(tab.library.threads) == 1)
-check("the other stays on offer", not tab.gallery.showing()[0].subscribed)
-
-# ---- Progress has to outlive the task that first reported it ---------------
-#
-# The `Review` is built once and kept for the tab's life; a finished `Task` is
-# deleted. So handing the engine `task.step.emit` of whichever task happened to
-# be running when the Review was built — the first scan's — left the engine
-# reporting through a deleted QObject. The second thing to report progress,
-# which is "Count what is new" one press after a scan, died on it: PySide
-# raised "Signal source has been deleted", the worker turned that into a
-# failure, and the tab printed it in red instead of counting anything.
-
-from PySide6.QtCore import QCoreApplication, QEvent                # noqa: E402
-
-reported: list[tuple] = []
-tab.progressed.connect(lambda *args: reported.append(args))
-
-spent = tab_mod.Task(lambda step: step("items", 1, 2), tab)
-tab._task = spent
-spent.finished.connect(tab._finished)
-spent.start()
-wait_for(lambda: tab._task is None)
-spent.wait(2000)
-QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
-check("a task that has finished is deleted, as it should be", tab._task is None)
-
-tab._progress_relay("counting", 7, 9)
-app.processEvents()
-check("progress still reaches the tab after that task is gone",
-      ("counting", 7, 9) in reported)
-check("and lands on the status line rather than in red",
-      "7/9" in tab.status.text())
-
-# Finished work does not stay behind as a child of the tab.
-
-
-def tasks_alive():
-    return len([c for c in tab.children() if isinstance(c, tab_mod.Task)])
-
-
-wait_for(lambda: tab._watching is None)
-QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
-before_tasks = tasks_alive()
-tab._notice_subscriptions()
-wait_for(lambda: tab._watching is None)
-QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
-check("a finished look leaves no thread object behind", tasks_alive() == before_tasks)
-tab.gallery.close_loader()
-tab.close()
-check("and nothing it did touched the settings file in the project",
-      (real_settings.read_bytes() if real_settings.exists() else None) == before_test)
 
 print()
 print("PASSED %d/%d" % (sum(results), len(results)))

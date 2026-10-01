@@ -14,8 +14,8 @@ that reads nothing (a fixture's finished job would otherwise have it count
 the Rotator's folders, and with no config that is this machine's own
 myprojects), made-up folders on a drive `X:` that it reports as present, and
 the frame's state from `tests/fixtures/ui/shell.json`. Pages that have a page of their own
-(Overview, Rotator, Tracker, Settings) are the real ones, and `load_fixture(state)` puts them in
-the state asked for; the old tabs are not built at all — a stand-in says
+(Overview, Rotator, Tracker, Review, Settings) are the real ones, and `load_fixture(state)` puts
+them in the state asked for; the old tabs are not built at all — a stand-in says
 where each one goes — because building them reads the library, Steam and
 Wallpaper Engine.
 
@@ -26,9 +26,10 @@ Wallpaper Engine.
   the Rotator's running, done-clean, confirm, broken, …), which names the
   frame's state it goes with (`Page.frame_fixture`). A page with a fixture of
   that name shows it (Overview's are in `tests/fixtures/ui/overview.json`, the
-  Tracker's in `tracker.json`, the Rotator's in `rotator.json`); otherwise its
-  first. A page state that opens a dialog (the Rotator's confirm and broken)
-  is drawn with the dialog over the window.
+  Tracker's in `tracker.json`, the Rotator's in `rotator.json`, Review's in
+  `review.json`); otherwise its first. A page state that opens a dialog (the
+  Rotator's confirm and broken, Review's settings and authors) is drawn with
+  the dialog over the window.
 - `--size WxH` (default 1280x860) and `--scale 1|1.5` (the user's screen is
   at 150 %; the picture is then 1.5 × the size in pixels).
 """
@@ -75,11 +76,12 @@ def main(argv=None) -> int:
                                     .read_text(encoding="utf-8")) if k != "//"]
     if args.list:
         from app.pages.overview import OverviewPage
+        from app.pages.review import ReviewPage
         from app.pages.rotator import RotatorPage
         from app.pages.settings import SettingsPage
         from app.pages.tracker import TrackerPage
         print("states:", ", ".join(states))
-        for page in (OverviewPage, RotatorPage, TrackerPage, SettingsPage):
+        for page in (OverviewPage, RotatorPage, TrackerPage, ReviewPage, SettingsPage):
             print(f"{page.key}:", ", ".join(page.FIXTURES))
         return 0
     if out is None:
@@ -152,6 +154,7 @@ def build_window(page_key: str):
     from app.main_window import MainWindow, page_for
     from app.pages.base import Page
     from app.pages.overview import OverviewPage
+    from app.pages.review import ReviewPage
     from app.pages.rotator import RotatorPage
     from app.pages.settings import SettingsPage
     from app.pages.tracker import TrackerPage
@@ -205,7 +208,7 @@ def build_window(page_key: str):
     pages = [OverviewPage(svc, feed, settings=settings),
              RotatorPage(config, svc),
              TrackerPage(feed, svc, settings=settings),
-             StandIn("review", "Review", "review"),
+             ReviewPage(settings, svc),
              StandIn("creator", "Creator", "creator"),
              StandIn("copier", "Copier", "copier"),
              SettingsPage(settings, config, feed=feed, services=svc)]
