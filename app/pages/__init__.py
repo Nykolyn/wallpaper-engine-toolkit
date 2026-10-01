@@ -4,7 +4,8 @@
   tab in the new frame.
 - overview: the loop at a glance.
 - rotator: a batch of folders swapped between the reserve and myprojects.
-- tracker: each monitor's playlist, counted down.
+- tracker: each monitor's playlist, counted down; a row goes to the Copier
+  from there.
 - review: what is new from the authors behind the wallpapers you put aside;
   review_settings holds its two dialogs, review_fixtures its made-up states.
 - settings: what is set once.
@@ -34,12 +35,13 @@ def build_pages(window) -> list[Page]:
     settings, feed, services = window.settings, window.feed, window.services
     # One Config for the Rotator page and the Settings page: what one saves the
     # other has, and a run is never handed a config the page is changing
-    # (the Settings page's Rotator fields are read-only while it runs).
+    # (the Settings page's Rotator fields are read-only while it runs). The
+    # Tracker reads where myprojects is from it, for Mark [protected].
     config = Config.load()
     creator = CreatorTab(settings)
     copier = CopierTab(settings)
     rotator_page = RotatorPage(config, services)
-    tracker_page = TrackerPage(feed, services, settings=settings)
+    tracker_page = TrackerPage(feed, services, settings=settings, config=config)
     review_page = ReviewPage(settings, services)
     legacy = [
         LegacyPage("creator", "Creator", "creator", creator,
@@ -55,8 +57,14 @@ def build_pages(window) -> list[Page]:
         if what == "rotator":
             rotator_page.config_changed()
 
+    def to_copier(folders: list) -> None:
+        tracker_page.copier_took(folders, copier.add_folders(folders))
+
     settings_page.changed.connect(changed)
     rotator_page.config_edited.connect(settings_page.show_rotator)
+    # The Tracker's Send to Copier. Whatever replaces CopierTab takes these too
+    # (tests/test_tracker_page.py checks it, through this function).
+    tracker_page.copier_requested.connect(to_copier)
     window._legacy_nav = LegacyNav(legacy, services, window)
     return [OverviewPage(services, feed, settings=settings), rotator_page, tracker_page,
             review_page, *legacy, settings_page]

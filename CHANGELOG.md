@@ -6,6 +6,46 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [3.8.0] - 2026-10-01
+
+Two things to do from a row of the Tracker's playlist: send the wallpaper to
+the Copier, or mark its folder [protected]. See [Tracker](docs/tracker.md#a-rows-actions).
+
+### Added
+
+- **Send to Copier.** The Tracker's playlist ends each row with two small
+  buttons, quiet until the pointer is on the row. The first puts the
+  wallpaper's folder on the Copier's list for the default 3 copies; you stay
+  on the Tracker, and the toast's **Show** goes to the Copier. A folder
+  already on the list is not added twice.
+- **Mark [protected].** The second, for a folder directly in the Rotator's
+  myprojects, renames it to `[protected] <name>` after asking, so rotations
+  leave it there. Workshop folders are not offered it; a folder protected
+  already shows a lock. The rename runs off the window's thread; if Windows
+  refuses (the folder in use, the name taken, access denied) a red toast says
+  why and nothing changes. While a rotation runs, it asks you to wait.
+- Wallpaper Engine's playlist is left alone: its entry for a folder marked
+  this way keeps the old name and stops working until the next rotation
+  rebuilds the playlist. The question says so, the toast says so, and the row
+  keeps saying so (an amber lock, and *playlist entry broken until the next
+  rotation* under the title).
+- The Copier takes folders from other pages (`CopierTab.add_folders`), and a
+  test fails if it stops taking them from the Tracker.
+- Kit: `ButtonsCell` of `CellButton`s (glyph buttons side by side in a table
+  cell, an empty slot keeping the rest in line, a mark that takes no click,
+  each with its tool tip; `Table.action_clicked(row, column, key)`,
+  `Table.action_at`, `buttons_width`), `icon_button_pixmap`; shown in the kit
+  preview's tables section.
+
+### Changed
+
+- The two buttons take 59 px from the playlist's WALLPAPER column: beside its
+  thumbnail a title has 25 px at a 1 040 px window (84 before), so it shows a
+  letter or two, and 85 px at 1 280 px (144 before). Wider windows have room
+  to spare.
+- Kit: a double-click on a table cell's button presses it again, as on a
+  button, instead of also activating the row behind it.
+
 ## [3.7.0] - 2026-10-01
 
 The twelfth step of the redesign: Review's gallery, as a grid of cards or a
@@ -1076,7 +1116,8 @@ restructured yet; the tabs keep their layout and take on the new look.
   was right for one library and wrong for every other. Nothing is tagged now
   unless you ask for it.
 
-[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.7.0...HEAD
+[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.8.0...HEAD
+[3.8.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.7.0...v3.8.0
 [3.7.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.6.0...v3.7.0
 [3.6.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.5.0...v3.6.0
 [3.5.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.4.1...v3.5.0

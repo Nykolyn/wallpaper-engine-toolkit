@@ -1577,6 +1577,49 @@ def tables_section() -> Section:
     section.body.addWidget(work_panel)
     section.hover_rows.append((work_table, 0))
 
+    # A row's actions as glyph buttons in one cell (`ButtonsCell`, the Tracker's playlist):
+    # quiet in text.lo at rest, the IconButton's look on the hovered row; a slot left empty
+    # keeps the others in line; a mark (`CellButton(mark=True)`) is a glyph that says
+    # something and takes no click; a button can be off. A click is
+    # `Table.action_clicked(row, column, key)`; each says what it does in its tool tip.
+    section.body.addWidget(overline("Row actions: ButtonsCell — hovered row · empty slot · "
+                                    "mark · off · warn mark"))
+    from app.ui.kit import ButtonsCell, CellButton, buttons_width
+    send = CellButton("copier", "copier", "Send to Copier")
+    mark = CellButton("protect", "lock", "Mark [protected]…")
+    acts = [("Harbour Lights", "", (send, mark)),
+            ("Paper Moth", "", (send, None)),
+            ("Cedar Linen", "", (send, CellButton("protected", "lock", "[protected]", mark=True,
+                                                  tone="accent.hover"))),
+            ("Glass River", "", (send, CellButton("protect", "lock", "Renaming…",
+                                                  enabled=False))),
+            ("Tide Pine", "playlist entry broken until the next rotation · renamed [protected]",
+             (send, CellButton("protected", "lock", "Marked [protected] here", mark=True,
+                               tone="warn")))]
+
+    class Acts(TableModel):
+        def cell(self, item, c):
+            title, sub, buttons = item
+            if c == 0:
+                return Cell(title, sub=sub, sub_tone="warn")
+            if c == 1:
+                return "queued"
+            return ButtonsCell(buttons)
+
+    acts_panel = GlassPanel(padding="none")
+    inside = QVBoxLayout(acts_panel)
+    inside.setContentsMargins(0, 0, 0, 0)
+    acts_table = Table()
+    acts_table.setModel(Acts([Column("Wallpaper", None), Column("State", 64, "right", mono=True,
+                                                                 tone="text.lo", sortable=False),
+                              Column("", buttons_width(2), "right", sortable=False)], acts))
+    acts_table.set_row_height(44)
+    acts_table.setFixedHeight(acts_table.horizontalHeader().sizeHint().height() + 5 * 44)
+    inside.addWidget(acts_table)
+    acts_panel.setFixedWidth(560)
+    section.body.addWidget(acts_panel)
+    section.hover_rows.append((acts_table, 0))
+
     section.body.addWidget(overline("ListRow — default · hover · selected · focus · disabled"))
     rows = QHBoxLayout()
     rows.setSpacing(14)

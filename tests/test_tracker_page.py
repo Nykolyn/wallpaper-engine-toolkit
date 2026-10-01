@@ -9,7 +9,10 @@ The mapping from the tracker's Progress (and its countdown, and what is known
 of the wallpaper on screen) to words is tested through the page's plain
 functions; the page itself is built on a feed that reads nothing, a
 countdown that is made up, and a list read from a cycle held in memory.
-Titles and authors come from files made here, in a temporary folder.
+Titles and authors come from files made here, in a temporary folder; so do
+the folders Mark [protected] renames. Send to Copier is tested through the
+window's own wiring (`build_pages`), so a Copier that stops taking folders
+from the Tracker fails here.
 """
 from __future__ import annotations
 
@@ -26,6 +29,7 @@ import time
 from ctypes import wintypes
 from datetime import datetime, timedelta
 from pathlib import Path
+from types import SimpleNamespace
 
 TMP = Path(tempfile.mkdtemp(prefix="wallpaper_tracker_page_test_"))
 # Before any app module: the data folder resolves when they are imported.
@@ -839,6 +843,342 @@ check("we-off: Wallpaper Engine is not running",
       fixture_page.texts()["empty"] == "Wallpaper Engine is not running")
 check("a state it does not have is refused", raises(lambda: fixture_page.load_fixture("nope"),
                                                      KeyError))
+
+
+# ---- a row's actions: Send to Copier, Mark [protected] ------------------------------------------
+
+print("-- a row's actions: which rows offer what --")
+from app.engines.rotator.config import Config              # noqa: E402
+from app.pages.tracker import (                             # noqa: E402
+    ACTIONS, MARKED, OFFER, PROTECT, SEND, STALE_NOTE, PlaylistRow, action_cell, protect_state,
+    protected_name,
+)
+from app.settings import DEFAULT_COPIER_COUNT              # noqa: E402
+
+DEST = "X:/Steam/steamapps/common/wallpaper_engine/projects/myprojects"
+WORKSHOP = "X:/Steam/steamapps/workshop/content/431960"
+
+
+def in_dest(name: str) -> str:
+    return str(Path(DEST) / name)
+
+
+check("a folder directly in myprojects is offered Mark [protected]",
+      protect_state(in_dest("wallpaper_0012"), DEST) == OFFER
+      and protect_state(in_dest("wallpaper_0012"), DEST + "/") == OFFER)
+check("a Workshop folder never is", protect_state(str(Path(WORKSHOP) / "1700000005"), DEST) == "")
+check("nor one further down, nor anything when myprojects is not set",
+      protect_state(str(Path(DEST) / "sub" / "wallpaper_0012"), DEST) == ""
+      and protect_state(in_dest("wallpaper_0012"), "") == "" and protect_state("", DEST) == "")
+check("a folder already [protected], in whatever case, shows that it is",
+      protect_state(in_dest("[protected] wallpaper_0012"), DEST) == MARKED
+      and protect_state(in_dest("[PROTECTED] wallpaper_0012"), DEST) == MARKED)
+check("the name it is marked under: [protected] and the old name",
+      protected_name(in_dest("wallpaper_0012")) == "[protected] wallpaper_0012")
+
+
+def keys(cell) -> list:
+    return [b.key if b is not None else None for b in cell.buttons]
+
+
+plain_row = PlaylistRow("x", "queue", 1, folder=in_dest("wallpaper_0012"))
+offered = action_cell(plain_row, OFFER)
+check("a myprojects row: Send to Copier, then Mark [protected]…, each saying what it does",
+      keys(offered) == [SEND, PROTECT]
+      and [b.tip for b in offered.buttons] == ["Send to Copier", "Mark [protected]…"]
+      and all(b.enabled and not b.mark for b in offered.buttons))
+check("a Workshop row: Send to Copier alone, the second slot empty so the buttons line up",
+      keys(action_cell(plain_row, "")) == [SEND, None])
+marked = action_cell(plain_row, MARKED).buttons[1]
+check("an already protected row: a lock that is no button, and says what it means",
+      marked.mark and marked.icon == "lock" and marked.tone == "accent.hover"
+      and "the Rotator leaves it in myprojects" in marked.tip)
+renaming = action_cell(plain_row, OFFER, renaming=True).buttons[1]
+check("while the rename runs, Mark is off", renaming.key == PROTECT and not renaming.enabled)
+stale_row = PlaylistRow("x", "queue", 1, folder=in_dest("[protected] wallpaper_0012"), stale=True)
+stale = action_cell(stale_row, MARKED).buttons[1]
+check("one marked here: the lock in warn, and its tip says the playlist entry is broken",
+      stale.mark and stale.tone == "warn"
+      and "stops working until the next rotation" in stale.tip)
+
+actions_model = PlaylistModel()
+actions_model.destination = DEST
+actions_rows = [PlaylistRow("a", "queue", 1, folder=in_dest("wallpaper_0001"), title="Tide"),
+                PlaylistRow("b", "queue", 2, folder=str(Path(WORKSHOP) / "1700000005"),
+                            title="Moth"),
+                PlaylistRow("c", "queue", 3, folder=in_dest("[protected] wallpaper_0003"),
+                            title="Pine"),
+                stale_row]
+actions_model.set_playlist(actions_rows, False, NOW)
+check("the table's last column holds them, with no title and no sorting",
+      ACTIONS == len(actions_model.columns) - 1 and actions_model.columns[ACTIONS].title == ""
+      and not actions_model.columns[ACTIONS].sortable)
+check("each row as its folder says: offered, Workshop, protected, marked here",
+      [keys(actions_model.cell(r, ACTIONS)) for r in actions_rows]
+      == [[SEND, PROTECT], [SEND, None], [SEND, MARKED], [SEND, MARKED]])
+check("the row marked here says so under its title, in warn",
+      actions_model.cell(stale_row, 1).sub == STALE_NOTE
+      and actions_model.cell(stale_row, 1).sub_tone == "warn"
+      and actions_model.cell(actions_rows[0], 1).sub == ""
+      and STALE_NOTE.startswith("playlist entry broken until the next rotation"))
+
+
+print("-- Mark [protected]: asked first, renamed off the window's thread, said --")
+MYP = TMP / "myprojects"
+for name in ("w_keep", "w_taken", "[protected] w_taken", "[protected] w_old", "w_busy"):
+    (MYP / name).mkdir(parents=True)
+    (MYP / name / "scene.pkg").write_bytes(b"")
+(TMP / "workshop" / "1700000099").mkdir(parents=True)
+
+
+def entry(folder: Path) -> str:
+    return str(folder / "scene.pkg")
+
+
+MARK_ITEMS = [entry(MYP / "w_keep"), entry(MYP / "w_taken"), entry(MYP / "[protected] w_old"),
+              entry(TMP / "workshop" / "1700000099"), entry(MYP / "w_busy"),
+              entry(MYP / "w_gone")]
+MARK_CYCLE = Cycle(monitor="Monitor1", playlist="custom", started=stamp(NOW - timedelta(hours=1)),
+                   items=list(MARK_ITEMS), seen={MARK_ITEMS[0]: stamp(NOW - timedelta(minutes=14))},
+                   current=MARK_ITEMS[0], current_since=stamp(NOW - timedelta(minutes=14)),
+                   order="random")
+mark_feed = Feed()
+mark_config = Config(source="", destination=str(MYP), duplicates="", count=1000)
+mark_page = TrackerPage(mark_feed, None, config=mark_config, now=lambda: NOW,
+                        make_timer=lambda f: FakeTimer(), meta=ReadNothing(),
+                        load=lambda monitor: MARK_CYCLE)
+host.column.addWidget(mark_page)
+mark_feed.results = [progress(current=MARK_ITEMS[0], total=len(MARK_ITEMS))]
+mark_feed.updated.emit()
+mark_page._read_list()
+check("its list is read", wait_for(lambda: mark_page.model.item_rows() == len(MARK_ITEMS)))
+
+
+def mark_row(name: str):
+    return next(r for r in mark_page.model.items() if Path(r.folder).name == name)
+
+
+check("the page knows myprojects from the Rotator's settings",
+      [mark_page.model.protect_state(mark_row(n)) for n in
+       ("w_keep", "[protected] w_old", "1700000099")] == [OFFER, MARKED, ""])
+asked: list = []
+answer_with = [False]
+
+
+def answering(dialog):
+    asked.append(dialog)
+    return answer_with[0]
+
+
+mark_page._answer = answering
+renamed_on: list[bool] = []
+real_protect_folder = tracker_page.protect_folder
+
+
+def recording_protect(folder):
+    renamed_on.append(threading.current_thread() is threading.main_thread())
+    return real_protect_folder(folder)
+
+
+tracker_page.protect_folder = recording_protect
+check("cancelled, nothing is renamed and nothing is said",
+      not mark_page.protect(mark_row("w_keep")) and len(asked) == 1 and renamed_on == []
+      and (MYP / "w_keep").is_dir() and mark_page.messages == [])
+dialog = asked[0]
+check("the question: neutral, the rename, what the Rotator does, and Rename",
+      dialog._title.text() == "Mark this folder [protected]?"
+      and dialog._body.text() == "The Rotator leaves [protected] folders in myprojects: no run "
+                                 "takes this one back to the reserve."
+      and dialog.listed_lines() == ["w_keep  →  [protected] w_keep"]
+      and not dialog.is_destructive() and dialog.confirm_button().text() == "Rename")
+check("and, plainly, what it does to Wallpaper Engine's playlist",
+      dialog.note_text() == "Wallpaper Engine's playlist is not touched. Its entry for this "
+                            "wallpaper keeps the old name and stops working until the next "
+                            "rotation rebuilds the playlist.")
+check("a Workshop folder or a protected one is not asked about",
+      not mark_page.protect(mark_row("1700000099"))
+      and not mark_page.protect(mark_row("[protected] w_old")) and len(asked) == 1)
+
+answer_with[0] = True
+keep = mark_row("w_keep")
+on_gui_thread.clear()
+for owner, name in GUARDED:
+    guard(owner, name)
+try:
+    started = mark_page.protect(keep)
+    renaming_now = not mark_page.model.cell(keep, ACTIONS).buttons[1].enabled
+    finished = wait_for(lambda: not mark_page._offload.busy())
+finally:
+    unguard()
+check("confirmed, the rename runs, Mark is off meanwhile",
+      started and renaming_now and finished)
+check(f"on a worker: nothing on the window's thread touched the disk ({on_gui_thread})",
+      renamed_on == [False] and on_gui_thread == [])
+check("the folder is renamed, and nothing else",
+      (MYP / "[protected] w_keep").is_dir() and not (MYP / "w_keep").exists()
+      and (MYP / "[protected] w_keep" / "scene.pkg").exists() and (MYP / "w_taken").is_dir())
+keep = next(r for r in mark_page.model.items() if r.item == MARK_ITEMS[0])
+check("the row follows: its new folder, the warn lock, the note under its title",
+      Path(keep.folder) == MYP / "[protected] w_keep" and keep.stale
+      and keys(mark_page.model.cell(keep, ACTIONS)) == [SEND, MARKED]
+      and mark_page.model.cell(keep, ACTIONS).buttons[1].tone == "warn"
+      and mark_page.model.cell(keep, 1).sub == STALE_NOTE
+      and mark_page.model.thumb_source(keep) == keep.folder)
+check("and a toast says what changed, and that the playlist entry stops working",
+      mark_page.messages[-1] == ("ok", "w_keep is now [protected] w_keep: the Rotator leaves it "
+                                       "in myprojects. Wallpaper Engine's playlist still has "
+                                       "the old name; that entry stops working until the next "
+                                       "rotation."))
+mark_page._read_list()
+check("read again from tracker.json (which still has the old name), the row stays marked",
+      wait_for(lambda: next(r for r in mark_page.model.items()
+                            if r.item == MARK_ITEMS[0]).stale)
+      and Path(next(r for r in mark_page.model.items()
+                    if r.item == MARK_ITEMS[0]).folder) == MYP / "[protected] w_keep")
+
+
+def failed_mark(name: str) -> tuple[str, str]:
+    before = len(mark_page.messages)
+    row = mark_row(name)
+    mark_page.protect(row)
+    wait_for(lambda: not mark_page._offload.busy() and len(mark_page.messages) > before)
+    return mark_page.messages[-1] if len(mark_page.messages) > before else ("", "")
+
+
+tone, words = failed_mark("w_taken")
+check("the name already taken: a danger toast in plain words, nothing changed",
+      tone == "danger" and words == "Could not mark w_taken [protected]: there is already a "
+                                    "folder called [protected] w_taken in myprojects. Nothing "
+                                    "was changed."
+      and (MYP / "w_taken").is_dir() and (MYP / "[protected] w_taken").is_dir()
+      and not mark_row("w_taken").stale
+      and mark_page.model.cell(mark_row("w_taken"), ACTIONS).buttons[1].enabled)
+tone, words = failed_mark("w_gone")
+check("a folder no longer there: said so", tone == "danger"
+      and words == "Could not mark w_gone [protected]: it is not in myprojects any more. "
+                   "Nothing was changed.")
+
+
+class InUse(PermissionError):
+    winerror = 32                   # what Windows says of a folder another program holds
+
+
+def refusing(error):
+    def rename(self, target):
+        raise error
+    return rename
+
+
+real_rename = Path.rename
+try:
+    Path.rename = refusing(InUse(13, "The process cannot access the file"))
+    tone, words = failed_mark("w_busy")
+    check("in use by Wallpaper Engine: said so, and the folder keeps its name",
+          tone == "danger" and words.startswith("Could not mark w_busy [protected]: it is in use. "
+                                                "Wallpaper Engine may be showing it")
+          and words.endswith("Nothing was changed.") and (MYP / "w_busy").is_dir()
+          and not mark_row("w_busy").stale)
+    Path.rename = refusing(PermissionError(13, "Access is denied"))
+    tone, words = failed_mark("w_busy")
+    check("access denied: said so", tone == "danger"
+          and "Windows denied access to it" in words and (MYP / "w_busy").is_dir())
+finally:
+    Path.rename = real_rename
+tracker_page.protect_folder = real_protect_folder
+
+asked.clear()
+rotating = SimpleNamespace(is_running=lambda tool: tool == "rotator")
+mark_page._services = SimpleNamespace(jobs=rotating)
+try:
+    check("while a rotation runs, not even asked: a warning says when",
+          not mark_page.protect(mark_row("w_busy")) and asked == []
+          and mark_page.messages[-1] == ("warn", "A rotation is running. Mark folders "
+                                                 "[protected] once it has finished."))
+finally:
+    mark_page._services = None
+
+copier_sent: list = []
+
+
+def sent(folders):
+    copier_sent.append(folders)
+
+
+mark_page.copier_requested.connect(sent)
+mark_page.send_to_copier(keep)
+check("Send to Copier sends a renamed folder under its new name",
+      copier_sent == [[keep.folder]])
+check("with nobody to take it, it says so", mark_page.messages[-1]
+      == ("warn", "The Copier is not there to take it."))
+mark_page.copier_requested.disconnect(sent)
+fixture_page.load_fixture("tracking")
+before = len(fixture_page.messages)
+check("a made-up state sends and renames nothing",
+      not fixture_page.send_to_copier(fixture_page.model.items()[0])
+      and not fixture_page.protect(fixture_page.model.items()[0])
+      and len(fixture_page.messages) == before)
+
+print("-- the marked fixture --")
+fixture_page.load_fixture("marked")
+fixture_rows = {r.number: r for r in fixture_page.model.items()}
+check("wallpaper 2 was marked here: its row says so",
+      fixture_rows[2].stale and Path(fixture_rows[2].folder).name == "[protected] wallpaper_0002"
+      and fixture_page.model.cell(fixture_rows[2], ACTIONS).buttons[1].tone == "warn")
+check("3 was protected already, 5 is a Workshop one, 4 is offered Mark",
+      [keys(fixture_page.model.cell(fixture_rows[n], ACTIONS)) for n in (3, 5, 4)]
+      == [[SEND, MARKED], [SEND, None], [SEND, PROTECT]])
+
+
+# ---- Send to Copier, through the window's own wiring --------------------------------------------
+
+print("-- Send to Copier: the Copier's list, once, and Show goes there --")
+from app import services as services_module                 # noqa: E402
+from app.main_window import MainWindow                      # noqa: E402
+
+
+class WindowFeed(Feed):
+    def use_config(self, path):
+        pass
+
+    def set_heartbeat(self, seconds):
+        pass
+
+
+window_settings = Settings({})
+window_services = services_module.Services(data_dir=TMP / "data", settings=window_settings)
+window = MainWindow(settings=window_settings, feed=WindowFeed(), services_=window_services,
+                    start=False, initial="tracker")
+window.move(300, 200)
+window.show()
+app.processEvents()
+tracker_in_window = window.pages["tracker"]
+copier_tab = window.pages["copier"].tab
+sent_folder = str(MYP / "w_copy")
+sent_row = PlaylistRow(entry(MYP / "w_copy"), "queue", 1, folder=sent_folder,
+                       title="Harbour Lights")
+check("the Copier takes a folder from the Tracker (build_pages wires it: whatever replaces "
+      "the Copier tab must take these too)",
+      tracker_in_window.send_to_copier(sent_row)
+      and copier_tab.folders() == [(os.path.normpath(sent_folder), str(DEFAULT_COPIER_COUNT))])
+check("for the default copies, and the Tracker stays on screen",
+      window.current_page() == "tracker"
+      and tracker_in_window.messages[-1] == ("ok", f"“Harbour Lights” is on the Copier's list, "
+                                                   f"for {DEFAULT_COPIER_COUNT} copies."))
+toast = window.toasts.toasts()[-1]
+check("its toast offers Show", toast.action_text() == "Show" and toast.variant() == "ok")
+tracker_in_window.send_to_copier(sent_row)
+check("sent again, it is not listed twice, and the toast says it is there already",
+      len(copier_tab.folders()) == 1
+      and tracker_in_window.messages[-1] == ("info", "“Harbour Lights” is on the Copier's list "
+                                                     "already."))
+window.toasts.toasts()[-1]._act()
+app.processEvents()
+check("Show opens the Copier", window.current_page() == "copier")
+check("the Copier's add_folders: one of each, its count, how many it added",
+      copier_tab.add_folders([sent_folder + os.sep, str(MYP / "w_two"), str(MYP / "w_two")],
+                             count=5) == 1
+      and copier_tab.folders()[-1] == (os.path.normpath(str(MYP / "w_two")), "5"))
+window.close()
 
 host.close()
 print()

@@ -28,7 +28,9 @@ wallpapers live on a hard disk, so everything is built for that:
 The column spec (`Column`) says, per column: its title, a fixed content width
 or a share of what is left, alignment, mono or sans, whether it sorts, and
 optionally a thumb or a glyph before the text. The model's `cell()` returns a
-string, a `Cell` (text in another tone) or a `ChipCell` for each one.
+string, a `Cell` (text in another tone) or a `ChipCell` for each one; or a cell
+that acts: a `ButtonCell` (a text button), a `ButtonsCell` (glyph buttons side by
+side, a row's actions), a `BusyCell` or a `DiscCell`.
 
 `ListRow` is the same row for list views (the author list, recent activity):
 a dataclass of what a row says, `paint_list_row` to draw it in any state, and
@@ -48,13 +50,13 @@ from PySide6.QtCore import (
 from PySide6.QtGui import QCursor, QFont, QFontMetricsF, QPainter, QPainterPath, QPen, QPixmap
 from PySide6.QtWidgets import (
     QAbstractItemView, QHBoxLayout, QHeaderView, QLabel, QListView, QSizePolicy, QStyle,
-    QStyledItemDelegate, QTableView, QWidget,
+    QStyledItemDelegate, QTableView, QToolTip, QWidget,
 )
 
 from ... import animations, theme
 from . import icons
 from .base import label
-from .buttons import button_pixmap, button_size
+from .buttons import button_pixmap, button_size, icon_button_pixmap
 from .chips import chip_pixmap, chip_size
 from .thumbs import ThumbLoader, shared as shared_loader
 
@@ -310,6 +312,54 @@ class ButtonCell:
 
 
 @dataclass(frozen=True)
+class CellButton:
+    """One glyph button of a `ButtonsCell`: its `icon`, the `tip` that says what
+    it does (required, as an IconButton's tool tip is) and the `key` a click on
+    it reports. `enabled=False` draws it faded and takes no click. `mark=True`
+    makes it a glyph that says something rather than does something (the lock
+    on a [protected] folder): no box, no hover, no click, `tone` its colour,
+    `tip` still shown under the pointer."""
+    key: str
+    icon: str
+    tip: str
+    enabled: bool = True
+    mark: bool = False
+    tone: str = "text.mid"
+
+    def __post_init__(self) -> None:
+        if not self.tip or not self.tip.strip():
+            raise ValueError("a cell's button needs a tool tip that says what it does")
+        icons.svg(self.icon)            # an unknown name fails here, not at paint time
+
+
+@dataclass(frozen=True)
+class ButtonsCell:
+    """Several glyph buttons side by side in one cell, each drawn as an
+    IconButton of `size` ("sm", 22 px, or "md"): a playlist row's Send to
+    Copier and Mark [protected]. A slot that is None stays empty, so the
+    buttons of every row line up. The glyphs rest in text.lo and come up on
+    the row under the pointer; a click on one is
+    `Table.action_clicked(row, column, key)`, not a click on the row."""
+    buttons: tuple[CellButton | None, ...]
+    size: str = "sm"
+
+    def __post_init__(self) -> None:
+        if self.size not in theme.ICON_BUTTON:
+            raise KeyError(f"no IconButton size {self.size!r}; "
+                           f"there are {', '.join(theme.ICON_BUTTON)}")
+
+    def width(self) -> int:
+        """The room its slots take, empty ones included."""
+        return buttons_width(len(self.buttons), self.size)
+
+
+def buttons_width(slots: int, size: str = "sm") -> int:
+    """What a ButtonsCell of so many slots needs: a column's width for it."""
+    side = theme.ICON_BUTTON[size][0]
+    return slots * side + max(0, slots - 1) * theme.TABLE_BUTTONS_GAP
+
+
+@dataclass(frozen=True)
 class BusyCell:
     """Work under way on the row: a ring and its words ("Subscribing…"). The
     ring turns while the table is told the row spins (`Table.set_spinning`)."""
@@ -345,6 +395,8 @@ def _text_of(value) -> str:
         return value.text
     if isinstance(value, DiscCell):
         return value.label
+    if isinstance(value, ButtonsCell):
+        return " · ".join(b.tip for b in value.buttons if b is not None)
     return str(value)
 
 
@@ -845,6 +897,18 @@ class RowDelegate(QStyledItemDelegate):
             painter.drawPixmap(box.topLeft(), button_pixmap(
                 value.text, *self._table.button_look(self._row, c, value), dpr=self._dpr))
             return
+        if isinstance(value, ButtonsCell):
+            for button, box in self.buttons_boxes(value, x, right, middle, align):
+                if button.mark:
+                    glyph = theme.ICON_BUTTON[value.size][1]
+                    painter.drawPixmap(
+                        QPointF(box.center().x() - glyph / 2, box.center().y() - glyph / 2),
+                        icons.pixmap(button.icon, button.tone, glyph, self._dpr))
+                    continue
+                state, ink = self._table.action_look(self._row, c, button)
+                painter.drawPixmap(box.topLeft(), icon_button_pixmap(
+                    button.icon, state, value.size, self._dpr, ink=ink))
+            return
         if isinstance(value, DiscCell):
             size = theme.TABLE_DISC
             left = (right - size if align == Qt.AlignRight
@@ -901,6 +965,22 @@ class RowDelegate(QStyledItemDelegate):
         x = (right - width if align == Qt.AlignRight
              else (left + right - width) / 2 if align == Qt.AlignHCenter else left)
         return QRectF(x, middle - height / 2, width, height)
+
+    @staticmethod
+    def buttons_boxes(value: ButtonsCell, left: float, right: float, middle: float,
+                      align) -> list[tuple[CellButton, QRectF]]:
+        """Where each of a ButtonsCell's buttons sits in a cell spanning left to
+        right; empty slots keep their room and are left out."""
+        side = theme.ICON_BUTTON[value.size][0]
+        width = value.width()
+        x = (right - width if align == Qt.AlignRight
+             else (left + right - width) / 2 if align == Qt.AlignHCenter else left)
+        out = []
+        for button in value.buttons:
+            if button is not None:
+                out.append((button, QRectF(x, middle - side / 2, side, side)))
+            x += side + theme.TABLE_BUTTONS_GAP
+        return out
 
     # -- as an ordinary delegate
 
@@ -1014,6 +1094,7 @@ class Table(QTableView):
 
     sort_changed = Signal(int, object)      # column, Qt.SortOrder
     button_clicked = Signal(int, int)       # row, column: a ButtonCell was clicked
+    action_clicked = Signal(int, int, str)  # row, column, key: a ButtonsCell's button
 
     def __init__(self, parent: QWidget | None = None, *, loader: ThumbLoader | None = None):
         super().__init__(parent)
@@ -1040,8 +1121,10 @@ class Table(QTableView):
         self._hover = -1
         self._keyboard = False
         self._spans: list[tuple[float, float]] | None = None
-        self._hot_button: tuple[int, int] | None = None
-        self._pressed_button: tuple[int, int] | None = None
+        # the cell button under the pointer, and the one held: (row, column, key),
+        # the key None for a ButtonCell
+        self._hot_button: tuple[int, int, str | None] | None = None
+        self._pressed_button: tuple[int, int, str | None] | None = None
         self._spinning: set[int] = set()
         self._ticker: animations.LoopTicker | None = None
 
@@ -1294,22 +1377,57 @@ class Table(QTableView):
 
     # -- buttons in cells
 
-    def button_at(self, pos) -> tuple[int, int] | None:
-        """The (row, column) of the ButtonCell under a viewport point, or None."""
+    def _under(self, pos) -> tuple[int, int, object, QRectF] | None:
+        """The button under a viewport point: (row, column, the ButtonCell or
+        the ButtonsCell's CellButton, its box), or None."""
         model = self.model()
-        row = self.rowAt(round(pos.y()))
+        point = QPointF(pos)
+        row = self.rowAt(round(point.y()))
         item = model.item_at(row) if isinstance(model, TableModel) else None
         if item is None:
             return None
         middle = self.rowViewportPosition(row) + self.rowHeight(row) / 2
         for c, (left, width) in enumerate(self.column_spans()):
+            if width <= 0:
+                continue
             value = model.cell(item, c)
-            if isinstance(value, ButtonCell) and width > 0:
-                box = self._delegate.button_box(value, left, left + width, middle,
-                                                ALIGNMENTS[model.columns[c].align])
-                if box.contains(QPointF(pos)):
-                    return row, c
+            align = ALIGNMENTS[model.columns[c].align]
+            if isinstance(value, ButtonCell):
+                box = self._delegate.button_box(value, left, left + width, middle, align)
+                if box.contains(point):
+                    return row, c, value, box
+            elif isinstance(value, ButtonsCell):
+                for button, box in self._delegate.buttons_boxes(value, left, left + width,
+                                                                middle, align):
+                    if box.contains(point):
+                        return row, c, button, box
         return None
+
+    def _spot_at(self, pos) -> tuple[int, int, str | None] | None:
+        """What a click under a viewport point would press: a ButtonCell's
+        (row, column, None), or a ButtonsCell button's (row, column, key) when
+        it is enabled and not a mark."""
+        found = self._under(pos)
+        if found is None:
+            return None
+        row, column, value, _ = found
+        if isinstance(value, ButtonCell):
+            return row, column, None
+        if value.enabled and not value.mark:
+            return row, column, value.key
+        return None
+
+    def button_at(self, pos) -> tuple[int, int] | None:
+        """The (row, column) of the ButtonCell under a viewport point, or None."""
+        spot = self._spot_at(pos)
+        return spot[:2] if spot is not None and spot[2] is None else None
+
+    def action_at(self, pos) -> tuple[int, int, str] | None:
+        """The (row, column, key) of the ButtonsCell button a click under a
+        viewport point would press, or None: nothing there, an empty slot, a
+        mark or a button that is off."""
+        spot = self._spot_at(pos)
+        return spot if spot is not None and spot[2] is not None else None
 
     def button_look(self, row: int, column: int, value: ButtonCell) -> tuple[str, str]:
         """(variant, state) a ButtonCell is drawn in: its hot variant on the row
@@ -1317,12 +1435,25 @@ class Table(QTableView):
         variant = value.hot if value.hot and row == self._hover else value.variant
         if not self.isEnabled():
             return variant, "disabled"
-        here = (row, column)
+        here = (row, column, None)
         if self._pressed_button == here:
             return variant, "pressed" if self._hot_button == here else "hover"
         return variant, "hover" if self._hot_button == here else "default"
 
-    def _set_hot_button(self, hot: tuple[int, int] | None) -> None:
+    def action_look(self, row: int, column: int, button: CellButton) -> tuple[str, str | None]:
+        """(state, ink) a ButtonsCell button is drawn in: its glyph in text.lo
+        at rest, the IconButton's own look on the row under the pointer, hover
+        under the pointer, pressed while held, faded when off."""
+        if not self.isEnabled() or not button.enabled:
+            return "disabled", None
+        here = (row, column, button.key)
+        if self._pressed_button == here:
+            return ("pressed" if self._hot_button == here else "hover"), None
+        if self._hot_button == here:
+            return "hover", None
+        return "default", None if row == self._hover else "text.lo"
+
+    def _set_hot_button(self, hot: tuple[int, int, str | None] | None) -> None:
         if hot != self._hot_button:
             old, self._hot_button = self._hot_button, hot
             for spot in (old, hot):
@@ -1387,30 +1518,52 @@ class Table(QTableView):
         if kind == QEvent.Leave:
             self._hover_to(-1)
             self._set_hot_button(None)
+        if kind == QEvent.ToolTip:
+            found = self._under(event.pos())
+            if found is not None and isinstance(found[2], CellButton):
+                QToolTip.showText(event.globalPos(), found[2].tip, self.viewport(),
+                                  found[3].toAlignedRect())
+                return True
         return super().viewportEvent(event)
 
     def mouseMoveEvent(self, event) -> None:    # noqa: N802 - Qt's name
         self._hover_to(self.rowAt(event.position().toPoint().y()))
-        self._set_hot_button(self.button_at(event.position()))
+        self._set_hot_button(self._spot_at(event.position()))
         if event.buttons() != Qt.NoButton and self._pressed_button is None:
             super().mouseMoveEvent(event)       # a drag that extends the selection
 
     def mousePressEvent(self, event) -> None:   # noqa: N802 - Qt's name
         self._keyboard = False
-        hit = self.button_at(event.position()) if event.button() == Qt.LeftButton else None
-        if hit is not None:
-            self._pressed_button = self._hot_button = hit
-            self._update_row(hit[0])
-            event.accept()
+        if self._press_button(event):
             return
         super().mousePressEvent(event)
+
+    def mouseDoubleClickEvent(self, event) -> None:     # noqa: N802 - Qt's name
+        # A double-click's second press on a cell's button presses it again, as
+        # it would a QPushButton; it does not activate the row behind it.
+        if self._press_button(event):
+            return
+        super().mouseDoubleClickEvent(event)
+
+    def _press_button(self, event) -> bool:
+        hit = self._spot_at(event.position()) if event.button() == Qt.LeftButton else None
+        if hit is None:
+            return False
+        self._pressed_button = self._hot_button = hit
+        self._update_row(hit[0])
+        event.accept()
+        return True
 
     def mouseReleaseEvent(self, event) -> None:     # noqa: N802 - Qt's name
         pressed, self._pressed_button = self._pressed_button, None
         if pressed is not None:
             self._update_row(pressed[0])
-            if event.button() == Qt.LeftButton and self.button_at(event.position()) == pressed:
-                self.button_clicked.emit(*pressed)
+            if event.button() == Qt.LeftButton and self._spot_at(event.position()) == pressed:
+                row, column, key = pressed
+                if key is None:
+                    self.button_clicked.emit(row, column)
+                else:
+                    self.action_clicked.emit(row, column, key)
             event.accept()
             return
         super().mouseReleaseEvent(event)

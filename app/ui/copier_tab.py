@@ -4,6 +4,7 @@ Mirrors the behaviour of the standalone Wallpaper Engine Copier:
   * the destination folder, set on the Settings page and shown here
   * a table of "folder path" / "copy count" jobs
   * add / paste-from-clipboard / remove / clear, inline count editing
+  * folders sent from other pages (`add_folders`: the Tracker's Send to Copier)
   * drag & drop folders straight into the table
   * background copy with live log, progress bar and MB/s speed readout
 """
@@ -186,6 +187,31 @@ class CopierTab(QWidget):
         count_item.setTextAlignment(Qt.AlignCenter)
         self.table.setItem(row, 0, path_item)
         self.table.setItem(row, 1, count_item)
+
+    def add_folders(self, paths, count: int = DEFAULT_COPIER_COUNT) -> int:
+        """Add folders to the list, each for `count` copies, leaving out any
+        already listed (or given twice); returns how many were added. Other
+        pages send folders here (the Tracker's Send to Copier). Reads nothing:
+        a folder that is not there is the copy's to report."""
+        listed = {os.path.normcase(os.path.normpath(self.table.item(row, 0).text()))
+                  for row in range(self.table.rowCount())}
+        added = 0
+        for path in paths:
+            path = os.path.normpath(str(path))
+            key = os.path.normcase(path)
+            if key in listed:
+                continue
+            listed.add(key)
+            self._add_row(path, count)
+            added += 1
+        if added:
+            self._log(f"[INFO]  Added folders: {added}")
+        return added
+
+    def folders(self) -> list[tuple[str, str]]:
+        """The list as it stands: (folder, copies as written) per row."""
+        return [(self.table.item(row, 0).text(), self.table.item(row, 1).text())
+                for row in range(self.table.rowCount())]
 
     def _add_rows(self, folders):
         for p in folders:

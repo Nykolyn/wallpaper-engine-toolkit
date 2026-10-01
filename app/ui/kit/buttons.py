@@ -348,6 +348,38 @@ def button_pixmap(text: str, variant: str = "secondary", state: str = "default",
     return pixmap
 
 
+def icon_button_pixmap(icon: str, state: str = "default", size: str = "sm", dpr: float = 1.0,
+                       *, ink: str | None = None) -> QPixmap:
+    """An IconButton's look as a pixmap, for a delegate that draws one in a row
+    (a table's `ButtonsCell`): the same fill and glyph as the widget in that
+    state, disabled at 40 %. `ink` puts the glyph in another colour (a row's
+    buttons rest in text.lo until the pointer is on the row). Made once per
+    (glyph, state, size, ink, scale)."""
+    key = ("icon", icon, state, size, ink, round(dpr, 3))
+    found = _drawn.get(key)
+    if found is not None:
+        return found
+    side, glyph = theme.ICON_BUTTON[size]
+    fill, _, colour = LOOKS["icon"][state]
+    pixmap = QPixmap(math.ceil(side * dpr), math.ceil(side * dpr))
+    pixmap.setDevicePixelRatio(dpr)
+    pixmap.fill(Qt.transparent)
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.Antialiasing)
+    if state == "disabled":
+        painter.setOpacity(theme.DISABLED_OPACITY)
+    r = theme.R_MD if side >= theme.ICON_BUTTON["md"][0] else theme.R_SM
+    if fill is not None:
+        path = QPainterPath()
+        path.addRoundedRect(QRectF(0, 0, side, side), r, r)
+        painter.fillPath(path, token(fill))
+    offset = (side - glyph) / 2
+    painter.drawPixmap(QPointF(offset, offset), icons.pixmap(icon, ink or colour, glyph, dpr))
+    painter.end()
+    _drawn[key] = pixmap
+    return pixmap
+
+
 class GhostButton(_TextButton):
     """An inline, low-weight action ("Open folder"). `outlined=True` gives it
     the flat edged box the page headers use."""
