@@ -123,7 +123,13 @@ Settings page. `build_pages(window)` makes them all: one Rotator `Config` is
 shared by the Rotator page and the Settings page, whose Rotator fields are
 read-only while a Rotator job runs; each tells the other when it saved
 (`SettingsPage.changed("rotator")` → `RotatorPage.config_changed()`,
-`RotatorPage.config_edited` → `SettingsPage.show_rotator()`).
+`RotatorPage.config_edited` → `SettingsPage.show_rotator()`). The Tracker page
+reads the same `Config` for where myprojects is. Its **Send to Copier** is
+`TrackerPage.copier_requested(folders)` → `CopierTab.add_folders(folders)` →
+`TrackerPage.copier_took(folders, added)`, wired in `build_pages`. **When the
+Copier gets a page of its own (step 14), that page must take these folders
+too**: `test_tracker_page.py` builds the window through `build_pages` and fails
+if the Copier stops accepting folders from the Tracker.
 
 The status line reads the `JobCenter` (`StatusBinding`): the job that leads,
 its phase, bar and `412 / 1 000 · 41%`, and **Show**, which goes to
@@ -178,6 +184,17 @@ file functions to raise there):
   answers of any age, no network), `known_authors(keys)` (`authors.sqlite`,
   opened read-only) and `MetaCache`, which keeps a session's answers. Measured
   here: a 196-wallpaper playlist 1.5 s cold, 1 756 in 14 s; 0.01 s and 0.1 s warm.
+- A row's actions are a `ButtonsCell` in the last column (`action_cell`):
+  Send to Copier, and Mark [protected] where `protect_state(folder,
+  destination)` offers it — a folder directly in the Rotator's myprojects
+  whose name is not `[protected] …` already (that one gets a lock mark).
+  Paths only, compared with `os.path.normcase`. The rename is
+  `protect_folder(folder)` on a thread of the page's own `_Offload` (the
+  Rotator page's pattern), after `protect_dialog`; it raises `ProtectError`
+  with the words for the danger toast. A renamed row gets `stale=True` and its
+  new `folder`, remembered by old folder for the session (`_renamed`), since
+  `tracker.json` keeps the old name until the next rotation. `_answer(dialog)`
+  and `messages` are there for tests.
 - `Countdowns` runs a `WallpaperTimer` of its own while the page is on screen,
   as a reader: `open_memory=None`, `save_path=None`, `restore_path` the tray's
   `wallpaper_timer.json`, `follow_files=False` (the feed stats the files). It
@@ -544,7 +561,7 @@ for %f in (tests\test_*.py) do .venv\Scripts\python.exe %f
 | `test_icons.py` | every icon draws, in the colour and at the size asked; unknown names raise |
 | `test_kit_controls.py` | every kit control in every state; the fourteen chips, the Pagination rule, the Toggle with motion off, Dropdown rows that cannot be chosen, a DangerButton that never takes Enter, the ring for the keyboard only |
 | `test_kit_feedback.py` | the log's 5 000-line ring and its Problems filter; the console following the newest line until you scroll up; the panel closing over `motion.slow`; toasts stacking, going after 6 s and danger staying; the status line's four states and a count that never elides; a destructive dialog defaulting to Cancel, its group boxes, summary and Danger text following the ticks, Esc cancelling; a form's Save waiting for valid fields |
-| `test_kit_data.py` | the formats; a PathField checked on a worker; a per-clip TagSelect's three states; MonitorView to card; TableModel groups, sorting and zebra; 33 000 rows built under 100 ms and only visible rows painted; local previews cached by path and time; no file-system call on the GUI thread |
+| `test_kit_data.py` | the formats; a PathField checked on a worker; a per-clip TagSelect's three states; MonitorView to card; TableModel groups, sorting and zebra; 33 000 rows built under 100 ms and only visible rows painted; a ButtonsCell's slots, clicks, marks, tool tips and double-click; local previews cached by path and time; no file-system call on the GUI thread |
 | `test_animations.py` | motion, by sampling real widgets over real time; the curve, the loops, reduced motion |
 | `test_steam_api.py` | the Web API client and its cache |
 | `test_authors_store.py` | the authors database: transactions, snapshots, pruning, the second folder, restoring, damaged files |
@@ -554,7 +571,7 @@ for %f in (tests\test_*.py) do .venv\Scripts\python.exe %f
 | `test_hang_watch.py` | a stuck GUI thread leaves its stacks in the hang log |
 | `test_window_instance.py` | one window, raised from the tray, in a process of its own; the plain request and the command form on the socket |
 | `test_shell.py` | pages in the loop's order, the sidebar and Ctrl+number; `--tab` names; the window command parser; the rail below 1 200 px; the status line bound to the JobCenter (Show, problems until seen); the cross-fade, and none with motion off; the Settings page writing `config.json` and `suite.json`, read-only while the Rotator works; the window and the tray reading each other's `suite.json`; the title bar's hit testing; `ui_snapshot` at a size and scale |
-| `test_tracker_page.py` | the tracker's Progress as a monitor card in every state (paused, Wallpaper Engine stopped, restarted, finished); the countdown's words (`≈`, paused, any moment); the pace and the finish sentence; the notes the count rests on; the playlist's groups, order, `~` times, filter and authors; titles and authors read from project.json, the Steam cache and the authors database (never written); the countdown as a reader of the tray's file; every fixture; no file read on the GUI thread |
+| `test_tracker_page.py` | the tracker's Progress as a monitor card in every state (paused, Wallpaper Engine stopped, restarted, finished); the countdown's words (`≈`, paused, any moment); the pace and the finish sentence; the notes the count rests on; the playlist's groups, order, `~` times, filter and authors; titles and authors read from project.json, the Steam cache and the authors database (never written); the countdown as a reader of the tray's file; every fixture; no file read on the GUI thread; which rows offer Send to Copier and Mark [protected], the question's words, the rename on a worker against folders made here, a failed rename (name taken, gone, in use, denied) changing nothing, the row after it; Send to Copier through `build_pages` into the Copier's list with the default count, once, and the toast's Show |
 | `test_services.py` | which running job leads; rate and time left only once measured; the journal's append, tail and rotation past a damaged line and an unknown field; log files by tool, day and run, their tail and the 30-day sweep; the snapshot read on a worker, never the GUI thread, keeping its age and its last value; each tab's work reaching all three |
 | `test_external.py` | a child cannot load a DLL from the bundle, through the DLL directory or PATH; a quoted URL survives cmd.exe; nothing in `app/` starts a program another way |
 
@@ -714,7 +731,7 @@ Overview, the Tracker, the Rotator and Review are built from it.
 
 | Module | Classes |
 |---|---|
-| `buttons.py` | `AccentButton` (the one action that starts the work), `SecondaryButton`, `DangerButton` (never a dialog's default, so Enter cannot delete), `GhostButton` (`outlined=True` for page headers), `IconButton` (30 px, or 22 px as `size="sm"`; its tool tip is required), `LinkButton` (an action written as a link, for a toast, the status line or a list; never a dialog's default). Text buttons take a leading `icon=`, a trailing `key="Ctrl+V"` cap, and `size="sm"`/`"md"`/`"lg"`. `button_pixmap(text, variant, state)` and `button_size` draw a button's look for a delegate. |
+| `buttons.py` | `AccentButton` (the one action that starts the work), `SecondaryButton`, `DangerButton` (never a dialog's default, so Enter cannot delete), `GhostButton` (`outlined=True` for page headers), `IconButton` (30 px, or 22 px as `size="sm"`; its tool tip is required), `LinkButton` (an action written as a link, for a toast, the status line or a list; never a dialog's default). Text buttons take a leading `icon=`, a trailing `key="Ctrl+V"` cap, and `size="sm"`/`"md"`/`"lg"`. `button_pixmap(text, variant, state)` and `button_size` draw a button's look for a delegate; `icon_button_pixmap(icon, state, size, ink=)` an IconButton's. |
 | `inputs.py` | `TextInput` (`search=True`, `set_error(message)`), `SpinBox` (mono, `1 000` with a no-break space), `Dropdown` (`add_item(text, data, count=)`, `add_section`, `add_separator`, `prefix="SORT"`) and its list, `DropdownPopup` |
 | `selection.py` | `Checkbox`, `Toggle` (`knob_position`), `SegmentedControl` (two or three segments, `changed`), `Pagination` (`page_changed`), `page_numbers(pages, current)` |
 | `chips.py` | `Chip(variant, text=None)` in exactly fourteen variants; `chip_pixmap` and `chip_size` for delegates |
@@ -725,7 +742,7 @@ Overview, the Tracker, the Rotator and Review are built from it.
 | `tags.py` | `TagSelect` (pills, `3 / 25`, a popup of the Creator's `WE_TAGS` in four columns); `per_file=True` adds the clip's three states — `value()` None follows the batch, a list is its own, `[]` is none. `TagPopup` is the open state. |
 | `progress.py` | `ProgressBar` (3–8 px; determinate, eased over `motion.slow`; indeterminate; error; success; optional caption row) and `ProgressRing` (58, 52, 34 px; percentage, spin, done) |
 | `cards.py` | `StatCard` (default, hover when `clickable` — an empty one too, `set_loading`, empty, `set_empty(why, link=True)` for a reason written as a link, tone `lo` for the last known), `MonitorCard` (compact or `detail=True`; a playlist shown to its end closes the ring in ok, turns the count green with a flash and gives the card an ok edge) and `MonitorView`, the plain values a page fills it from (`remaining_approx` for `≈`; `timer` "paused" or "stopped" says so in REMAINING without changing the badge), `ToolTile` (a tool of the loop on the Overview: status line and tone, thin bar, mono meta; `set_active` accents the one whose job runs, with a pulsing dot; `clicked` on a click, Enter or Space) |
-| `tables.py` | `Table`, `TableModel`, `Column`, `Cell` (`sub=` a second, quieter line), `ChipCell`, `ButtonCell` (a button drawn in the row, Accent on the row under the pointer; `Table.button_clicked(row, column)`), `BusyCell` (a ring and its words; `Table.set_spinning(items)` turns it), `DiscCell` (a glyph on a disc), `Group`, `RowDelegate`, `TableHeader`, `TableBar`, `TableSummary`, `TableFooter`; `disc_pixmap`, `paint_spinner` (the kit `Spinner`'s ring, for delegates); `ListRow` (`title_note`, `tick`, `dimmed`, `meta_tone`, `thumb_size`, `chips_inline`), `paint_list_row`, `RowList`; `SkeletonRows` (placeholder rows, shimmering or still); `Thumb` and `paint_thumb` |
+| `tables.py` | `Table`, `TableModel`, `Column`, `Cell` (`sub=` a second, quieter line), `ChipCell`, `ButtonCell` (a button drawn in the row, Accent on the row under the pointer; `Table.button_clicked(row, column)`), `ButtonsCell` of `CellButton`s (glyph buttons side by side, as small IconButtons: quiet in text.lo until the row is hovered, an empty slot keeps the rest in line, `mark=True` a glyph that says something and takes no click, `enabled=False` faded; each shows its `tip`; `Table.action_clicked(row, column, key)`; `buttons_width(n)` for the column), `BusyCell` (a ring and its words; `Table.set_spinning(items)` turns it), `DiscCell` (a glyph on a disc), `Group`, `RowDelegate`, `TableHeader`, `TableBar`, `TableSummary`, `TableFooter`; `disc_pixmap`, `paint_spinner` (the kit `Spinner`'s ring, for delegates); `ListRow` (`title_note`, `tick`, `dimmed`, `meta_tone`, `thumb_size`, `chips_inline`), `paint_list_row`, `RowList`; `SkeletonRows` (placeholder rows, shimmering or still); `Thumb` and `paint_thumb` |
 | `thumbs.py` | `ThumbLoader`: Steam previews for the gallery (`request`), and a wallpaper folder's own preview (`request_local`), read on a worker and kept in `data/thumbs/local/` |
 | `log.py` | `LogPanel` (a job's log as a card: `append(time, kind, message)`, All / Problems, copy, live dot, "writing to rotator.log" — or a file only read back, `set_file(name, writing=False)` — closes to its header with a problem badge; `fill=True` takes its layout's height and keeps the console open while collapsed, the Overview's glance), `LogModel` (the last 5 000 lines in a ring), `ProblemsFilter`, `LogView`, `ConsoleExcerpt` (a few lines quoted in a console well) |
 | `toast.py` | `Toast` (ok, info, warn, danger; an action link; close) and `ToastHost` (stacks a page's toasts bottom-right, at most four) |

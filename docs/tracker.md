@@ -90,6 +90,9 @@ need it — see [cycles](#cycles).
   - **SHOWN**: how long it stayed up — until the next one came up, in real
     time, like the pace.
   - **STATE**: on screen, the time it came up, or queued.
+  - Two small buttons at the end of each row, quiet until the pointer is on
+    the row, each saying what it does in its tool tip: **Send to Copier** and
+    **Mark [protected]** (see [a row's actions](#a-rows-actions)).
 
   `~` marks a time rebuilt from file times or Wallpaper Engine's record.
   Filter by title or author, pick an author, jump to *Shown* or *Queue*.
@@ -97,6 +100,37 @@ need it — see [cycles](#cycles).
   for](#watch-out-for)).
 - **Refresh now** looks at Wallpaper Engine at once and reads the list again;
   the table's ↻ reads the titles and authors again.
+
+### A row's actions
+
+**Send to Copier** puts the wallpaper's folder on the [Copier](copier.md)'s list
+for the usual number of copies (3), and you stay on the Tracker: a toast says
+so, with **Show** to go to the Copier. A folder already on the list is not
+listed twice; the toast says it is there already. The copying itself is
+started on the Copier page, as ever.
+
+**Mark [protected]** is for a folder that sits directly in the Rotator's
+myprojects (the folder set on the [Settings](settings.md) page): it renames
+`wallpaper_0012` to `[protected] wallpaper_0012`, and from then on the
+[Rotator](rotator.md) leaves it in myprojects, run after run. It asks first,
+showing the rename. Workshop (subscribed) folders are never offered it, and a
+folder that is protected already shows a blue lock instead. There is no
+"unprotect": rename the folder back in Explorer.
+
+**Wallpaper Engine's playlist is not touched.** Its entry for that wallpaper
+keeps the old name, so it stops working until the next rotation rebuilds the
+playlist. The question says so before you agree, the toast says so after, and
+the row keeps saying it: the lock turns amber and the title gets a line under
+it, *playlist entry broken until the next rotation · renamed [protected]*. The
+row keeps following the playlist (which still lists the old name); Send to
+Copier and a click on the row use the new folder.
+
+The rename runs off the window's thread — the library is on a hard disk — and
+the button is off meanwhile. If it cannot be done, a red toast says why in
+plain words and nothing changes: Wallpaper Engine (or another program) has the
+folder in use, a folder with the new name is already there, Windows denied
+access, or the folder is no longer in myprojects. While a rotation runs, a
+click only says to mark folders once the run has finished.
 
 **Where the titles and authors come from.** A wallpaper's title and type are
 in its own `project.json`. Its author is in no file Wallpaper Engine keeps, so
@@ -523,13 +557,20 @@ the number that answers "when can I rotate?".
 
 It **reads** the Rotator's `history.json` to date a cycle and never writes to
 it. The tracker writes nothing back to Wallpaper Engine; only a rotation does
-(see [the Rotator](rotator.md#wallpaper-engines-playlist)).
+(see [the Rotator](rotator.md#wallpaper-engines-playlist)). The one thing the
+page changes on disk is a folder's name in myprojects, when you **Mark
+[protected]** and agree.
 
 ## Watch out for
 
 - **Clicking a row** opens Explorer on that wallpaper's folder with the file
   selected. A playlist outlives its files, so a row whose file is gone opens the
   nearest folder that still exists instead.
+- **After Mark [protected]** the playlist's entry for that wallpaper is broken
+  until the next rotation rebuilds the playlist: Wallpaper Engine looks for
+  the old folder name. The page remembers the rename until the window closes;
+  opened again before a rotation, the row shows the old name, and marking it
+  again finds the folder already renamed, and the row catches up.
 - The **AUTHOR** column is only as complete as Review's Steam cache: the
   wallpapers of a rotated-in batch mostly came from the reserve, which Review
   has not looked up, and show "—".

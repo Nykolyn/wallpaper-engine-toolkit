@@ -17,7 +17,7 @@ from . import format
 from .base import Elided, Glyph, LiveDot, declare as declare_surface, label
 from .buttons import (
     AccentButton, DangerButton, GhostButton, IconButton, LinkButton, SecondaryButton,
-    button_pixmap, button_size,
+    button_pixmap, button_size, icon_button_pixmap,
 )
 from .cards import MonitorCard, MonitorView, StatCard, ToolTile
 from .chips import Chip, chip_pixmap, chip_size
@@ -40,9 +40,10 @@ from .shell import (
 )
 from .statusline import StatusLine
 from .tables import (
-    BusyCell, ButtonCell, Cell, ChipCell, Column, DiscCell, Group, ListRow, ListRowDelegate,
-    RowDelegate, RowList, SkeletonRows, Table, TableBar, TableFooter, TableHeader, TableModel,
-    TableSummary, Thumb, disc_pixmap, paint_list_row, paint_spinner, paint_thumb,
+    BusyCell, ButtonCell, ButtonsCell, Cell, CellButton, ChipCell, Column, DiscCell, Group,
+    ListRow, ListRowDelegate, RowDelegate, RowList, SkeletonRows, Table, TableBar, TableFooter,
+    TableHeader, TableModel, TableSummary, Thumb, buttons_width, disc_pixmap, paint_list_row,
+    paint_spinner, paint_thumb,
 )
 from .tags import TagPopup, TagSelect
 from .thumbs import ThumbLoader
@@ -52,7 +53,7 @@ __all__ = [
     "ICON_NAMES", "icon", "pixmap", "svg",
     "Glyph", "Elided", "LiveDot", "declare_surface", "label", "format",
     "AccentButton", "SecondaryButton", "DangerButton", "GhostButton", "IconButton", "LinkButton",
-    "button_pixmap", "button_size",
+    "button_pixmap", "button_size", "icon_button_pixmap",
     "TextInput", "SpinBox", "Dropdown", "DropdownPopup",
     "Checkbox", "Toggle", "SegmentedControl", "Pagination", "page_numbers",
     "Chip", "chip_pixmap", "chip_size",
@@ -62,7 +63,8 @@ __all__ = [
     "ProgressBar", "ProgressRing",
     "StatCard", "MonitorCard", "MonitorView", "ToolTile",
     "Table", "TableModel", "TableHeader", "RowDelegate", "Column", "Cell", "ChipCell", "Group",
-    "ButtonCell", "BusyCell", "DiscCell", "disc_pixmap", "paint_spinner",
+    "ButtonCell", "ButtonsCell", "CellButton", "buttons_width", "BusyCell", "DiscCell",
+    "disc_pixmap", "paint_spinner",
     "TableBar", "TableSummary", "TableFooter", "ListRow", "ListRowDelegate", "RowList",
     "SkeletonRows",
     "paint_list_row", "Thumb", "paint_thumb", "ThumbLoader",

@@ -27,8 +27,9 @@ touching the original.
 1. The **destination** — where the copies are written — is set on the
    [Settings](settings.md#folders) page and shown at the top of the Copier.
    It arrives pre-filled with Wallpaper Engine's `myprojects` folder.
-2. Add source folders. Drop them onto the list, or use the button. Each row is
-   one folder plus a count.
+2. Add source folders. Drop them onto the list, use the button, or send one
+   from the [Tracker](tracker.md#a-rows-actions)'s playlist. Each row is one
+   folder plus a count.
 3. Set the count per row. The default is 3.
 4. Press the accented button to start.
 
@@ -37,6 +38,15 @@ they sort next to it and are obvious to remove later.
 
 The log panel reports each copy as it lands, and the progress bar tracks the
 whole job rather than the current folder.
+
+## Folders from the Tracker
+
+**Send to Copier** at the end of a row in the Tracker's playlist puts that
+wallpaper's folder on this list, for the default 3 copies, while you stay on the
+Tracker; its toast's **Show** brings you here. A folder already on the list is
+not added again. Nothing is copied until you start here, so you can send a few,
+change their counts and remove what you did not mean. A folder marked
+[protected] on the Tracker is sent under its new name.
 
 ## How it works
 

@@ -1,7 +1,10 @@
 {
-  "//": "Made-up states of the Tracker page for tools/ui_snapshot.py and tests/test_tracker_page.py: each monitor's count (the fields of the tracker's Progress), its countdown, what is on its screen, and how its playlist is laid out. The page builds each playlist from these: 'total' wallpapers (and 'gone' deleted ones) called wallpaper_0001… under 'root', the first 'seen' of a shuffle shown one 'minutes' apart. Titles and authors come from the word lists below. Nothing here is anyone's data: the names are invented and the folders are on X:, which no machine here has. 'frame' is the state of shell.json the frame shows.",
+  "//": "Made-up states of the Tracker page for tools/ui_snapshot.py and tests/test_tracker_page.py: each monitor's count (the fields of the tracker's Progress), its countdown, what is on its screen, and how its playlist is laid out. The page builds each playlist from these: 'total' wallpapers (and 'gone' deleted ones) called wallpaper_0001… under 'root', the first 'seen' of a shuffle shown one 'minutes' apart; every 'workshop_every'-th is a subscribed one in 'workshop_root' instead (a made-up Workshop id for a folder), and those listed in 'protected' are named '[protected] wallpaper_000n'. A state's 'renamed' were marked [protected] on the page this session. Titles and authors come from the word lists below. Nothing here is anyone's data: the names are invented and the folders are on X:, which no machine here has. 'frame' is the state of shell.json the frame shows.",
   "now": "2026-09-19T13:44:00",
   "root": "X:/Steam/steamapps/common/wallpaper_engine/projects/myprojects",
+  "workshop_root": "X:/Steam/steamapps/workshop/content/431960",
+  "workshop_every": 5,
+  "protected": [3],
   "title_words": ["Harbour", "Lights", "Paper", "Cranes", "Tide", "Pine", "Mist", "Copper",
                   "Field", "Glass", "River", "Moth", "Orbit", "Signal", "Quiet", "Ember", "Salt",
                   "Cedar", "Velvet", "Dune", "Hollow", "Prism", "Linen", "Marble", "Fog"],
@@ -148,6 +151,21 @@
       "engine": true,
       "error": "No active playlist in config.json. Apply a playlist in Wallpaper Engine and restart it — the config is only written on exit.",
       "monitors": []
+    },
+    "marked": {
+      "frame": "running",
+      "background": true,
+      "engine": true,
+      "next_run": 39,
+      "renamed": [2],
+      "monitors": [
+        {"progress": {"monitor": "Monitor1", "seen": 4, "total": 201, "started": "2026-09-19 10:56:00",
+                      "current_since": "2026-09-19 13:30:00", "inferred": 1, "anchor": "rotation history",
+                      "from_rotation": true, "from_engine": true},
+         "countdown": {"remaining": 1560},
+         "resolution": "2560×1440",
+         "wallpaper": {"title": "Paper Lanterns at Dusk", "author": "Marlow", "known": true, "type": "scene"}}
+      ]
     }
   }
 }

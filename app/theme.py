@@ -768,6 +768,7 @@ TABLE_ICON_GAP = 7
 TABLE_SUB_GAP = 3        # a Cell's text to its second line
 TABLE_DISC = 18          # a DiscCell's disc
 TABLE_SPINNER = 14       # a BusyCell's ring
+TABLE_BUTTONS_GAP = 4    # between a ButtonsCell's glyph buttons
 DISC_GLYPH = 0.6         # a disc's glyph, as a share of the disc
 
 LIST_ROW_PAD = (8, 11)
@@ -949,8 +950,10 @@ PACE_FIGURE_GAP = 8           # the figure to the words after it
 TRACKER_FILTER = 184          # the filter over the playlist (the design's 168 cuts its words)
 TRACKER_AUTHORS = 140         # the author list, at the least
 # the playlist's fixed columns; the wallpaper's takes the rest (SHOWN is wider than the
-# design's 52 px, which cuts "1 h 10 min")
-TRACKER_COLUMNS = {"number": 32, "author": 88, "type": 48, "shown": 64, "state": 64}
+# design's 52 px, which cuts "1 h 10 min"). The last holds a row's two glyph buttons,
+# Send to Copier and Mark [protected]: two text buttons left WALLPAPER no room at 1 040.
+TRACKER_COLUMNS = {"number": 32, "author": 88, "type": 48, "shown": 64, "state": 64,
+                   "actions": 2 * ICON_BUTTON["sm"][0] + TABLE_BUTTONS_GAP}
 
 # -- the Rotator (RotatorIdle, RotatorRunning, RotatorDone, RotatorProblems)
 

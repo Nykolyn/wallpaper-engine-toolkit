@@ -648,6 +648,125 @@ check("a table's footer and summary carry their words",
 table_host.close()
 
 
+# ---- a cell of glyph buttons: a row's actions ---------------------------------------------------
+
+from PySide6.QtCore import QEvent                                                  # noqa: E402
+from PySide6.QtGui import QHelpEvent                                               # noqa: E402
+from PySide6.QtWidgets import QToolTip                                             # noqa: E402
+
+from app.ui.kit import (                                                          # noqa: E402
+    ButtonCell, ButtonsCell, CellButton, buttons_width, icon_button_pixmap,
+)
+
+check("a cell's button says what it does, with a glyph the kit has",
+      raises(lambda: CellButton("x", "copier", " "), ValueError)
+      and raises(lambda: CellButton("x", "no-such-glyph", "Do it"), KeyError)
+      and raises(lambda: ButtonsCell((), size="huge"), KeyError))
+check("a cell of two keeps room for both, an empty slot too",
+      ButtonsCell((CellButton("a", "copier", "A"), None)).width() == buttons_width(2)
+      == 2 * theme.ICON_BUTTON["sm"][0] + theme.TABLE_BUTTONS_GAP)
+
+SEND = CellButton("send", "copier", "Send to Copier")
+MARK = CellButton("mark", "lock", "Mark [protected]…")
+LOCKED = CellButton("locked", "lock", "[protected]", mark=True, tone="accent.hover")
+OFF = CellButton("mark", "lock", "Renaming…", enabled=False)
+ACTION_ROWS = [("Offered", (SEND, MARK)), ("Workshop", (SEND, None)), ("Protected", (SEND, LOCKED)),
+               ("Renaming", (SEND, OFF))]
+
+
+class Actions(TableModel):
+    def cell(self, item, column):
+        if column == 0:
+            return item[0]
+        if column == 1:
+            return ButtonCell("Go")
+        return ButtonsCell(item[1])
+
+
+actions = Actions([Column("Wallpaper", None), Column("", 60, sortable=False),
+                   Column("", buttons_width(2), "right", sortable=False)], ACTION_ROWS)
+check("a screen reader hears what the buttons do",
+      actions.data(actions.index(0, 2)) == "Send to Copier · Mark [protected]…"
+      and actions.data(actions.index(1, 2)) == "Send to Copier")
+acting = Table()
+acting.setModel(actions)
+acting_host = Host(700, 420)
+acting_host.column.addWidget(acting)
+acting_host.show()
+QApplication.processEvents()
+spans = acting.column_spans()
+
+
+def box_of(row: int, slot: int):
+    """Where a row's button in a slot is drawn, or None for an empty slot."""
+    left, width = spans[2]
+    middle = acting.rowViewportPosition(row) + acting.rowHeight(row) / 2
+    value = actions.cell(actions.item_at(row), 2)
+    boxes = acting._delegate.buttons_boxes(value, left, left + width, middle, Qt.AlignRight)
+    found = [box for button, box in boxes if button is value.buttons[slot]]
+    return found[0] if found else None
+
+
+check("the slots sit against the cell's right edge, each in the same place on every row",
+      box_of(0, 1).right() == spans[2][0] + spans[2][1]
+      and box_of(0, 0).left() == box_of(1, 0).left() and box_of(1, 1) is None)
+check("a click on one names its row, its column and its key",
+      acting.action_at(box_of(0, 0).center()) == (0, 2, "send")
+      and acting.action_at(box_of(0, 1).center()) == (0, 2, "mark"))
+left, width = spans[2]
+check("an empty slot, a mark and a button that is off are no buttons",
+      acting.action_at(QPointF(left + width - 8, box_of(1, 0).center().y())) is None
+      and acting.action_at(box_of(2, 1).center()) is None
+      and acting.action_at(box_of(3, 1).center()) is None
+      and acting.action_at(box_of(3, 0).center()) == (3, 2, "send"))
+go = acting.button_at(QPointF(spans[1][0] + 4, box_of(0, 0).center().y()))
+check("a ButtonCell beside it is found as before", go == (0, 1)
+      and acting.action_at(QPointF(spans[1][0] + 4, box_of(0, 0).center().y())) is None)
+check("at rest a row's glyphs are quiet, faded when off",
+      acting.action_look(0, 2, SEND) == ("default", "text.lo")
+      and acting.action_look(3, 2, OFF) == ("disabled", None))
+acting._hover_to(0)
+acting._set_hot_button((0, 2, "send"))
+check("on the row under the pointer they come up, and the one under it lights",
+      acting.action_look(0, 2, MARK) == ("default", None)
+      and acting.action_look(0, 2, SEND) == ("hover", None))
+acting._set_hot_button(None)
+check("their look is drawn once and kept",
+      icon_button_pixmap("copier", "hover") is icon_button_pixmap("copier", "hover")
+      and icon_button_pixmap("copier", "hover") is not icon_button_pixmap("copier", "default")
+      and icon_button_pixmap("copier", ink="text.lo").size() == QSize(22, 22))
+acted: list = []
+row_clicks: list = []
+activations: list = []
+acting.action_clicked.connect(lambda *a: acted.append(a))
+acting.clicked.connect(lambda index: row_clicks.append(index.row()))
+acting.doubleClicked.connect(lambda index: activations.append(index.row()))
+acting.activated.connect(lambda index: activations.append(index.row()))
+QTest.mouseClick(acting.viewport(), Qt.LeftButton, Qt.NoModifier, box_of(0, 1).center().toPoint())
+check("clicking it acts, and is no click on the row",
+      acted == [(0, 2, "mark")] and row_clicks == [] and acting.selected_items() == [])
+QTest.mouseClick(acting.viewport(), Qt.LeftButton, Qt.NoModifier, box_of(2, 1).center().toPoint())
+check("a click on a mark is a click on the row", acted == [(0, 2, "mark")] and row_clicks == [2])
+acted.clear()
+twice = box_of(1, 0).center().toPoint()
+QTest.mouseClick(acting.viewport(), Qt.LeftButton, Qt.NoModifier, twice)
+QTest.mouseDClick(acting.viewport(), Qt.LeftButton, Qt.NoModifier, twice)  # the second press
+QTest.mouseRelease(acting.viewport(), Qt.LeftButton, Qt.NoModifier, twice)
+check("a double-click on one presses it twice, as a button, and never activates the row",
+      acted == [(1, 2, "send"), (1, 2, "send")] and activations == [])
+tip_at = box_of(0, 1).center().toPoint()
+QApplication.sendEvent(acting.viewport(), QHelpEvent(QEvent.ToolTip, tip_at,
+                                                     acting.viewport().mapToGlobal(tip_at)))
+check("under the pointer, its tool tip says what it does", QToolTip.text() == "Mark [protected]…")
+tip_at = box_of(2, 1).center().toPoint()
+QApplication.sendEvent(acting.viewport(), QHelpEvent(QEvent.ToolTip, tip_at,
+                                                     acting.viewport().mapToGlobal(tip_at)))
+check("and so does a mark", QToolTip.text() == "[protected]")
+QToolTip.hideText()
+check("the table draws them", drawn(acting))
+acting_host.close()
+
+
 # ---- thumbnails: local previews ----------------------------------------------------------------------
 
 cache = scratch / "cache"

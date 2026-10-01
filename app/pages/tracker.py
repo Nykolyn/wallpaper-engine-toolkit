@@ -24,20 +24,32 @@ Where the numbers come from:
   each wallpaper's project.json, Review's Steam cache and the authors
   database (`engines/wallpaper_meta`), read off the GUI thread too, and kept.
 
+Each row ends with two glyph buttons. **Send to Copier** puts the row's
+folder on the Copier's list (`copier_requested`, wired to the Copier in
+`pages.build_pages`). **Mark [protected]** renames a folder that sits directly
+in the Rotator's myprojects to `[protected] <name>`, after asking, on a thread
+of its own (the library is on a hard disk); the Rotator then leaves it there.
+Wallpaper Engine's playlist is not touched: its entry keeps the old name and
+stops working until the next rotation rebuilds the playlist, and the row says
+so. Workshop folders are not offered it; a protected one shows a lock.
+
 The words come from plain functions (`monitor_view`, `pace_figure`,
-`finish_sentence`, `provenance`, `playlist_rows`, …), which tests call
-without building a widget. Nothing is invented (plan §2.6): `~` marks a
-reconstructed time, `≈` an estimate, "last known" what Wallpaper Engine is no
-longer there to confirm, and a number that is not known is "—", never 0.
+`finish_sentence`, `provenance`, `playlist_rows`, `protect_state`, …), which
+tests call without building a widget. Nothing is invented (plan §2.6): `~`
+marks a reconstructed time, `≈` an estimate, "last known" what Wallpaper
+Engine is no longer there to confirm, and a number that is not known is "—",
+never 0.
 
 Nothing here touches the disk on the window's thread, bar two things the old
 tab did there too and that only a click starts: a new cycle, and rebuilding
 the counts from file times (a stat of every wallpaper; the busy cursor says
-so). The TrackerFeed's own looks are its business (app/tracker_feed.py).
+so). Marking a folder [protected] renames it on a worker. The TrackerFeed's
+own looks are its business (app/tracker_feed.py).
 """
 from __future__ import annotations
 
 import json
+import os
 import queue
 import threading
 import time
@@ -52,18 +64,20 @@ from PySide6.QtWidgets import (
 )
 
 from .. import animations, external, theme
+from ..engines.rotator.core import PROTECTED_PREFIX, is_protected
 from ..engines.tracker import (
     ANCHOR_ENGINE, ANCHOR_FILE_TIMES, ANCHOR_NONE, ANCHOR_ROTATION, MIN_SAMPLE, TIME_FMT, Cycle,
     Progress, TrackerState, pick_primary, queue_is_known, upcoming,
 )
 from ..engines.wallpaper_meta import Described, MetaCache, fallback_title, folder_of
 from ..services.snapshot import LAST_RUN, PLAYLIST
+from ..settings import DEFAULT_COPIER_COUNT
 from ..tracker_feed import tray_running
 from ..ui.kit import (
-    AccentButton, Callout, Cell, Column, ConfirmDialog, Dropdown, EmptyState, FormDialog,
-    GhostButton, Glyph, GlassPanel, Group, IconButton, LinkButton, MonitorCard, MonitorView,
-    NavState, Overline, PathField, Rule, SecondaryButton, SegmentedControl, Table, TableBar,
-    TableFooter, TableModel, TextInput, format as fmt, label,
+    AccentButton, ButtonsCell, Callout, Cell, CellButton, Column, ConfirmDialog, Dropdown,
+    EmptyState, FormDialog, GhostButton, Glyph, GlassPanel, Group, IconButton, LinkButton,
+    MonitorCard, MonitorView, NavState, Overline, PathField, Rule, SecondaryButton,
+    SegmentedControl, Table, TableBar, TableFooter, TableModel, TextInput, format as fmt, label,
 )
 from ..ui.kit.base import set_tone
 from ..ui.kit.cards import qualified_html
@@ -307,6 +321,9 @@ class PlaylistRow:
     kind: str = ""
     known: bool = False
     folder: str = field(default="", repr=False)
+    # Marked [protected] here: `folder` is its new name, and Wallpaper Engine's
+    # entry (`item`) still names the old one until the next rotation.
+    stale: bool = False
 
     def describe(self, found: Described | None) -> bool:
         """Take what was read; True when it changed anything."""
@@ -407,6 +424,108 @@ def author_choices(rows) -> list[tuple[str, int]]:
     return sorted(counts.items(), key=lambda kv: (-kv[1], kv[0].casefold()))
 
 
+# ---- a row's actions: Send to Copier, Mark [protected] ------------------------------------------
+
+SEND, PROTECT, MARKED = "copier", "protect", "protected"     # the buttons' keys
+OFFER = "offer"                         # protect_state: Mark [protected] is offered
+# under the title of a row marked [protected] here; the consequence first, for a narrow table
+STALE_NOTE = "playlist entry broken until the next rotation · renamed [protected]"
+
+
+def folder_key(folder: str) -> str:
+    """A folder as two paths to it compare: separators and, on Windows, case."""
+    return os.path.normcase(os.path.normpath(folder)) if folder else ""
+
+
+def protect_state(folder: str, destination: str) -> str:
+    """What Mark [protected] can do for a row's folder: MARKED when its name
+    already says [protected] (in any case, as the Rotator reads it); OFFER
+    when it sits directly in the Rotator's myprojects (`destination`); ""
+    otherwise — a Workshop folder, or anything elsewhere. Paths only: nothing
+    is read."""
+    if not folder:
+        return ""
+    if is_protected(os.path.basename(os.path.normpath(folder))):
+        return MARKED
+    if destination and folder_key(os.path.dirname(os.path.normpath(folder))) \
+            == folder_key(destination):
+        return OFFER
+    return ""
+
+
+def protected_name(folder: str) -> str:
+    """The name a folder is marked [protected] under: `[protected] <name>`."""
+    return f"{PROTECTED_PREFIX} {os.path.basename(os.path.normpath(folder))}"
+
+
+def action_cell(row: PlaylistRow, state: str, renaming: bool = False) -> ButtonsCell:
+    """The row's last cell: Send to Copier, then Mark [protected] where it is
+    offered (off while the rename runs), a lock where the folder is marked
+    already (in warn, with what it means, when it was marked here), or an
+    empty slot."""
+    second = None
+    if state == MARKED:
+        second = (CellButton(MARKED, "lock", "Marked [protected] here. Wallpaper Engine's "
+                             "playlist still lists it under its old name: that entry stops "
+                             "working until the next rotation.", mark=True, tone="warn")
+                  if row.stale else
+                  CellButton(MARKED, "lock", "[protected]: the Rotator leaves it in myprojects",
+                             mark=True, tone="accent.hover"))
+    elif state == OFFER:
+        second = (CellButton(PROTECT, "lock", "Renaming it [protected]…", enabled=False)
+                  if renaming else CellButton(PROTECT, "lock", "Mark [protected]…"))
+    return ButtonsCell((CellButton(SEND, "copier", "Send to Copier"), second))
+
+
+class ProtectError(Exception):
+    """Why a folder could not be marked [protected], in words for a toast."""
+
+
+def protect_folder(folder: str) -> str:
+    """Rename a wallpaper folder to `[protected] <name>` beside it, and return
+    its new path. Raises ProtectError saying why not; nothing is changed then.
+    A folder already renamed (here, before the window was last closed) is
+    found under its new name. Touches the disk: a worker's job."""
+    source = Path(folder)
+    target = source.with_name(protected_name(folder))
+    if is_protected(source.name):
+        raise ProtectError("it is marked [protected] already.")
+    if not source.is_dir():
+        if target.is_dir():
+            return str(target)
+        raise ProtectError("it is not in myprojects any more.")
+    if target.exists():
+        raise ProtectError(f"there is already a folder called {target.name} in myprojects.")
+    try:
+        source.rename(target)
+    except FileExistsError:
+        raise ProtectError(f"there is already a folder called {target.name} in myprojects.") \
+            from None
+    except PermissionError as err:
+        if getattr(err, "winerror", None) == 32:         # ERROR_SHARING_VIOLATION
+            raise ProtectError("it is in use. Wallpaper Engine may be showing it; try again "
+                               "once it has moved on.") from None
+        raise ProtectError("Windows denied access to it. It may be in use (Wallpaper Engine "
+                           "may be showing it), or it is read-only.") from None
+    except OSError as err:
+        raise ProtectError(f"{err.strerror or err}.") from None
+    return str(target)
+
+
+def protect_dialog(old: str, new: str, parent: QWidget | None) -> ConfirmDialog:
+    """Asking before Mark [protected]: the rename, what it is for, and what it
+    does to Wallpaper Engine's playlist."""
+    return ConfirmDialog(
+        "Mark this folder [protected]?",
+        "The Rotator leaves [protected] folders in myprojects: no run takes this one back "
+        "to the reserve.",
+        parent, icon="lock", lines=[f"{old}  →  {new}"],
+        note=("warn", "Wallpaper Engine's playlist is not touched. Its entry for this wallpaper "
+                      "keeps the old name and stops working until the next rotation rebuilds "
+                      "the playlist."),
+        confirm_text="Rename")
+
+
 COLUMNS = (
     Column("#", theme.TRACKER_COLUMNS["number"], "right", mono=True, tone="text.lo"),
     Column("Wallpaper", None, thumb="row"),
@@ -415,7 +534,9 @@ COLUMNS = (
     Column("Shown", theme.TRACKER_COLUMNS["shown"], "right", mono=True, tone="text.mid"),
     Column("State", theme.TRACKER_COLUMNS["state"], "right", mono=True, tone="text.lo",
            sortable=False),
+    Column("", theme.TRACKER_COLUMNS["actions"], "right", sortable=False),
 )
+ACTIONS = len(COLUMNS) - 1
 GROUPS = (Group(SHOWN, "Already shown this cycle"), Group(QUEUE, "Queue"))
 
 
@@ -427,6 +548,8 @@ class PlaylistModel(TableModel):
         self.now = datetime.now()
         self.in_order = False
         self._digits = 3
+        self.destination = ""               # the Rotator's myprojects
+        self.renaming: set[str] = set()     # folder_key()s being marked [protected]
 
     def set_playlist(self, rows: list[PlaylistRow], in_order: bool, now: datetime) -> None:
         self.now, self.in_order = now, in_order
@@ -441,7 +564,11 @@ class PlaylistModel(TableModel):
             return f"{n:0{self._digits}d}"
         if column == 1:
             return Cell(row.title, "text.hi" if row.on_screen
-                        else "text.mid" if row.group == SHOWN else None)
+                        else "text.mid" if row.group == SHOWN else None,
+                        sub=STALE_NOTE if row.stale else "", sub_tone="warn")
+        if column == ACTIONS:
+            return action_cell(row, self.protect_state(row),
+                               folder_key(row.folder) in self.renaming)
         if column == 2:
             return row.author or fmt.DASH
         if column == 3:
@@ -465,6 +592,9 @@ class PlaylistModel(TableModel):
         if column == 4:
             return row.shown_for
         return super().sort_key(row, column)
+
+    def protect_state(self, row: PlaylistRow) -> str:
+        return protect_state(row.folder, self.destination)
 
     def thumb_source(self, row: PlaylistRow) -> str | None:
         return row.folder or None
@@ -609,6 +739,46 @@ def reveal(item: str) -> str | None:
 
 class _Revealed(QObject):
     failed = Signal(str)
+
+
+class _Offload(QObject):
+    """Runs a function on a thread of its own and hands its result (or the
+    exception it raised) to a callback on the window's thread — as the
+    Rotator page's does."""
+
+    _done = Signal(int, object)
+
+    def __init__(self, parent: QObject | None = None):
+        super().__init__(parent)
+        self._callbacks: dict[int, Callable] = {}
+        self._next = 0
+        self._done.connect(self._deliver)
+
+    def run(self, work: Callable[[], object], then: Callable[[object], None]) -> int:
+        self._next += 1
+        token = self._next
+        self._callbacks[token] = then
+        threading.Thread(target=self._work, args=(token, work), daemon=True,
+                         name="tracker page").start()
+        return token
+
+    def _work(self, token: int, work) -> None:
+        try:
+            result = work()
+        except Exception as err:  # noqa: BLE001 — handed over, not raised on a thread
+            result = err
+        try:
+            self._done.emit(token, result)
+        except RuntimeError:
+            pass                # the page went while the disk was answering
+
+    def _deliver(self, token: int, result) -> None:
+        then = self._callbacks.pop(token, None)
+        if then is not None:
+            then(result)
+
+    def busy(self) -> bool:
+        return bool(self._callbacks)
 
 
 # ---- the countdown -------------------------------------------------------------------------------
@@ -771,15 +941,20 @@ class TrackerPage(Page):
     title = "Tracker"
     icon = "tracker"
     FIXTURES = ("tracking", "paused", "disconnected", "finished", "restarted", "we-off",
-                "single-monitor", "no-config", "no-playlist")
+                "single-monitor", "no-config", "no-playlist", "marked")
+
+    # Send to Copier: these folders, for the Copier's list. `build_pages` hands
+    # them to the Copier and its answer back to `copier_took`.
+    copier_requested = Signal(list)
 
     def __init__(self, feed=None, services=None, parent: QWidget | None = None, *,
-                 settings=None, now=None, make_timer: Callable = page_timer,
+                 settings=None, config=None, now=None, make_timer: Callable = page_timer,
                  meta: MetaCache | None = None, load: Callable = load_cycle):
         super().__init__(parent)
         self._feed = feed
         self._services = services
         self._settings = settings
+        self._config = config               # the Rotator's: where myprojects is
         self._now = now or datetime.now
         self._fixture: dict | None = None
         self._results: list = []
@@ -796,6 +971,10 @@ class TrackerPage(Page):
         self._next_run: int | None = None
         self._on_screen = False
         self._revealed_last: tuple[str, float] = ("", 0.0)
+        self._renamed: dict[str, str] = {}      # folder_key(old) → new folder, this session
+        self._copier_answer: int | None = None
+        self._sending = ""                      # the title of the row sent to the Copier
+        self.messages: list[tuple[str, str]] = []   # (tone, words) of each toast, for tests
 
         self.reader = ListReader(meta or MetaCache(), load, self)
         self.reader.rows_read.connect(self._rows_read)
@@ -804,6 +983,7 @@ class TrackerPage(Page):
         self.countdowns.ticked.connect(self._render_cards)
         self._revealed = _Revealed(self)
         self._revealed.failed.connect(self._reveal_failed)
+        self._offload = _Offload(self)
 
         self._build()
 
@@ -896,6 +1076,7 @@ class TrackerPage(Page):
         self.table.setSelectionMode(QAbstractItemView.SingleSelection)
         self.table.clicked.connect(self._row_clicked)
         self.table.activated.connect(self._row_clicked)
+        self.table.action_clicked.connect(self._action_clicked)
         self.table.verticalScrollBar().valueChanged.connect(self._follow_scroll)
         column.addWidget(self.table, 1)
         self.footer = TableFooter("")
@@ -964,6 +1145,7 @@ class TrackerPage(Page):
         self._on_screen = True
         if self._settings is not None:
             self._settings.reload_if_changed()
+        self._follow_destination()
         self.countdowns.start()
         self._tick()
         if self._list_dirty:
@@ -1170,6 +1352,11 @@ class TrackerPage(Page):
         same = monitor == self._list_monitor
         scroll = self.table.verticalScrollBar().value() if same else 0
         self._list_monitor = monitor
+        for row in rows:
+            renamed = self._renamed.get(folder_key(row.folder))
+            if renamed:
+                row.folder, row.stale = renamed, True
+        self.model.destination = self._destination()
         self.model.set_playlist(rows, in_order, now)
         self._fill_authors(rows)
         self._apply_filter()
@@ -1258,7 +1445,8 @@ class TrackerPage(Page):
         row = self.model.item_at(index.row())
         if row is None or self._fixture is not None:
             return
-        item = row.item
+        # a folder marked [protected] here is under its new name; the entry, the old
+        item = row.folder if row.stale else row.item
         last, when = self._revealed_last
         if item == last and time.monotonic() - when < REVEAL_AGAIN:
             return
@@ -1274,9 +1462,124 @@ class TrackerPage(Page):
         threading.Thread(target=run, daemon=True, name="tracker-reveal").start()
 
     def _reveal_failed(self, problem: str) -> None:
+        self._say("warn", problem)
+
+    # -- a row's actions
+
+    def _destination(self) -> str:
+        """The Rotator's myprojects, as its settings say (a fixture's: its root)."""
+        if self._fixture is not None:
+            return self._fixture_data.get("root", "")
+        return getattr(self._config, "destination", "") or ""
+
+    def _follow_destination(self) -> None:
+        """myprojects may have moved on the Settings page meanwhile."""
+        destination = self._destination()
+        if destination != self.model.destination:
+            self.model.destination = destination
+            self.table.viewport().update()
+
+    def _action_clicked(self, row: int, _column: int, key: str) -> None:
+        item = self.model.item_at(row)
+        if item is None:
+            return
+        if key == SEND:
+            self.send_to_copier(item)
+        elif key == PROTECT:
+            self.protect(item)
+
+    def send_to_copier(self, row: PlaylistRow) -> bool:
+        """Put the row's folder on the Copier's list, for the default copies,
+        and stay here: a toast says so, with the way to the Copier."""
+        if self._fixture is not None or not row.folder:
+            return False
+        self._copier_answer = None
+        self._sending = row.title
+        self.copier_requested.emit([row.folder])
+        self._sending = ""
+        if self._copier_answer is None:
+            self._say("warn", "The Copier is not there to take it.")
+            return False
+        return True
+
+    def copier_took(self, folders: list, added: int) -> None:
+        """The Copier's answer to `copier_requested`: how many it added."""
+        self._copier_answer = added
+        names = (f"“{self._sending}”" if self._sending and len(folders) == 1
+                 else ", ".join(os.path.basename(os.path.normpath(f)) for f in folders))
+        if added:
+            self._say("ok", f"{names} is on the Copier's list, for "
+                            f"{fmt.counted(DEFAULT_COPIER_COUNT, 'copy', 'copies')}.",
+                      action="Show", on_action=lambda: self.navigate.emit("copier"))
+        else:
+            self._say("info", f"{names} is on the Copier's list already.",
+                      action="Show", on_action=lambda: self.navigate.emit("copier"))
+
+    def protect(self, row: PlaylistRow) -> bool:
+        """Mark [protected]: ask, then rename the row's folder to `[protected]
+        <name>` on a worker. False when it was not offered, not wanted or not
+        possible now."""
+        if self._fixture is not None or self.model.protect_state(row) != OFFER:
+            return False
+        folder = row.folder
+        if folder_key(folder) in self.model.renaming:
+            return False
+        if self._rotating():
+            self._say("warn", "A rotation is running. Mark folders [protected] once it has "
+                              "finished.")
+            return False
+        old, new = os.path.basename(os.path.normpath(folder)), protected_name(folder)
+        if not self._answer(protect_dialog(old, new, self._dialog_parent())):
+            return False
+        if self._rotating():
+            self._say("warn", "A rotation started meanwhile. Mark folders [protected] once it "
+                              "has finished.")
+            return False
+        self.model.renaming.add(folder_key(folder))
+        self.table.viewport().update()
+        self._offload.run(lambda: protect_folder(folder),
+                          lambda result: self._protected(folder, result))
+        return True
+
+    def _protected(self, folder: str, result) -> None:
+        """The rename is done, or could not be: the row, and a toast."""
+        self.model.renaming.discard(folder_key(folder))
+        old, new = os.path.basename(os.path.normpath(folder)), protected_name(folder)
+        if isinstance(result, Exception):
+            reason = (str(result) if isinstance(result, ProtectError)
+                      else f"{result}.")
+            self.table.viewport().update()
+            self._say("danger", f"Could not mark {old} [protected]: {reason} "
+                                f"Nothing was changed.")
+            return
+        self._renamed[folder_key(folder)] = result
+        for row in self.model.items():
+            if folder_key(row.folder) == folder_key(folder):
+                row.folder, row.stale = result, True
+        self.table.viewport().update()
+        self.table.request_visible_thumbs()
+        self._say("ok", f"{old} is now {new}: the Rotator leaves it in myprojects. Wallpaper "
+                        f"Engine's playlist still has the old name; that entry stops working "
+                        f"until the next rotation.")
+
+    def _rotating(self) -> bool:
+        jobs = getattr(self._services, "jobs", None)
+        return jobs is not None and jobs.is_running("rotator")
+
+    def _dialog_parent(self) -> QWidget:
+        return self.window() if self.window() is not None else self
+
+    def _answer(self, dialog):
+        """Ask. Tests put their own answer here."""
+        return dialog.ask()
+
+    def _say(self, tone: str, words: str, *, action: str | None = None,
+             on_action: Callable[[], None] | None = None) -> None:
+        """A toast on the window, and a line kept for tests."""
+        self.messages.append((tone, words))
         toasts = getattr(self.window(), "toasts", None)
         if toasts is not None:
-            toasts.show_toast(problem, "warn")
+            toasts.show_toast(words, tone, action=action, on_action=on_action)
 
     def show_list(self, monitor: str) -> None:
         """Show this monitor's playlist in the table (the leading one's is the
@@ -1521,6 +1824,11 @@ class TrackerPage(Page):
         self._fixture_resolutions = {}
         self._fixture_cycles = {}
         self._described = {}
+        self._renamed = {}
+        for n in spec.get("renamed", []):
+            folder = str(folder_of(_fixture_item(data, n)))
+            self._renamed[folder_key(folder)] = os.path.join(os.path.dirname(folder),
+                                                             protected_name(folder))
         for m in spec.get("monitors", []):
             p = _fixture_progress(m["progress"])
             cycle = _fixture_cycle(data, m, p, now)
@@ -1617,8 +1925,28 @@ def _fixture_progress(spec: dict) -> Progress:
     return Progress(**values)
 
 
+WORKSHOP_ID = 1_700_000_000         # a made-up Workshop folder is this plus its number
+
+
 def _fixture_item(data: dict, n: int) -> str:
-    return f"{data['root']}/wallpaper_{n:04d}/scene.pkg"
+    """Wallpaper n of a fixture's playlists: in myprojects (`root`) — under
+    `[protected] …` when listed in `protected` — or every `workshop_every`-th
+    a subscribed one, in the Workshop's folder."""
+    every = data.get("workshop_every")
+    if every and n % every == 0 and data.get("workshop_root"):
+        return f"{data['workshop_root']}/{WORKSHOP_ID + n}/scene.pkg"
+    name = f"wallpaper_{n:04d}"
+    if n in data.get("protected", ()):
+        name = f"{PROTECTED_PREFIX} {name}"
+    return f"{data['root']}/{name}/scene.pkg"
+
+
+def _fixture_number(item: str) -> int:
+    """Which of the fixture's wallpapers an entry is (see `_fixture_item`)."""
+    name = item.replace("\\", "/").rstrip("/").split("/")[-2]
+    if name.isdigit():
+        return int(name) - WORKSHOP_ID
+    return int(name.rsplit("wallpaper_", 1)[1])
 
 
 def _fixture_cycle(data: dict, entry: dict, p: Progress, now: datetime) -> Cycle:
@@ -1654,7 +1982,7 @@ def _fixture_described(spec: dict) -> Described:
 
 def _fixture_row_described(data: dict, item: str) -> Described:
     from ..engines.wallpaper_meta import WallpaperMeta
-    n = int(item.rsplit("wallpaper_", 1)[1].split("/", 1)[0])
+    n = _fixture_number(item)
     words, authors, kinds = data["title_words"], data["authors"], data["kinds"]
     first, second = (n * 7) % len(words), (n * 3 + 5) % len(words)
     if second == first:
