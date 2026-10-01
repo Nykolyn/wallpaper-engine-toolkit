@@ -46,6 +46,13 @@ DEFAULT_WORKSHOP = steam_paths.as_text(steam_paths.workshop_dir())
 # versions wrote the second spelling.
 _ID_KEYS = ("workshopid", "workshopId")
 
+# What a library root is to the Rotator (`Library.places`), most telling first.
+ROTATION = "rotation"        # myprojects, what Wallpaper Engine plays from
+RESERVE = "reserve"
+DUPLICATES = "duplicates"
+LIBRARY = "library"          # a root the Rotator does not name
+PLACE_ORDER = (ROTATION, RESERVE, DUPLICATES, LIBRARY)
+
 
 def find_workshop_content(hint: str | Path | None = None) -> Path | None:
     """Where Steam puts subscribed Wallpaper Engine items."""
@@ -86,9 +93,19 @@ class Library:
     def __init__(self, workshop: str | Path | None = None,
                  roots: Iterable[str | Path] | None = None,
                  index_path: Path = INDEX_PATH,
-                 on_log: Callable[[str], None] | None = None):
+                 on_log: Callable[[str], None] | None = None,
+                 places: dict | None = None):
         self.workshop = find_workshop_content(workshop)
-        self.roots = [Path(r) for r in roots] if roots is not None else _rotator_roots()
+        if roots is None:
+            found = _rotator_places()
+            self.roots = [root for root, _ in found]
+            places = {root: place for root, place in found}
+        else:
+            self.roots = [Path(r) for r in roots]
+        # What each root is to the Rotator, for "matches a folder in the
+        # reserve": RESERVE, ROTATION or DUPLICATES. A root it does not know is
+        # just the library.
+        self._places = {os.path.normcase(str(Path(r))): p for r, p in (places or {}).items()}
         self.index_path = Path(index_path)
         self._log = on_log or (lambda _message: None)
         self._scans: dict[str, Scan] = {}
@@ -182,6 +199,24 @@ class Library:
         """The ones worth marking: kept at some point, not subscribed now."""
         return self.ever_had() - self.subscribed()
 
+    def places(self) -> dict[str, str]:
+        """Where each workshop id in the libraries is, as the Rotator names the
+        folder: RESERVE, ROTATION, DUPLICATES, or LIBRARY for a root it does
+        not know. An id kept in two places is where it counts most: in
+        rotation before the reserve, the reserve before the duplicates."""
+        found: dict[str, str] = {}
+        rank = {place: i for i, place in enumerate(PLACE_ORDER)}
+        for root, scan in self._scans.items():
+            place = self._places.get(os.path.normcase(root), LIBRARY)
+            for entry in scan.folders.values():
+                item_id = entry[1]
+                if not item_id:
+                    continue
+                have = found.get(item_id)
+                if have is None or rank[place] < rank[have]:
+                    found[item_id] = place
+        return found
+
     def refresh(self, force: bool = False,
                 on_progress: Callable[[str, int, int], None] | None = None) -> dict:
         """Re-read the libraries, opening only what has changed since last time."""
@@ -257,13 +292,16 @@ class Library:
             self._log(f"could not save the library index: {err}")
 
 
-def _rotator_roots() -> list[Path]:
-    """The three folders the Rotator already knows about — those that are set.
+def _rotator_places() -> list[tuple[Path, str]]:
+    """The three folders the Rotator already knows about — those that are set —
+    and what each is to it.
 
     An empty or relative one would walk the working directory instead.
     """
     config = RotatorConfig.load()
-    return [Path(p) for p in (config.source, config.destination, config.duplicates)
+    return [(Path(p), place) for p, place in ((config.source, RESERVE),
+                                               (config.destination, ROTATION),
+                                               (config.duplicates, DUPLICATES))
             if folder_is_set(p)]
 
 

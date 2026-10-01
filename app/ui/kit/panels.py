@@ -37,7 +37,7 @@ from PySide6.QtWidgets import (
 from ... import animations, theme
 from . import base, icons
 from .base import Caster, Glyph, elevation_margins, follow, grouped, label, set_tone
-from .tables import Thumb
+from .tables import Thumb, paint_spinner
 
 _UNSET = object()
 
@@ -780,16 +780,7 @@ class Spinner(QWidget):
 
     def paintEvent(self, event) -> None:        # noqa: N802 - Qt's name
         painter = QPainter(self)
-        painter.setRenderHint(QPainter.Antialiasing)
-        stroke = theme.ACTIVITY_SPINNER_STROKE
-        box = QRectF(self.rect()).adjusted(stroke / 2, stroke / 2, -stroke / 2, -stroke / 2)
-        painter.setBrush(Qt.NoBrush)
-        painter.setPen(QPen(theme.color("surface.raised"), stroke))
-        painter.drawEllipse(box)
-        painter.setPen(QPen(theme.color("accent"), stroke))
-        # the CSS colours the ring's top and right sides: ten-thirty round to four-thirty
-        start = 135 - animations.loop("spin").value()
-        painter.drawArc(box, round(start * 16), -round(360 * theme.ACTIVITY_SPIN_ARC * 16))
+        paint_spinner(painter, QRectF(self.rect()), animations.loop("spin").value())
 
 
 class ActivityLine(QWidget):

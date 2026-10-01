@@ -99,7 +99,8 @@ WE_CONFIG.write_text(json.dumps({
 # ---- The library -----------------------------------------------------------
 
 library = lib_mod.Library(workshop=WORKSHOP, roots=[RESERVE, PROJECTS],
-                          index_path=TMP / "library.json")
+                          index_path=TMP / "library.json",
+                          places={RESERVE: lib_mod.RESERVE, PROJECTS: lib_mod.ROTATION})
 check("what is subscribed is a directory listing, nothing cleverer",
       library.subscribed() == {"1001", "1002"})
 
@@ -123,6 +124,27 @@ reloaded = lib_mod.Library(workshop=WORKSHOP, roots=[RESERVE, PROJECTS],
                            index_path=TMP / "library.json")
 check("and the index survives a restart, so the slow walk is paid once",
       reloaded.ever_had() == library.ever_had() and reloaded.scanned)
+
+# Where a copy is, for "matches a folder in the reserve": each root is what the
+# Rotator calls it, and a root it does not name is just the library.
+places = library.places()
+check("a kept copy says which of the Rotator's folders holds it",
+      places["2001"] == lib_mod.RESERVE and places["2002"] == lib_mod.ROTATION
+      and places["2003"] == lib_mod.RESERVE)
+check("and a library opened without names calls every root the library",
+      set(reloaded.places().values()) == {lib_mod.LIBRARY})
+both = TMP / "both"
+both_reserve, both_rotation = both / "reserve", both / "myprojects"
+for root in (both_reserve, both_rotation):
+    root.mkdir(parents=True, exist_ok=True)
+kept(both_reserve, "kept-twice", "7001")
+kept(both_rotation, "kept-twice", "7001")
+twice = lib_mod.Library(workshop=None, roots=[both_reserve, both_rotation],
+                        index_path=both / "library.json",
+                        places={both_reserve: lib_mod.RESERVE, both_rotation: lib_mod.ROTATION})
+twice.refresh()
+check("a copy in rotation and in the reserve is named where it plays from",
+      twice.places() == {"7001": lib_mod.ROTATION})
 
 
 # ---- Reading Wallpaper Engine's own folder ---------------------------------
@@ -329,8 +351,15 @@ check("and no card calls itself new to you before anything has asked",
 
 review.mark_owned(card)
 check("the pass that does ask marks what was owned once and deleted",
-      card.owned_checked and card.returning == 2
-      and {w.id for w in card.offered if w.once_had} == {"3001", "2002"})
+      card.owned_checked and card.returning == 1
+      and {w.id for w in card.offered if w.once_had} == {"3001"})
+# A copy still kept in the libraries is not "was yours": it is "already have",
+# and the card says where the copy is.
+kept_copy = next(w for w in card.offered if w.id == "2002")
+check("one with a copy kept is marked already had, and where",
+      card.have == 1 and kept_copy.in_library and not kept_copy.once_had
+      and kept_copy.library_place == lib_mod.ROTATION)
+check("neither is new to you", not any(w.unseen for w in card.offered))
 # This is the one that was missing. A wallpaper subscribed to and dropped
 # without ever being copied leaves nothing in the libraries — but Wallpaper
 # Engine's folder still remembers its id, for ever. On the real machine that
@@ -891,6 +920,15 @@ check("what the page writes is what Overview and the badge read",
       and state.waiting == 2 and state.finished is None and state.checked == 5)
 check("the file names the authors by account as well as by name",
       [a["id"] for a in data["authors"]] == [WEEK[0], WEEK[2], WEEK[4]])
+
+held = cards5[0].offered[0]
+held.in_library, held.library_place = True, lib_mod.RESERVE
+counted = rf.Session.from_result(done_outcome.result, scanned=when)
+check("what you already have is counted apart from what was yours, and written down",
+      counted.have == 1 and counted.find(WEEK[0]).have == 1
+      and counted.to_json()["authors"][0]["have"] == 1
+      and ReviewState.from_json(counted.to_json()).authors == 3)
+held.in_library, held.library_place = False, ""
 
 last_file = TMP / "review_last.json"
 rf.save_last(last_file, data)

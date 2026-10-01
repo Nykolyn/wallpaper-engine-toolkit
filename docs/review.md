@@ -53,7 +53,9 @@ Nothing. Press **Scan for new items**.
 3. When the scan finishes, the authors with new items are listed on the left
    and the first is opened: everything of theirs you are not subscribed to and
    have not seen since your last visit, newest first, as
-   [a gallery](gallery.md). Subscribe to what you want.
+   [a gallery](gallery.md) — a grid of cards or a list. Click a card to
+   subscribe; Ctrl-click or its check selects several, for **Subscribe
+   selected**.
 4. Press **Done with <author> →**. The author is ticked, the next one opens,
    and the count at the top of the list moves on: **3 / 12**.
 5. Press **Finish review** in the header. The page lists what it will write
@@ -74,7 +76,7 @@ from one start to the next, so a review left unfinished then needs a new scan.
 | **Scanning** | the scan as it goes, *34 / 118 authors checked · ≈1 min left*, the author being checked, **Found so far** |
 | **Stopped** | why, in plain words, with the last lines of its log; **Carry on from author 34**, **Start over**, **Open log folder** |
 | **Reviewing** | the authors with new items on the left, ticked as you go; an author's gallery on the right; **Skip for now** and **Finish review** |
-| **Finished** | how many authors went through, what was subscribed, the numbers, the last scan, and **Reopen review** |
+| **Finished** | how many authors went through, what was subscribed, the numbers (new items found, subscribed, already had, were yours), the last scan, **Open review as a list** and **Reopen review** |
 
 The sidebar's Review item says the same in a word: a bar while it scans, a
 badge with the authors still waiting, *stopped*, or *finished*.
@@ -135,14 +137,15 @@ wallpaper ever put aside and since deleted, turning a week's 26 authors into 453
 
 ### Whether you have had a wallpaper before
 
-A card in a gallery says **was yours** when this machine has had that wallpaper
-at some point, and **new to you** when it never has. Two records answer that,
-and one of them used to be missing:
+A card in a gallery says **already have** when a copy is kept in the Rotator's
+folders, **was yours** when it was subscribed once and dropped, and **new** when
+this machine has never had it. Two records answer that, and one of them used to
+be missing:
 
-| Record | What it knows | Ids here |
-|---|---|---|
-| `project.json` in the local libraries | every workshop wallpaper you kept a copy of | 4 412 |
-| Wallpaper Engine's own folders | every id ever put in one, for ever | 16 629 |
+| Record | What it knows | Ids here | Mark |
+|---|---|---|---|
+| `project.json` in the local libraries | every workshop wallpaper you kept a copy of, and in which folder | 4 412 | already have |
+| Wallpaper Engine's own folders | every id ever put in one, for ever | 16 629 | was yours |
 
 The second is the larger by far. A wallpaper subscribed to and later dropped
 without ever being copied leaves nothing in the libraries — but its id stays in
@@ -153,8 +156,8 @@ though they had never been seen.
 The answer costs a parse of a 2.35 MB `config.json` — 0.02 s — so it is worked
 out once, at the end of the scan, for every author with something new; after
 that it is a lookup per wallpaper. That is also what makes the finished
-review's *were yours* a whole count rather than one for the galleries you
-happened to open.
+review's *already had* and *were yours* whole counts rather than ones for the
+galleries you happened to open.
 
 ### Finishing: the visit date moves to the newest wallpaper the review covered
 
