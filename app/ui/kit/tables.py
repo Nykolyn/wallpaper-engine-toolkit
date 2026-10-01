@@ -54,6 +54,7 @@ from PySide6.QtWidgets import (
 from ... import animations, theme
 from . import icons
 from .base import label
+from .buttons import button_pixmap, button_size
 from .chips import chip_pixmap, chip_size
 from .thumbs import ThumbLoader, shared as shared_loader
 
@@ -281,11 +282,14 @@ class Column:
 class Cell:
     """A cell's text in a tone of its own ("on screen" in accent), or strong;
     `icon` is a glyph before it, in the same tone (a lock on a [protected]
-    folder)."""
+    folder); `sub` is a second, quieter line under it (mono, `sub_tone`,
+    text.lo by default): a wallpaper's date under its title."""
     text: str
     tone: str | None = None
     strong: bool = False
     icon: str | None = None
+    sub: str = ""
+    sub_tone: str | None = None
 
 
 @dataclass(frozen=True)
@@ -293,6 +297,33 @@ class ChipCell:
     """A cell that is a Chip (`ChipCell("New")`, `ChipCell("NeedsTags")`)."""
     variant: str
     text: str | None = None
+
+
+@dataclass(frozen=True)
+class ButtonCell:
+    """A button drawn in the cell, `variant` at rest and `hot` on the row under
+    the pointer (the gallery's Subscribe turns Accent there). A click on it is
+    `Table.button_clicked(row, column)`, not a click on the row."""
+    text: str
+    variant: str = "secondary"
+    hot: str | None = "accent"
+
+
+@dataclass(frozen=True)
+class BusyCell:
+    """Work under way on the row: a ring and its words ("Subscribing…"). The
+    ring turns while the table is told the row spins (`Table.set_spinning`)."""
+    text: str
+    tone: str = "accent.hover"
+
+
+@dataclass(frozen=True)
+class DiscCell:
+    """A glyph on a filled disc (the gallery's subscribed check); `label` is
+    what it says to a screen reader."""
+    icon: str = "check"
+    tone: str = "info"
+    label: str = ""
 
 
 @dataclass(frozen=True)
@@ -310,7 +341,54 @@ def _text_of(value) -> str:
         return ""
     if isinstance(value, (Cell, ChipCell)):
         return value.text or ("" if isinstance(value, Cell) else value.variant)
+    if isinstance(value, (ButtonCell, BusyCell)):
+        return value.text
+    if isinstance(value, DiscCell):
+        return value.label
     return str(value)
+
+
+_discs: dict[tuple, QPixmap] = {}
+
+
+def disc_pixmap(icon: str, tone: str, size: int, dpr: float) -> QPixmap:
+    """A glyph in text.onAccent on a disc of `tone`, made once per (icon, tone,
+    size, scale): the subscribed check on a gallery card, a DiscCell."""
+    key = (icon, tone, size, round(dpr, 3))
+    found = _discs.get(key)
+    if found is not None:
+        return found
+    pixmap = QPixmap(math.ceil(size * dpr), math.ceil(size * dpr))
+    pixmap.setDevicePixelRatio(dpr)
+    pixmap.fill(Qt.transparent)
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.Antialiasing)
+    painter.setPen(Qt.NoPen)
+    painter.setBrush(theme.color(tone))
+    painter.drawEllipse(QRectF(0, 0, size, size))
+    glyph = round(size * theme.DISC_GLYPH)
+    painter.drawPixmap(QPointF((size - glyph) / 2, (size - glyph) / 2),
+                       icons.pixmap(icon, "text.onAccent", glyph, dpr))
+    painter.end()
+    _discs[key] = pixmap
+    return pixmap
+
+
+def paint_spinner(painter: QPainter, box: QRectF, angle: float) -> None:
+    """The kit's spinner in `box`: half a ring in accent turning over the rest
+    of it, at the "spin" loop's `angle` (a Spinner, a BusyCell, a gallery card
+    being subscribed to)."""
+    stroke = theme.ACTIVITY_SPINNER_STROKE
+    box = QRectF(box).adjusted(stroke / 2, stroke / 2, -stroke / 2, -stroke / 2)
+    painter.save()
+    painter.setRenderHint(QPainter.Antialiasing)
+    painter.setBrush(Qt.NoBrush)
+    painter.setPen(QPen(theme.color("surface.raised"), stroke))
+    painter.drawEllipse(box)
+    painter.setPen(QPen(theme.color("accent"), stroke))
+    # the CSS colours the ring's top and right sides: ten-thirty round to four-thirty
+    painter.drawArc(box, round((135 - angle) * 16), -round(360 * theme.ACTIVITY_SPIN_ARC * 16))
+    painter.restore()
 
 
 def _sortable(value):
@@ -644,8 +722,10 @@ class RowDelegate(QStyledItemDelegate):
         self._colours: dict[str, object] = {}
         self._elided: dict[tuple, str] = {}
         self._chips: dict[tuple, tuple[float, float]] = {}
+        self._buttons: dict[tuple, tuple[float, float]] = {}
         self._font = None
         self._dpr = 1.0
+        self._row = -1
 
     def begin(self, dpr: float) -> None:
         """A new pass, with a new painter: forget which font it holds."""
@@ -688,6 +768,7 @@ class RowDelegate(QStyledItemDelegate):
         if item is None:
             self.paint_group(painter, QRectF(rect), model.group_at(row), model.group_note(row))
             return
+        self._row = row
         tone = None if selected else model.row_tone(item)
         fill = ("accent.soft" if selected else f"{tone}.soft" if tone
                 else "surface.raised" if hovered
@@ -759,7 +840,31 @@ class RowDelegate(QStyledItemDelegate):
             painter.drawPixmap(QPointF(chip_left - ring, middle - size[1] / 2 - ring),
                                chip_pixmap(value.variant, value.text, "default", self._dpr))
             return
+        if isinstance(value, ButtonCell):
+            box = self.button_box(value, x, right, middle, align)
+            painter.drawPixmap(box.topLeft(), button_pixmap(
+                value.text, *self._table.button_look(self._row, c, value), dpr=self._dpr))
+            return
+        if isinstance(value, DiscCell):
+            size = theme.TABLE_DISC
+            left = (right - size if align == Qt.AlignRight
+                    else (x + right - size) / 2 if align == Qt.AlignHCenter else x)
+            painter.drawPixmap(QPointF(left, middle - size / 2),
+                               disc_pixmap(value.icon, value.tone, size, self._dpr))
+            return
         box = QRectF(x, top, right - x, height)
+        if isinstance(value, BusyCell):
+            size = theme.TABLE_SPINNER
+            font, metrics = self._fonts.get(column.type_token())
+            width = size + theme.TABLE_ICON_GAP + metrics.horizontalAdvance(value.text)
+            left = (right - width if align == Qt.AlignRight
+                    else (x + right - width) / 2 if align == Qt.AlignHCenter else x)
+            paint_spinner(painter, QRectF(left, middle - size / 2, size, size),
+                          animations.loop("spin").value() if self._table.spins(self._row) else 0)
+            self._font = None
+            box.setLeft(left + size + theme.TABLE_ICON_GAP)
+            self._text(painter, box, value.text, column.type_token(), value.tone, Qt.AlignLeft)
+            return
         if isinstance(value, Cell):
             tone = value.tone or column.tone
             if value.icon:
@@ -767,11 +872,35 @@ class RowDelegate(QStyledItemDelegate):
                 painter.drawPixmap(QPointF(x, middle - size / 2),
                                    icons.pixmap(value.icon, tone, size, self._dpr))
                 box.setLeft(x + size + theme.TABLE_ICON_GAP)
+            if value.sub:
+                token = column.type_token()
+                main = self._fonts.get(token, value.strong)[1].height()
+                sub = self._fonts.get("type.monoXs")[1].height()
+                first = middle - (main + theme.TABLE_SUB_GAP + sub) / 2
+                self._text(painter, QRectF(box.left(), first, box.width(), main), value.text,
+                           token, tone, align, column.elide, value.strong)
+                self._text(painter, QRectF(box.left(), first + main + theme.TABLE_SUB_GAP,
+                                           box.width(), sub),
+                           value.sub, "type.monoXs", value.sub_tone or "text.lo", align, "right")
+                return
             self._text(painter, box, value.text, column.type_token(),
                        tone, align, column.elide, value.strong)
         elif value is not None:
             self._text(painter, box, str(value), column.type_token(), column.tone,
                        align, column.elide)
+
+    def button_box(self, value: ButtonCell, left: float, right: float, middle: float,
+                   align) -> QRectF:
+        """Where a ButtonCell's button sits in a cell spanning left to right."""
+        key = (value.text, "md")
+        size = self._buttons.get(key)
+        if size is None:
+            box = button_size(value.text)
+            size = self._buttons[key] = (box.width(), box.height())
+        width, height = size
+        x = (right - width if align == Qt.AlignRight
+             else (left + right - width) / 2 if align == Qt.AlignHCenter else left)
+        return QRectF(x, middle - height / 2, width, height)
 
     # -- as an ordinary delegate
 
@@ -784,6 +913,7 @@ class RowDelegate(QStyledItemDelegate):
         if item is None:
             return
         self.begin(painter.device().devicePixelRatioF())
+        self._row = index.row()
         column = model.columns[index.column()]
         rect = QRectF(option.rect).adjusted(theme.TABLE_GAP / 2, 0, -theme.TABLE_GAP / 2, 0)
         self.paint_cell(painter, rect.left(), rect.top(), rect.width(), rect.height(),
@@ -883,6 +1013,7 @@ class Table(QTableView):
     THUMB_CACHE = 400               # pixmaps kept; a screen shows a few dozen
 
     sort_changed = Signal(int, object)      # column, Qt.SortOrder
+    button_clicked = Signal(int, int)       # row, column: a ButtonCell was clicked
 
     def __init__(self, parent: QWidget | None = None, *, loader: ThumbLoader | None = None):
         super().__init__(parent)
@@ -909,6 +1040,10 @@ class Table(QTableView):
         self._hover = -1
         self._keyboard = False
         self._spans: list[tuple[float, float]] | None = None
+        self._hot_button: tuple[int, int] | None = None
+        self._pressed_button: tuple[int, int] | None = None
+        self._spinning: set[int] = set()
+        self._ticker: animations.LoopTicker | None = None
 
         self._loader = loader or ThumbLoader(self)
         self._loader.local_done.connect(self._thumb_arrived)
@@ -983,6 +1118,7 @@ class Table(QTableView):
 
     def _model_reset(self) -> None:
         self._hover = -1
+        self._hot_button = self._pressed_button = None
         self._rows_for_key = {}
         header = self.verticalHeader()
         header.setDefaultSectionSize(self.row_height())
@@ -1156,6 +1292,72 @@ class Table(QTableView):
         self._spans = None
         self._settle.start()
 
+    # -- buttons in cells
+
+    def button_at(self, pos) -> tuple[int, int] | None:
+        """The (row, column) of the ButtonCell under a viewport point, or None."""
+        model = self.model()
+        row = self.rowAt(round(pos.y()))
+        item = model.item_at(row) if isinstance(model, TableModel) else None
+        if item is None:
+            return None
+        middle = self.rowViewportPosition(row) + self.rowHeight(row) / 2
+        for c, (left, width) in enumerate(self.column_spans()):
+            value = model.cell(item, c)
+            if isinstance(value, ButtonCell) and width > 0:
+                box = self._delegate.button_box(value, left, left + width, middle,
+                                                ALIGNMENTS[model.columns[c].align])
+                if box.contains(QPointF(pos)):
+                    return row, c
+        return None
+
+    def button_look(self, row: int, column: int, value: ButtonCell) -> tuple[str, str]:
+        """(variant, state) a ButtonCell is drawn in: its hot variant on the row
+        under the pointer, hover under the pointer, pressed while held."""
+        variant = value.hot if value.hot and row == self._hover else value.variant
+        if not self.isEnabled():
+            return variant, "disabled"
+        here = (row, column)
+        if self._pressed_button == here:
+            return variant, "pressed" if self._hot_button == here else "hover"
+        return variant, "hover" if self._hot_button == here else "default"
+
+    def _set_hot_button(self, hot: tuple[int, int] | None) -> None:
+        if hot != self._hot_button:
+            old, self._hot_button = self._hot_button, hot
+            for spot in (old, hot):
+                if spot is not None:
+                    self._update_row(spot[0])
+            self.viewport().setCursor(Qt.PointingHandCursor if hot else Qt.ArrowCursor)
+
+    # -- rows whose work turns a spinner
+
+    def set_spinning(self, items: Iterable[int]) -> None:
+        """The items (by index in the model) whose BusyCell turns. The shared
+        "spin" clock repaints those rows only, and stops when there are none."""
+        old, self._spinning = self._spinning, set(items)
+        if self._spinning and self._ticker is None:
+            self._ticker = animations.LoopTicker(self.viewport(), self._spin_tick)
+        if self._ticker is not None:
+            if self._spinning:
+                self._ticker.start("spin")
+            else:
+                self._ticker.stop()
+        model = self.model()
+        if isinstance(model, TableModel):
+            for index in old ^ self._spinning:
+                self._update_row(model.row_of_item(index))
+
+    def spins(self, row: int) -> bool:
+        model = self.model()
+        return bool(self._spinning) and isinstance(model, TableModel)             and model.item_index(row) in self._spinning
+
+    def _spin_tick(self) -> None:
+        model = self.model()
+        if isinstance(model, TableModel):
+            for index in self._spinning:
+                self._update_row(model.row_of_item(index))
+
     # -- hover, focus, current row
 
     def _row_rect(self, row: int) -> QRect:
@@ -1184,16 +1386,34 @@ class Table(QTableView):
             return False        # Qt's own hover repaints cells; the table tracks rows
         if kind == QEvent.Leave:
             self._hover_to(-1)
+            self._set_hot_button(None)
         return super().viewportEvent(event)
 
     def mouseMoveEvent(self, event) -> None:    # noqa: N802 - Qt's name
         self._hover_to(self.rowAt(event.position().toPoint().y()))
-        if event.buttons() != Qt.NoButton:
+        self._set_hot_button(self.button_at(event.position()))
+        if event.buttons() != Qt.NoButton and self._pressed_button is None:
             super().mouseMoveEvent(event)       # a drag that extends the selection
 
     def mousePressEvent(self, event) -> None:   # noqa: N802 - Qt's name
         self._keyboard = False
+        hit = self.button_at(event.position()) if event.button() == Qt.LeftButton else None
+        if hit is not None:
+            self._pressed_button = self._hot_button = hit
+            self._update_row(hit[0])
+            event.accept()
+            return
         super().mousePressEvent(event)
+
+    def mouseReleaseEvent(self, event) -> None:     # noqa: N802 - Qt's name
+        pressed, self._pressed_button = self._pressed_button, None
+        if pressed is not None:
+            self._update_row(pressed[0])
+            if event.button() == Qt.LeftButton and self.button_at(event.position()) == pressed:
+                self.button_clicked.emit(*pressed)
+            event.accept()
+            return
+        super().mouseReleaseEvent(event)
 
     def keyPressEvent(self, event) -> None:     # noqa: N802 - Qt's name
         self._keyboard = True

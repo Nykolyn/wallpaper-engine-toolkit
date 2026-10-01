@@ -44,7 +44,10 @@ def frame_for(state: str) -> dict:
         "authors": {"kind": "none"},
         "error": {"kind": "status", "text": "stopped", "tone": "danger", "below": True},
         "reviewing": {"kind": "badge", "value": 10},
+        "gallery-grid": {"kind": "badge", "value": 10},
+        "gallery-list": {"kind": "badge", "value": 10},
         "done": {"kind": "status", "text": "finished", "tone": "ok", "below": True},
+        "review-list": {"kind": "status", "text": "finished", "tone": "ok", "below": True},
     }
     if state == "scanning":
         return {"frame": "scanning"}
@@ -123,6 +126,75 @@ def last(data: dict, now: datetime) -> dict:
                         for i in range(spec["authors"])],
             "checked": spec["checked"], "finished": finished.isoformat(timespec="seconds"),
             "seconds": spec["seconds"]}
+
+
+def preview_image(seed: int, width: int = 512, height: int = 512):
+    """A made-up preview: a gradient in one of a few hues with soft shapes over
+    it, drawn here, so no real wallpaper's preview is ever in a picture.
+    Mostly square, as Workshop previews are; every fifth one wide."""
+    from PySide6.QtCore import QPointF, QRectF, Qt
+    from PySide6.QtGui import QColor, QImage, QLinearGradient, QPainter, QRadialGradient
+    if seed % 5 == 4:
+        height = width * 9 // 16
+    hues = (212, 268, 188, 24, 330, 150, 46, 250)
+    hue = hues[seed % len(hues)]
+    image = QImage(width, height, QImage.Format_RGB32)
+    painter = QPainter(image)
+    painter.setRenderHint(QPainter.Antialiasing)
+    ground = QLinearGradient(QPointF(0, 0), QPointF(width, height))
+    ground.setColorAt(0, QColor.fromHsv(hue, 150, 120))
+    ground.setColorAt(1, QColor.fromHsv((hue + 40) % 360, 190, 40))
+    painter.fillRect(image.rect(), ground)
+    painter.setPen(Qt.NoPen)
+    for k in range(4):
+        r = width * (0.12 + 0.07 * ((seed + k) % 4))
+        x = width * ((seed * 37 + k * 53) % 100) / 100
+        y = height * ((seed * 61 + k * 29) % 100) / 100
+        glow = QRadialGradient(QPointF(x, y), r)
+        glow.setColorAt(0, QColor.fromHsv((hue + 20 * k) % 360, 90, 255, 200))
+        glow.setColorAt(1, QColor.fromHsv((hue + 20 * k) % 360, 90, 255, 0))
+        painter.setBrush(glow)
+        painter.drawEllipse(QRectF(x - r, y - r, 2 * r, 2 * r))
+    painter.end()
+    return image
+
+
+def _gallery(page, data: dict, spec: dict, s: Session, found: rv.ReviewResult, order) -> None:
+    """The gallery of frames 12 and 13: an author's fourteen cards in every
+    mark, previews drawn here, one card under the pointer, one being
+    subscribed to, three selected."""
+    from PySide6.QtCore import QByteArray
+    from ..engines.library import RESERVE
+    from ..ui.gallery import SUBSCRIBING, WAITING
+    author_id = spec["author"]
+    card = page.cards[author_id]
+    for i, wallpaper in enumerate(card.items):
+        mark = spec["marks"][i % len(spec["marks"])]
+        wallpaper.item.kind = spec["kinds"][i % len(spec["kinds"])].capitalize()
+        wallpaper.item.file_size = spec["sizes_mb"][i % len(spec["sizes_mb"])] * 1024 ** 2
+        wallpaper.once_had = mark == "yours"
+        wallpaper.in_library = mark == "have"
+        wallpaper.library_place = RESERVE if mark == "have" else ""
+        wallpaper.subscribed = mark == "subscribed"
+        wallpaper.item.preview = "fixture:"
+        if wallpaper.subscribed:
+            s.note_subscribed(author_id, wallpaper.id)
+    author = s.find(author_id)
+    author.yours = sum(1 for w in card.items if w.once_had)
+    author.have = sum(1 for w in card.items if w.in_library)
+    page.open_author(author_id)
+    gallery = page.gallery
+    gallery.loader.stopped = True           # nothing is fetched: the previews are drawn here
+    shown = gallery.current_page()
+    for i, wallpaper in enumerate(shown):
+        gallery.model_.set_image(wallpaper.id, QByteArray(b"made-up"),
+                                 preview_image(i + 14))
+    gallery.mark_busy(shown[spec["subscribing"]].id, SUBSCRIBING)
+    for i in spec["waiting"]:
+        gallery.mark_busy(shown[i].id, WAITING)
+    gallery.model_.select(shown[i].id for i in spec["selected"])
+    gallery.force_hover(spec["hover"])
+    page.gallery_list._hover_to(spec["hover"])
 
 
 def _subscribe(s: Session, found: rv.ReviewResult, counts: dict) -> None:
@@ -220,7 +292,19 @@ def load(page, state: str) -> None:
         page.open_author(order[spec["current"]])
         return
 
-    if state == "done":
+    if state in ("gallery-grid", "gallery-list"):
+        spec = data["states"]["gallery"]
+        for author_id in order[:spec["done"]]:
+            s.mark_done(author_id)
+        _subscribe(s, found, spec["subscribed"])
+        page._set_state("reviewing")
+        page.gallery_panel.set_mode("list" if state == "gallery-list" else "grid")
+        page.settings.set("review", "view", "list" if state == "gallery-list" else "grid")
+        _gallery(page, data, spec, s, found, order)
+        return
+
+    if state in ("done", "review-list"):
+        spec = data["states"]["done"]
         for author in s.authors:
             author.done = True
         _subscribe(s, found, spec["subscribed"])
@@ -228,6 +312,13 @@ def load(page, state: str) -> None:
         s.written = {"created": spec["created"], "updated": spec["updated"],
                      "backup": spec["backup"]}
         page._set_state("done")
+        if state == "review-list":
+            page.gallery.loader.stopped = True
+            page.open_review_list()
+            for i, wallpaper in enumerate(page.gallery.current_page()[:40]):
+                from PySide6.QtCore import QByteArray
+                page.gallery.model_.set_image(wallpaper.id, QByteArray(b"made-up"),
+                                              preview_image(i))
 
 
 def _backup(now: datetime, when: str, count: int, size: int, where: str) -> Backup:

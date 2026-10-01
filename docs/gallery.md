@@ -1,68 +1,119 @@
 # Gallery
 
-**The wall of previews the [Review](review.md) page opens when you click an author.**
+**An author's new wallpapers, on the [Review](review.md) page: a grid of
+cards, or a list.**
 
 ## What it is for
 
-Everything one author has made that you are not currently subscribed to, newest
-first, as previews. It is where the decision actually gets made: you are looking
-at pictures, not at a list of titles.
+Everything one author has published since your last visit that you are not
+subscribed to, newest first, as previews. It is where the decision actually
+gets made: you are looking at pictures, not at a list of titles.
 
-## What a card knows about a wallpaper
+Over it: the author's name and what is new — *14 new since 13 Sep · 2 already
+had · 1 was yours before · 3 subscribed · 87 published in all* — **Grid /
+List**, and **Open author page** (their workshop page in the browser).
 
-Across the top of the picture, where they read before it does:
+## A card
 
-| Mark | Meaning |
-|---|---|
-| **was yours** | This machine has had it before. |
-| **new to you** | It never has — you have never subscribed to it or kept a copy. |
-| **queued** | It is one of the wallpapers you put in a folder. |
-| **subscribed** | Taken. |
-
-**"was yours" is the one that saves the most work.** Wallpapers come back
-around, so they are shown rather than hidden — but re-reviewing them blind is
-exactly the work this page removes. For one author, 11 of 29 were in this state.
-
-Two records answer it: the `project.json` of every copy kept across the
-Rotator's libraries, where a workshop wallpaper names itself with a
-`workshopid`, and **every id Wallpaper Engine's own folders remember**. The
-second is far the larger — a wallpaper dropped without ever being copied leaves
-nothing in the libraries, and 14 915 ids here are exactly that. The walk behind
-the first is 33 882 folders and four minutes cold, so it is cached in
-`data/library.json` by folder name and modification time.
-
-That answer arrives a moment after the cards do, on a thread. Until it does, a
-card claims neither mark: **"new" used to be painted from "published since your
-last visit"**, which is true of every card in the gallery, so a wallpaper
-downloaded and deleted twice still called itself new.
-
-**"subscribed" dims the card where it stands** rather than removing it. A tile
-disappearing under the cursor loses your place in a wall of four hundred. The
-marks stay bright on top of the dimming — dimming the word "subscribed" along
-with the picture dims the reason the picture is dim. The badge on the author
-card falls by itself, because it counts what is still on offer.
-
-## What it is, and what it costs
-
-Under the title, where the decision is actually made:
+- **The preview**, 16:9 and cropped to fill the card. Workshop previews are
+  mostly square, so a card shows the middle of one: its top and bottom fifth
+  are left out. Animated previews play (see below).
+- **One mark**, top left, on the picture — see the table.
+- **What it is and what it weighs**, bottom left on the picture:
+  *scene · 214 MB*. A download of a gigabyte or more says its size in amber.
+- **The title**, and under it when it was published (*added 18 Sep*) — or, for
+  one you already have, where: *matches a folder in the reserve*.
+- **The edge** takes the mark's colour: blue for new, amber for already have,
+  green for was yours.
 
 | Mark | Meaning |
 |---|---|
-| a coloured kind | **Scene**, **Video**, **Web**, **Application** or **Preset**, each its own hue and glyph |
-| a plain size | the download, as Steam reports it |
-| **an amber size** | a gigabyte or more |
-| a date | when it was published |
+| **New** | Published since your last visit, and this machine has never had it. |
+| **Already have** | A copy is kept in the Rotator's folders — the reserve, myprojects or the duplicates folder — named by its workshop id. The card is set back, and says where. |
+| **Was yours** | Subscribed once and dropped: Wallpaper Engine's folders still remember it, and no copy is kept. |
+| **Queued** | It is in the Wallpaper Engine folder being reviewed. |
+| **Subscribed** | Taken — now, or earlier in this review. The card is set back, with a check. |
 
-A scene and a video are different decisions — different cost to download,
-different behaviour on a monitor — and a 6 MB scene and a 1.4 GB video are more
-different still. All three used to be one grey line of prose under the title,
-read last if at all. The kind carries its own colour and the gigabyte carries
-the warning colour, so both land in the same glance as the picture.
+Until the scan has asked whether this machine had a wallpaper before, a card
+claims neither: **"new" used to be painted from "published since your last
+visit"**, which is true of every card in the gallery, so a wallpaper downloaded
+and deleted twice still called itself new. The scan asks once, at its end, for
+every author with something new.
 
-**A selected card is marked by its border, not by its fill.** It used to turn
-solid blue while its title and its facts kept the greys they were chosen for,
-which left the size and the date all but invisible on the one card you were
-looking at.
+**Subscribed and already-had cards are set back where they stand**, never
+removed: a card disappearing under the cursor loses your place in a wall of
+four hundred. Leave the author and come back, and the ones subscribed during
+the review are still there, set back.
+
+### "Already have" and "was yours"
+
+Two records answer "did you have this", and the card now says which one did:
+
+| Record | What it knows | Mark |
+|---|---|---|
+| `project.json` in the Rotator's folders (`data/library.json` caches the walk) | every workshop wallpaper you kept a copy of, and in which folder | **Already have** |
+| Wallpaper Engine's own folders (`config.json`) | every id ever put in one, for ever | **Was yours** (when no copy is kept) |
+
+Before 3.7.0 both were one mark, *was yours*. The finished review counts them
+apart: *already had* and *were yours*.
+
+## Under the pointer, and while subscribing
+
+- **Click to subscribe**: the card under the pointer darkens and says so, with
+  a blue edge and halo. A card that is subscribed or already had offers
+  nothing (the right button still opens it in Steam).
+- **Subscribing…** with a turning ring on the one card Steam is being asked
+  about; **Waiting…** on cards queued behind it.
+- The right button opens the wallpaper's page in Steam.
+
+## Grid or list
+
+**Grid** is 3 to 5 cards across, as many cards of about 230 px as the window
+holds (three at 1 280 px wide, five at 2 560).
+
+**List** is a table of the same page: the preview, **WALLPAPER** (title and
+date or where), **TYPE**, **SIZE**, **MARK** and a **Subscribe** button, which
+turns blue on the row under the pointer. A row being subscribed says
+*Subscribing…*, one you already have a dash, one subscribed a check. The list
+sorts by any column but the preview.
+
+The choice is remembered (`review.view` in `suite.json`).
+
+## Choosing several
+
+- **Ctrl-click** a card, or click the **check** that appears top right on the
+  card under the pointer, to select it; **Shift-click** selects everything
+  from the last card chosen up to this one. In the list, a click anywhere on a
+  row but its button selects it.
+- **Ctrl+A** selects every card on the page that can be subscribed to;
+  **Esc** lets go of the selection.
+- The selection spans pages, and the author's row on the left says how many
+  are selected: *14 new · 3 selected*.
+
+A plain click on a card still subscribes, as the card says, whatever is
+selected.
+
+## The bar
+
+Under the gallery:
+
+- **3 selected**, and **Subscribe selected** — in the order you chose them.
+- **Subscribe page** — every card on this page not taken yet.
+- The pages: thirty wallpapers to a page; the numbers show from two pages.
+- **Done with <author> →** — the author is ticked on the left, the count
+  (*3 / 12*) moves on, and the next author waiting opens. Nothing is written
+  until **Finish review**.
+
+Both Subscribe buttons need **Steam directly** in Review settings: with
+**Steam's page**, they would open a browser window per wallpaper.
+
+## The review as a list
+
+When the review is finished, **Open review as a list** shows every author's
+wallpapers in one list, under their names (*GLASSWORK 7 new*), with the same
+marks and buttons — to look back over the week, or subscribe to something
+after all. Clicking an author on the left goes to their part of the list.
+**Back to the summary** returns to the finished review.
 
 ## Subscribing
 
@@ -88,6 +139,9 @@ So the page offers two routes, chosen under **Subscribe by** in
 - **Steam's page** — `steam://url/CommunityFilePage/<id>`, where
   Subscribe is one click. Nothing unsupported, one more click.
 
+Subscriptions go through one queue and one Steam connection, in the order
+asked: a card says **Waiting…** until its turn and **Subscribing…** during it.
+
 Either way the page watches the workshop folder and marks a wallpaper as taken
 when it arrives, so subscribing in Wallpaper Engine itself is noticed too.
 
@@ -99,6 +153,7 @@ Steam must be running for either route.
 
 Fetched on a thread pool, cached in `data/thumbs`, and drawn into a virtualised
 grid — 1 200 cards is a `QListView` with uniform item sizes, not 1 200 widgets.
+A still is kept no larger than 640 px and cropped to each card's size once.
 
 Nearly half are **animated**: Steam serves an animated wallpaper's preview as a
 real GIF, so `QMovie` plays it.
@@ -162,9 +217,10 @@ threads busy in Python beside it:
 
 What changed:
 
-- **No Python runs per frame.** `QMovie` is given the size the still was fitted
-  to and scales its own frames; the delegate paints the movie's current frame;
-  and one 50 ms clock repaints only the cards whose frame number moved on.
+- **No Python runs per frame.** `QMovie` is given the size that just covers
+  the card and scales its own frames; the delegate paints the movie's current
+  frame; and one 50 ms clock repaints only the previews whose frame number
+  moved on.
 - **The animation rests when the window is behind.** The same clock notices
   when it runs late — twice running by more than a quarter of a second — pauses
   every player, and resumes them after two seconds on time. Whatever else is
@@ -177,6 +233,37 @@ What changed:
   page revisited is read back from disk.
 - **Turning the page drops the downloads queued for the last one**, instead of
   making the page on screen wait behind them.
+
+### A card is a few copies
+
+The redesign (3.7.0) put more cards on screen — three to five across instead of
+one 416 px card — so all eight players are visible at once and every frame
+repaints eight cards. While another thread is busy in Python each call into Qt
+can wait for the GIL, so what a card costs is how many calls it makes:
+
+- What a card shows is drawn once into pixmaps and copied after: the preview
+  cropped to 16:9 with its corners, edge, chip, plate and check (one copy for a
+  still card), the title and its line (another).
+- A playing card is its frame through a rounded clip, then one copy of
+  everything over it.
+- The view repaints every card inside the bounding box of what changed; a card
+  the changed region itself misses is skipped before it costs anything.
+- The spinner on the card being subscribed to turns on the shared clock, which
+  repaints the spinner's few pixels, not the card.
+
+Measured with `tests/perf_gallery.py`: thirty made-up animated previews, eight
+playing, two threads busy in Python, the 0.5 ms switch interval, offscreen. A
+frame is one repaint of the gallery.
+
+| | gallery size | frame time p50 / p95 | 50 ms clock ticks (of 400) |
+|---|---|---|---|
+| before 3.7.0 (one column) | 690 × 640 (a 1 280 px window) | 17.7 / 22.3 ms | 320 |
+| 3.7.0 (three columns) | 690 × 640 | **11.2 / 14.1 ms** | 320 |
+| before 3.7.0 (four columns) | 1 970 × 1 200 (2 560 px) | 70.5 / 82.6 ms | 241 |
+| 3.7.0 (five columns) | 1 970 × 1 200 | **12.2 / 15.2 ms** | 319 |
+
+With no thread busy, the same frame takes 2.4 ms: the rest is waiting for the
+GIL, which is why the number of calls is what was cut.
 
 If the window ever stops answering anyway, it leaves the stacks of every thread
 in `data/window-hangs.log` — see [Troubleshooting](troubleshooting.md#the-window-stopped-answering).

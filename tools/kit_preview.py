@@ -1536,6 +1536,47 @@ def tables_section() -> Section:
     files.setFixedWidth(760)
     section.body.addWidget(files)
 
+    # Cells for work done from a row (the gallery's list): a title over a quieter line
+    # (`Cell.sub`), a button that turns Accent on the row under the pointer (`ButtonCell`,
+    # its click is `Table.button_clicked`), work under way with a turning ring (`BusyCell`
+    # + `Table.set_spinning`), a disc (`DiscCell`) and a dash.
+    section.body.addWidget(overline("Cells that act: Cell.sub · ButtonCell (Accent on the hovered "
+                                    "row) · BusyCell · DiscCell"))
+    from app.ui.kit import BusyCell, ButtonCell, Cell, DiscCell
+    work = [("Copper Tide", "added 18 Sep", "New", ButtonCell("Subscribe")),
+            ("Glass Orchard", "added 18 Sep", "New", ButtonCell("Subscribe")),
+            ("Ember Window", "added 17 Sep", "New", BusyCell("Subscribing…")),
+            ("Paper Meadow", "matches a folder in the reserve", "Duplicated",
+             Cell(fmt.DASH, tone="text.lo")),
+            ("Static Hollow", "added 16 Sep", "Subscribed", DiscCell("check", "info", "Subscribed"))]
+
+    class Work(TableModel):
+        def cell(self, item, c):
+            title, sub, chip, action = item
+            if c == 0:
+                return Cell(title, sub=sub)
+            if c == 1:
+                return ChipCell(chip, "Already have" if chip == "Duplicated" else None)
+            return action
+
+        def row_dimmed(self, item):
+            return item[2] == "Duplicated"
+
+    work_panel = GlassPanel(padding="none")
+    inside = QVBoxLayout(work_panel)
+    inside.setContentsMargins(0, 0, 0, 0)
+    work_table = Table()
+    work_table.setModel(Work([Column("Wallpaper", None, font="type.body", tone="text.hi"),
+                              Column("Mark", 104), Column("", 96, "right", sortable=False)],
+                             work))
+    work_table.set_row_height(52)
+    work_table.set_spinning([2])
+    work_table.setFixedHeight(work_table.horizontalHeader().sizeHint().height() + 5 * 52)
+    inside.addWidget(work_table)
+    work_panel.setFixedWidth(560)
+    section.body.addWidget(work_panel)
+    section.hover_rows.append((work_table, 0))
+
     section.body.addWidget(overline("ListRow — default · hover · selected · focus · disabled"))
     rows = QHBoxLayout()
     rows.setSpacing(14)

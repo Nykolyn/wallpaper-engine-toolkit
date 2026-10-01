@@ -279,13 +279,15 @@ class ScanFlow:
 @dataclass
 class SessionAuthor:
     """An author with new items: who, how many new at the scan, how many of
-    those you had before, whether they have been gone through, and the
+    those you had before (``yours``: subscribed once and gone; ``have``: a
+    copy kept in the libraries), whether they have been gone through, and the
     wallpapers of theirs subscribed in this session."""
 
     id: str
     name: str
     new: int
     yours: int = 0
+    have: int = 0
     state: str = KNOWN
     done: bool = False
     incomplete: bool = False
@@ -323,7 +325,8 @@ class Session:
                 nothing += 1
                 continue
             listed.append(SessionAuthor(id=card.id64, name=card.name, new=card.badge,
-                                        yours=card.returning, state=card.state,
+                                        yours=card.returning, have=card.have,
+                                        state=card.state,
                                         incomplete=not card.complete))
             if card.visited is not None and card.state in (KNOWN, DUPLICATE):
                 visits.append(card.visited)
@@ -341,6 +344,10 @@ class Session:
     @property
     def yours(self) -> int:
         return sum(a.yours for a in self.authors)
+
+    @property
+    def have(self) -> int:
+        return sum(a.have for a in self.authors)
 
     @property
     def subscribed(self) -> int:
@@ -406,7 +413,7 @@ class Session:
             "since": self.since.isoformat() if self.since else None,
             "items": self.items,
             "authors": [{"id": a.id, "name": a.name, "new": a.new, "yours": a.yours,
-                         "new_author": a.state == NEW, "done": a.done,
+                         "have": a.have, "new_author": a.state == NEW, "done": a.done,
                          "subscribed": len(a.subscribed)} for a in self.authors],
             "checked": self.checked,
             "nothing_new": self.nothing_new,

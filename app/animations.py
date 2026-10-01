@@ -392,6 +392,50 @@ def loop(name: str) -> LoopDriver:
     return driver
 
 
+class LoopTicker(QWidget):
+    """A loop's subscriber that repaints only what it is told to.
+
+    A driver repaints each subscriber whole on every tick. For an item view
+    that is every card or row on screen, sixty times a second, each one a
+    Python call into a delegate — when what turns is one spinner on one card.
+    So the view subscribes this instead: an empty child that stands for it
+    (shown and hidden with it, which is what starts and stops the driver), and
+    whose `update()`, which is all the driver calls, runs `on_tick` — the view
+    then repaints the few rectangles that move.
+    """
+
+    def __init__(self, parent: QWidget, on_tick):
+        super().__init__(parent)
+        self._on_tick = on_tick
+        self._name: str | None = None
+        self.setAttribute(Qt.WA_TransparentForMouseEvents)
+        self.resize(0, 0)
+        self.show()
+
+    @property
+    def running(self) -> str | None:
+        """The loop it follows, or None."""
+        return self._name
+
+    def start(self, name: str = "spin") -> None:
+        if self._name == name:
+            return
+        self.stop()
+        self._name = name
+        loop(name).subscribe(self)
+
+    def stop(self) -> None:
+        if self._name is not None:
+            loop(self._name).unsubscribe(self)
+            self._name = None
+
+    def update(self, *args) -> None:        # what the driver calls, each tick
+        if args:
+            super().update(*args)
+        else:
+            self._on_tick()
+
+
 # ---- Work that blocks the window -----------------------------------------
 
 @contextmanager

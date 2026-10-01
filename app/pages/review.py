@@ -16,11 +16,14 @@ What the page shows, by state:
   "Carry on from author 34" counts the authors not reached, keeping the rest
   (§6.4.2); "Start over" scans again. A cancel lands here too, quieter.
 - **reviewing** — the authors with new items on the left (done ticks, "3 /
-  12"), an author's gallery on the right (today's `GalleryView`, restyled in
-  step 12), "Done with <author> →", and in the header "Skip for now" and
-  "Finish review" — which writes the visit dates after showing the plan.
+  12"), an author's gallery on the right (`app/ui/gallery.py`: a grid of
+  cards or a list, Grid / List remembered), the bar under it ("3 selected",
+  "Subscribe selected", "Subscribe page", the pages, "Done with <author> →"),
+  and in the header "Skip for now" and "Finish review" — which writes the
+  visit dates after showing the plan.
 - **done** — the review written: how many authors went through, what was
-  subscribed, the numbers, and "Reopen review".
+  subscribed, the numbers, "Open review as a list" (every author's wallpapers
+  under their names, in the gallery's list) and "Reopen review".
 
 The session — the authors with new items, which are done, what was
 subscribed — is `review_flow.Session`, written to `data/review_last.json`
@@ -53,7 +56,7 @@ from typing import Callable
 from PySide6.QtCore import (
     QAbstractListModel, QCoreApplication, QModelIndex, QObject, Qt, QThread, QTimer, Signal,
 )
-from PySide6.QtGui import QPainter
+from PySide6.QtGui import QKeySequence, QPainter, QShortcut
 from PySide6.QtWidgets import (
     QAbstractItemView, QHBoxLayout, QSizePolicy, QStackedWidget, QVBoxLayout, QWidget,
 )
@@ -70,11 +73,12 @@ from ..engines.steam_ugc import SteamUgc, UgcError
 from ..services import begin
 from ..services.snapshot import REVIEW, ReviewState
 from ..settings import Settings, app_data_dir
-from ..ui.gallery import GalleryView
+from ..ui.gallery import SUBSCRIBING, WAITING, GalleryList, GalleryView, offered
 from ..ui.kit import (
     AccentButton, Callout, ConfirmDialog, ConsoleExcerpt, Dropdown, EmptyState, GhostButton,
-    GlassPanel, IconButton, ListRow, MetricStrip, NavState, Pagination, ProgressBar, RowList,
-    Rule, SecondaryButton, SkeletonRows, Spinner, TextInput, format as fmt, label,
+    GlassPanel, Group, IconButton, ListRow, MetricStrip, NavState, Pagination, ProgressBar,
+    RowList, Rule, SecondaryButton, SegmentedControl, SkeletonRows, Spinner, TextInput,
+    format as fmt, label,
 )
 from ..ui.kit import base
 from ..ui.kit.base import Elided, set_tone
@@ -263,11 +267,14 @@ def found_row(card) -> ListRow:
     return ListRow(card.name, thumb=True, thumb_size=theme.REVIEW_AVATAR, trailing=new)
 
 
-def author_meta(author: SessionAuthor, card=None) -> tuple[str, str]:
-    """(words, tone) under an author's name: "14 new · 3 subscribed"."""
+def author_meta(author: SessionAuthor, card=None, selected: int = 0) -> tuple[str, str]:
+    """(words, tone) under an author's name: "14 new · 3 subscribed", and
+    "3 selected" while some of their wallpapers are."""
     bits = [f"{fmt.count(author.new)} new"]
     if author.subscribed:
         bits.append(f"{fmt.count(len(author.subscribed))} subscribed")
+    if selected:
+        bits.append(f"{fmt.count(selected)} selected")
     if author.state == rv.NEW:
         bits.append("first time seen")
     if author.incomplete:
@@ -276,15 +283,21 @@ def author_meta(author: SessionAuthor, card=None) -> tuple[str, str]:
     return " · ".join(bits), "text.lo"
 
 
-def author_row(author: SessionAuthor, card=None) -> ListRow:
+def author_row(author: SessionAuthor, card=None, selected: int = 0) -> ListRow:
     """An author in the list: their name (and the name the database still
     has for them), the counts, their chip, and a tick once gone through."""
-    words, tone = author_meta(author, card)
+    words, tone = author_meta(author, card, selected)
     old = card.database_name if card is not None else None
     return ListRow(author.name, meta=words, meta_tone=tone, thumb=True,
                    thumb_size=theme.REVIEW_AVATAR, title_note=f"was {old}" if old else "",
                    chips=((STATE_CHIPS.get(author.state, "Known"), None),), chips_inline=True,
                    tick=author.done, dimmed=author.done)
+
+
+def _short(name: str) -> str:
+    """An author's name short enough for "Done with <name> →"."""
+    limit = theme.REVIEW_DONE_NAME
+    return name if len(name) <= limit else name[:limit - 1].rstrip() + "…"
 
 
 def list_foot(session: Session) -> str:
@@ -303,8 +316,11 @@ def gallery_subtitle(author: SessionAuthor, card, now: datetime) -> str:
     bits = [f"{fmt.count(author.new)} new since {fmt.day(since, now)}" if since
             else f"{fmt.count(author.new)} new — first time seen" if author.state == rv.NEW
             else f"{fmt.count(author.new)} new"]
+    if author.have:
+        bits.append(f"{fmt.count(author.have)} already had")
     if author.yours:
-        bits.append(f"{fmt.count(author.yours)} were yours before")
+        bits.append(f"{fmt.count(author.yours)} {'was' if author.yours == 1 else 'were'} "
+                    "yours before")
     if author.subscribed:
         bits.append(f"{fmt.count(len(author.subscribed))} subscribed")
     if card is not None and card.total:
@@ -430,7 +446,7 @@ def done_text(session: Session, now: datetime) -> DoneText:
     else:
         third = "Nothing needed writing to the authors database."
     metrics = ((session.items, "new items found"), (n, "subscribed", "info"),
-               (session.yours, "were yours", "ok"))
+               (session.have, "already had", "warn"), (session.yours, "were yours", "ok"))
     finished = session.finished or now
     foot = f"finished {fmt.date_activity(finished, now)}"
     if written.get("backup"):
@@ -844,11 +860,16 @@ class _FoundPanel(GlassPanel):
         self.count.setText("")
 
 
-class _GalleryPanel(GlassPanel):
-    """An author's gallery: who, what is new, the wall (today's GalleryView
-    until step 12), and the bar under it."""
+VIEWS = ("grid", "list")
 
-    def __init__(self, gallery: GalleryView, parent: QWidget | None = None):
+
+class _GalleryPanel(GlassPanel):
+    """An author's gallery: who and what is new, Grid / List, the cards or the
+    table, and the bar under them — what is selected and what to do with it,
+    the pages, and "Done with <author> →"."""
+
+    def __init__(self, gallery: GalleryView, listing: GalleryList,
+                 parent: QWidget | None = None):
         super().__init__(parent, padding="none")
         column = _column(self)
         head = _Strip()
@@ -865,13 +886,18 @@ class _GalleryPanel(GlassPanel):
         words.addWidget(self.name)
         words.addWidget(self.sub)
         row.addLayout(words, 1)
+        self.view = SegmentedControl(["Grid", "List"])
+        self.view.setAccessibleName("Show the wallpapers as a grid or a list")
+        row.addWidget(self.view)
         self.author_page = GhostButton("Open author page", icon="ext")
         row.addWidget(self.author_page)
         column.addWidget(head)
         column.addWidget(Rule())
         self.stack = QStackedWidget()
+        self.stack.addWidget(gallery)
         holder = QWidget()
-        _column(holder, (theme.SP_6, theme.SP_6, theme.SP_6, 0)).addWidget(gallery)
+        pad_v, pad_h = theme.REVIEW_LIST_BODY_PAD
+        _column(holder, (pad_h, pad_v, pad_h, pad_v)).addWidget(listing)
         self.stack.addWidget(holder)
         self.empty = EmptyState("", "", icon="review")
         self.stack.addWidget(self.empty)
@@ -882,20 +908,42 @@ class _GalleryPanel(GlassPanel):
         line = QHBoxLayout(bar)
         line.setContentsMargins(pad_h, pad_v, pad_h, pad_v)
         line.setSpacing(theme.SP_8)
-        self.subscribe_page = SecondaryButton("Subscribe to all on this page")
+        self.selected = label("", "type.bodySm", "body")
+        line.addWidget(self.selected)
+        self.subscribe_selected = SecondaryButton("Subscribe selected")
+        line.addWidget(self.subscribe_selected)
+        self.subscribe_page = SecondaryButton("Subscribe page")
         line.addWidget(self.subscribe_page)
         line.addStretch(1)
         self.pagination = Pagination()
         line.addWidget(self.pagination)
+        self.back = SecondaryButton("Back to the summary")
+        line.addWidget(self.back)
         self.done_with = AccentButton("Done →")
         line.addWidget(self.done_with)
         column.addWidget(bar)
         self.bar = bar
+        self._mode = "grid"
+        self._on = True
 
     def show_gallery(self, on: bool) -> None:
-        self.stack.setCurrentIndex(0 if on else 1)
+        self._on = on
+        self.stack.setCurrentIndex(VIEWS.index(self._mode) if on else 2)
         self.bar.setVisible(on)
         self.author_page.setVisible(on)
+        self.view.setVisible(on)
+
+    def set_mode(self, mode: str) -> None:
+        self._mode = mode if mode in VIEWS else "grid"
+        if self.view.current_index() != VIEWS.index(self._mode):
+            self.view.blockSignals(True)
+            self.view.set_current_index(VIEWS.index(self._mode))
+            self.view.blockSignals(False)
+        if self._on:
+            self.stack.setCurrentIndex(VIEWS.index(self._mode))
+
+    def mode(self) -> str:
+        return self._mode
 
 
 class _Foot(_Strip):
@@ -1021,7 +1069,8 @@ class ReviewPage(Page):
     key = "review"
     title = "Review"
     icon = "review"
-    FIXTURES = ("empty", "scanning", "error", "reviewing", "done", "settings", "authors")
+    FIXTURES = ("empty", "scanning", "error", "reviewing", "gallery-grid", "gallery-list", "done",
+                "review-list", "settings", "authors")
 
     def __init__(self, settings: Settings, services=None, parent: QWidget | None = None, *,
                  now: Callable[[], datetime] | None = None, data_dir: Path | str | None = None,
@@ -1072,6 +1121,8 @@ class ReviewPage(Page):
         self.signals.progress.connect(self._write_progress)
 
         self.gallery = GalleryView()
+        self.gallery_list = GalleryList(self.gallery)
+        self._listing = False           # "Open review as a list": every author's wallpapers
         self._build()
 
         self._render_timer = QTimer(self)
@@ -1083,7 +1134,7 @@ class ReviewPage(Page):
         self._watch.timeout.connect(self._notice_subscriptions)
 
         self.subscriptions = SubscribeQueue(self)
-        self.subscriptions.started_item.connect(lambda i: self.gallery.mark_busy(i, True))
+        self.subscriptions.started_item.connect(lambda i: self.gallery.mark_busy(i, SUBSCRIBING))
         self.subscriptions.finished_item.connect(self._subscribed)
         self.subscriptions.failed_item.connect(self._subscribe_failed)
 
@@ -1162,15 +1213,25 @@ class ReviewPage(Page):
         self.right.addWidget(self.stopped_panel)
 
         # reviewing
-        self.gallery_panel = _GalleryPanel(self.gallery)
+        self.gallery_panel = _GalleryPanel(self.gallery, self.gallery_list)
         g = self.gallery_panel
         g.author_page.clicked.connect(self.open_author_page)
         g.subscribe_page.clicked.connect(self.subscribe_page)
+        g.subscribe_selected.clicked.connect(self.subscribe_selected)
         g.pagination.page_changed.connect(self.gallery.set_page)
         g.done_with.clicked.connect(self.done_with_author)
-        self.gallery.subscribe_requested.connect(self.subscribe)
-        self.gallery.open_requested.connect(self.open_in_steam)
+        g.back.clicked.connect(self.close_review_list)
+        g.view.changed.connect(lambda i: self.set_view(VIEWS[i]))
+        g.set_mode(self._stored_view())
+        for view in (self.gallery, self.gallery_list):
+            view.subscribe_requested.connect(self.subscribe)
+            view.open_requested.connect(self.open_in_steam)
         self.gallery.page_changed.connect(self._page_changed)
+        self.gallery.selection_changed.connect(self._selection_changed)
+        # Esc lets go of the selection wherever the focus is in the panel
+        clear = QShortcut(QKeySequence(Qt.Key_Escape), g)
+        clear.setContext(Qt.WidgetWithChildrenShortcut)
+        clear.activated.connect(self.gallery.clear_selection)
         self.right.addWidget(self.gallery_panel)
 
         # done
@@ -1180,11 +1241,11 @@ class ReviewPage(Page):
         self.done = EmptyState("Review finished", "", icon="check", tone="ok",
                                width=theme.REVIEW_DONE_WIDTH)
         self.metrics = MetricStrip([(0, "new items found"), (0, "subscribed", "info"),
-                                    (0, "were yours", "ok")])
+                                    (0, "already had", "warn"), (0, "were yours", "ok")])
         self.done.add_content(self.metrics)
         self.as_list = SecondaryButton("Open review as a list")
-        self.as_list.setEnabled(False)
-        self.as_list.setToolTip("The list view of the gallery comes with its redesign.")
+        self.as_list.setToolTip("Every author's new wallpapers in one list, under their names.")
+        self.as_list.clicked.connect(self.open_review_list)
         self.done.add_action(self.as_list)
         _column(holder, (theme.REVIEW_DONE_PAD,) * 4).addWidget(self.done)
         column.addWidget(holder, 1)
@@ -1269,8 +1330,13 @@ class ReviewPage(Page):
     def _set_state(self, state: str) -> None:
         if state not in STATES:
             raise ValueError(f"no Review state {state!r}")
+        if state != "done" and self._listing:
+            self._end_listing()
         self.state = state
-        self.right.setCurrentIndex(STATES.index(state))
+        if state == "done" and self._listing:
+            self.right.setCurrentWidget(self.gallery_panel)
+        else:
+            self.right.setCurrentIndex(STATES.index(state))
         if state == "reviewing" and self._on_screen:
             self._watch.start()
         elif state != "reviewing":
@@ -1395,6 +1461,9 @@ class ReviewPage(Page):
         self.done.set_meta(last_meta(last, now))
         self.done_foot.text.set_text(words.foot)
         self.set_subtitle(done_subtitle(session))
+        self.as_list.setEnabled(bool(session.authors))
+        if self._listing:
+            self._describe_listing()
 
     # -- the author list
 
@@ -1408,11 +1477,19 @@ class ReviewPage(Page):
         key = self.authors.sort.currentData() or rv.SORT_DEFAULT
         return [c.id64 for c in rv.sort_cards(found, key, self._descending)]
 
+    def _selected_of(self, author_id: str) -> int:
+        """How many of an author's wallpapers are selected (only the author
+        on screen has any)."""
+        if author_id != self.current or self._listing:
+            return 0
+        return len(self.gallery.selected_ids())
+
     def _fill_list(self) -> None:
         session = self.session
         if session is None:
             return
-        rows = [(author_id, author_row(session.find(author_id), self.cards.get(author_id)))
+        rows = [(author_id, author_row(session.find(author_id), self.cards.get(author_id),
+                                       self._selected_of(author_id)))
                 for author_id in self._ordered()]
         self.authors.list.model_.set_rows(rows)
         self.authors.list.select(self.current)
@@ -1425,7 +1502,8 @@ class ReviewPage(Page):
     def _touch(self, author_id: str) -> None:
         author = self.session.find(author_id) if self.session else None
         if author is not None:
-            self.authors.list.model_.update(author_id, author_row(author, self.cards.get(author_id)))
+            self.authors.list.model_.update(author_id, author_row(
+                author, self.cards.get(author_id), self._selected_of(author_id)))
             self.authors.show_list(self.session.done_count, len(self.session.authors),
                                    list_foot(self.session))
 
@@ -1683,20 +1761,40 @@ class ReviewPage(Page):
 
     def open_author(self, author_id: str) -> None:
         """Show an author's gallery. Every author in the list was counted in
-        full by the scan, so this fetches nothing."""
+        full by the scan, so this fetches nothing. In the review as a list,
+        it goes to the author's wallpapers in that list instead."""
         if self.session is None or self.session.find(author_id) is None:
             return
-        self.current = author_id
+        if self._listing:
+            self.authors.list.select(author_id)
+            self._scroll_listing_to(author_id)
+            return
+        previous, self.current = self.current, author_id
         self.authors.list.select(author_id)
-        card = self.cards.get(author_id)
-        self.gallery.show_items(card.offered if card is not None else [])
+        self.gallery.show_items(self._gallery_items(author_id))
+        if previous and previous != author_id:
+            self._touch(previous)
         self._describe(author_id)
+
+    def _gallery_items(self, author_id: str) -> list:
+        """An author's wallpapers as the scan offered them, newest first — the
+        ones subscribed since still among them, set back where they stood."""
+        card = self.cards.get(author_id)
+        author = self.session.find(author_id) if self.session is not None else None
+        if card is None:
+            return []
+        taken = author.subscribed if author is not None else set()
+        return [w for w in card.items if w.new_since_visit and (w.offer or w.id in taken)]
 
     def _describe(self, author_id: str) -> None:
         author = self.session.find(author_id)
         card = self.cards.get(author_id)
         g = self.gallery_panel
         g.show_gallery(True)
+        g.set_mode(self._stored_view())
+        g.view.show()
+        g.back.hide()
+        g.done_with.show()
         g.name.set_text(author.name)
         g.sub.set_text(gallery_subtitle(author, card, self._now()))
         if author.done:
@@ -1704,9 +1802,11 @@ class ReviewPage(Page):
             g.done_with.setText("Next author →")
             g.done_with.setEnabled(following is not None)
         else:
-            g.done_with.setText(f"Done with {author.name} →")
+            g.done_with.setText(f"Done with {_short(author.name)} →")
             g.done_with.setEnabled(True)
-        self._update_subscribe_page()
+        g.done_with.setToolTip(f"Mark {author.name} gone through and open the next author "
+                               "waiting. Nothing is written until “Finish review”.")
+        self._update_bar()
 
     def _show_no_author(self, now: datetime) -> None:
         g = self.gallery_panel
@@ -1750,7 +1850,100 @@ class ReviewPage(Page):
 
     def _page_changed(self, page: int, pages: int, _total: int) -> None:
         self.gallery_panel.pagination.set_pages(pages, page)
-        self._update_subscribe_page()
+        self._update_bar()
+
+    # -- grid or list
+
+    def _stored_view(self) -> str:
+        view = self.settings.get(SECTION, "view", "grid")
+        return view if view in VIEWS else "grid"
+
+    def set_view(self, view: str) -> None:
+        """Show the cards as a grid or a list, and remember which."""
+        if view not in VIEWS:
+            raise ValueError(f"no gallery view {view!r}")
+        if not self._listing and view != self._stored_view():
+            self.settings.set(SECTION, "view", view)
+            self.settings.save()
+        self.gallery_panel.set_mode(view)
+
+    # -- every author as one list ("Open review as a list")
+
+    def open_review_list(self) -> None:
+        """The finished review's wallpapers, every author's under their name,
+        in the list view: to look back over it, and subscribe from it."""
+        if self.session is None:
+            return
+        order = self._ordered()
+        groups, items, owner = [], [], {}
+        for author_id in order:
+            author = self.session.find(author_id)
+            wallpapers = self._gallery_items(author_id)
+            if author is None or not wallpapers:
+                continue
+            groups.append(Group(author_id, author.name, note=f"{fmt.count(len(wallpapers))} new"))
+            for wallpaper in wallpapers:
+                items.append(wallpaper)
+                owner[wallpaper.id] = author_id
+        self._listing = True
+        self.gallery.show_items(items, paged=False)
+        self.gallery_list.set_groups(groups, lambda w: owner.get(w.id))
+        self.gallery_panel.set_mode("list")
+        self._describe_listing()
+        self.right.setCurrentWidget(self.gallery_panel)
+
+    def _describe_listing(self) -> None:
+        g = self.gallery_panel
+        session = self.session
+        g.show_gallery(True)
+        g.set_mode("list")
+        g.view.hide()
+        g.author_page.hide()
+        g.done_with.hide()
+        g.back.show()
+        g.name.set_text("Every author")
+        g.sub.set_text(f"{fmt.counted(self.gallery.total, 'new item')} from "
+                       f"{fmt.counted(len(session.authors), 'author')}")
+        self._update_bar()
+
+    def _scroll_listing_to(self, author_id: str) -> None:
+        model = self.gallery_list.model_
+        for row in model.group_rows():
+            group = model.group_at(row)
+            if group is not None and group.key == author_id:
+                self.gallery_list.scrollTo(model.index(row, 0), QAbstractItemView.PositionAtTop)
+                return
+
+    def close_review_list(self) -> None:
+        """Back to the finished review's summary."""
+        if not self._listing:
+            return
+        self._end_listing()
+        if self.state == "done":
+            self.right.setCurrentIndex(STATES.index("done"))
+
+    def _end_listing(self) -> None:
+        self._listing = False
+        self.gallery_list.set_groups(None, None)
+        self.gallery_panel.set_mode(self._stored_view())
+        self.gallery.show_items(self._gallery_items(self.current) if self.current else [])
+
+    # -- the selection
+
+    def _selection_changed(self, count: int) -> None:
+        if self.current and self.session is not None:
+            self._touch(self.current)
+        self._update_bar()
+
+    def subscribe_selected(self) -> None:
+        """Subscribe to every selected wallpaper, on any page, in the order
+        they were chosen; the selection is let go of."""
+        if not self.by_steam:
+            return
+        wanted = [i for i in self.gallery.selected_ids()
+                  if (w := self.gallery.find(i)) is not None and offered(w, self.gallery.busy(i))]
+        self.gallery.clear_selection()
+        self._queue(wanted)
 
     # -- subscribing
 
@@ -1762,57 +1955,90 @@ class ReviewPage(Page):
         if not self.by_steam:
             self.open_in_steam(item_id)
             return
-        if item_id in self.gallery.delegate.busy:
+        if self.gallery.busy(item_id) is not None:
             return
-        self.gallery.mark_busy(item_id, True)
-        self.subscriptions.add([item_id])
+        self._queue([item_id])
 
     def subscribe_page(self) -> None:
         """Subscribe to every wallpaper on the page not already taken."""
         if not self.by_steam:
             return
-        wanted = [w.id for w in self.gallery.current_page()
-                  if w is not None and not w.subscribed and w.id not in self.gallery.delegate.busy]
-        if not wanted:
-            return
-        for item_id in wanted:
-            self.gallery.mark_busy(item_id, True)
-        self.subscriptions.add(wanted)
-        self._update_subscribe_page()
+        self._queue([w.id for w in self.gallery.current_page()
+                     if w is not None and offered(w, self.gallery.busy(w.id))])
 
-    def _update_subscribe_page(self) -> None:
-        button = self.gallery_panel.subscribe_page
+    def _queue(self, item_ids: list[str]) -> None:
+        """Hand wallpapers to the subscription queue: each waits on its card
+        until Steam is asked for it."""
+        if not item_ids:
+            return
+        for item_id in item_ids:
+            self.gallery.mark_busy(item_id, WAITING)
+        self.subscriptions.add(item_ids)
+        self._update_bar()
+
+    def _update_bar(self) -> None:
+        """The gallery's bar: what is selected and what can be subscribed to."""
+        g = self.gallery_panel
+        opens_page = not self.by_steam
+        if self.gallery.model_.opens_page != opens_page:
+            self.gallery.model_.opens_page = opens_page
+            self.gallery.viewport().update()
+            self.gallery_list.viewport().update()
+        chosen = len(self.gallery.selected_ids())
+        g.selected.setText(f"{fmt.count(chosen)} selected")
+        g.selected.setVisible(bool(chosen))
+        g.subscribe_selected.setVisible(bool(chosen))
+        g.subscribe_selected.setEnabled(self.by_steam)
         page = [w for w in self.gallery.current_page() if w is not None]
-        open_ = [w for w in page if not w.subscribed and w.id not in self.gallery.delegate.busy]
-        button.setEnabled(self.by_steam and bool(open_))
-        button.setText(f"Subscribe to all {fmt.count(len(open_))} on this page" if open_
-                       else "Subscribe to all on this page")
-        button.setToolTip("" if self.by_steam else
-                          "Needs “Steam directly” in Review settings: opening Steam's page for "
-                          "every wallpaper would mean thirty windows.")
+        open_ = [w for w in page if offered(w, self.gallery.busy(w.id))]
+        g.subscribe_page.setVisible(not self._listing)
+        g.subscribe_page.setEnabled(self.by_steam and bool(open_))
+        g.subscribe_page.setToolTip(
+            f"Subscribe to the {fmt.counted(len(open_), 'wallpaper')} on this page not taken yet."
+            if open_ else "Everything on this page is taken already.")
+        if not self.by_steam:
+            why = ("Needs “Steam directly” in Review settings: opening Steam's page for "
+                   "every wallpaper would mean a window for each.")
+            g.subscribe_page.setToolTip(why)
+            g.subscribe_selected.setToolTip(why)
+        else:
+            g.subscribe_selected.setToolTip(
+                f"Subscribe to the {fmt.counted(chosen, 'selected wallpaper')}. "
+                "Esc lets go of the selection.")
+        g.pagination.setVisible(not self._listing and self.gallery.pages > 1)
 
     def _title_of(self, item_id: str) -> str:
-        for wallpaper in self.gallery.showing():
-            if wallpaper is not None and wallpaper.id == item_id:
-                return wallpaper.title or item_id
-        return item_id
+        wallpaper = self.gallery.find(item_id) or self._wallpaper(item_id)
+        return (wallpaper.title or item_id) if wallpaper is not None else item_id
+
+    def _wallpaper(self, item_id: str):
+        """A wallpaper of the session by id, whichever author's it is."""
+        card = self.cards.get(self._owner.get(item_id, ""))
+        if card is None:
+            return None
+        return next((w for w in card.items if w.id == item_id), None)
 
     def _subscribed(self, item_id: str, _state: str) -> None:
-        self.gallery.mark_busy(item_id, False)
+        self.gallery.mark_busy(item_id, None)
         self._mark_subscribed(item_id)
-        self._update_subscribe_page()
+        self._update_bar()
 
     def _subscribe_failed(self, item_id: str, message: str) -> None:
-        self.gallery.mark_busy(item_id, False)
+        self.gallery.mark_busy(item_id, None)
         self._say("danger", f"Could not subscribe to “{self._title_of(item_id)}”: {message}. "
                             "Choose “Steam's page” in Review settings if this keeps happening.")
-        self._update_subscribe_page()
+        self._update_bar()
 
     def _mark_subscribed(self, item_id: str) -> None:
         """Show a wallpaper as taken where it stands — a tile vanishing under
-        the cursor loses the reader's place — and count it for the session."""
+        the cursor loses the reader's place — and count it for the session.
+        The scan's own record of it is marked too, so its author's gallery says
+        so when opened again."""
         if self.library is not None:
             self.library.note_subscribed(item_id)
+        own = self._wallpaper(item_id)
+        if own is not None:
+            own.subscribed = True
         for wallpaper in self.gallery.showing():
             if wallpaper is not None and wallpaper.id == item_id:
                 wallpaper.subscribed = True
@@ -1821,7 +2047,7 @@ class ReviewPage(Page):
         if self.session is not None and author_id and \
                 self.session.note_subscribed(author_id, item_id):
             self._touch(author_id)
-            if author_id == self.current:
+            if author_id == self.current and not self._listing:
                 self._describe(author_id)
 
     def _notice_subscriptions(self) -> None:
@@ -1958,7 +2184,7 @@ class ReviewPage(Page):
         if "mirror" in changed and self.db is not None:
             self.db.mirror = mirror_folder(self.settings)
         if "subscribe" in changed and self.state == "reviewing":
-            self._update_subscribe_page()
+            self._update_bar()
         if "scope" in changed and self.state == "empty":
             self._render()
 
@@ -2069,6 +2295,13 @@ class ReviewPage(Page):
                          for i in self.authors.list.model_.ids()],
                 "foot": self.authors.foot.text(),
                 "gallery": (g.name.text(), g.sub.text(), g.done_with.text()),
+                "view": g.mode(),
+                "bar": {"selected": "" if g.selected.isHidden() else g.selected.text(),
+                        "subscribe_selected": not g.subscribe_selected.isHidden(),
+                        "subscribe_page": (not g.subscribe_page.isHidden()
+                                           and g.subscribe_page.isEnabled()),
+                        "done_with": not g.done_with.isHidden(), "back": not g.back.isHidden(),
+                        "pages": not g.pagination.isHidden()},
                 "done": (self.done.body(), self.done.meta(), self.done_foot.text.text()),
                 "keyless": not self.keyless.isHidden()}
 

@@ -73,7 +73,7 @@ app/
     │                       cards, tables, thumbs), feedback (log, toast,
     │                       statusline, dialogs), and the frame (shell)
     ├── copier_tab.py, creator_tab.py
-    └── gallery.py        Review's wall of previews (restyled in step 12)
+    └── gallery.py        Review's gallery: the grid of cards, the list, the marks
 ```
 
 `tools/kit_preview.py` and `tools/ui_snapshot.py` sit outside the app: a
@@ -258,8 +258,10 @@ name the database still has, a tick once gone through) with filter, sort,
 "3 / 12" and "106 authors had nothing new". On the right a stack: the empty
 state (and the keyless `Callout`), the scan panel and "Found so far", the
 stopped state (an `EmptyState` with a `ConsoleExcerpt` of the last log lines),
-an author's gallery (today's `GalleryView` in a panel, with **Done with
-<author> →**), and the finished state (`MetricStrip`, **Reopen review**). Its
+an author's gallery (`_GalleryPanel`: Grid / List, the cards or the table,
+and the bar — "3 selected", **Subscribe selected**, **Subscribe page**, the
+`Pagination`, **Done with <author> →**), and the finished state
+(`MetricStrip`, **Open review as a list**, **Reopen review**). Its
 words are plain functions — `empty_text`, the five subtitles, `ScanProgress`
 (the scan's events → the panel's figure, bar, activity line, the status line's
 words), `found_row`, `author_row`, `gallery_subtitle`, `list_foot`,
@@ -306,9 +308,48 @@ words), `found_row`, `author_row`, `gallery_subtitle`, `list_foot`,
   key's test all run on threads. The constructor reads nothing (the test
   patches the file functions to raise there).
 - Fixtures: `tests/fixtures/ui/review.json` (`empty`, `scanning`, `error`,
-  `reviewing`, `done`, `settings`, `authors`) — twelve invented authors and a
-  week of counts; `app/pages/review_fixtures.py` builds the cards, the result
-  and the session as a scan would have left them, with no previews to fetch.
+  `reviewing`, `gallery-grid`, `gallery-list`, `done`, `review-list`,
+  `settings`, `authors`) — twelve invented authors and a week of counts;
+  `app/pages/review_fixtures.py` builds the cards, the result and the session
+  as a scan would have left them. The gallery states draw their previews
+  (`preview_image`: gradients and soft shapes, nothing downloaded) and put one
+  card of each mark, one under the pointer, one being subscribed to and three
+  selected, as frames 12 and 13 show them.
+
+**The gallery** (`app/ui/gallery.py`) is one page of an author's wallpapers,
+shared by two views:
+
+- `GalleryModel` holds the page on screen, the previews that arrived (a still
+  no larger than 640 px, at most `GALLERY_IMAGES` in memory), which cards are
+  being subscribed to (`busy`: `WAITING`, `SUBSCRIBING`), and the selection
+  (ids in the order chosen, on any page, with an `anchor` for Shift).
+- `GalleryView` is the grid: a `QListView` in icon mode whose card size follows
+  its width (`card_geometry`, `columns_for`: cards of about 230 px, three to
+  five across, the scroll bar always allowed for), paged thirty at a time
+  (`show_items(items, paged=False)` for the review as a list). It owns the
+  players (`MAX_PLAYERS`, the 50 ms clock, resting when late) and the clicks:
+  a click subscribes (`subscribe_requested`), Ctrl or the card's check toggle
+  (`click`, `toggle`), Shift selects a range, Ctrl+A the page, Esc clears.
+- `GalleryDelegate` paints a card from pixmaps made once: `tile` (the preview
+  cropped to 16:9 by `cover_source`, corners, the mark's edge, chip, plate and
+  check), `overlay` (the same over a playing frame), `words`, `shade` (hover,
+  waiting, subscribing). It skips cards outside the repaint's region
+  (`view.dirty`), because the view repaints the region's bounding box.
+- `GalleryList` is the kit `Table` over the same model
+  (`GalleryListModel`: thumb, WALLPAPER with its line under it, TYPE, SIZE,
+  MARK, a `ButtonCell` Subscribe / `BusyCell` / dash / `DiscCell`), with the
+  previews cropped from the gallery's own, and `set_groups` for every author
+  under a header.
+- `card_mark(wallpaper)` → `Mark(chip, text, edge, dimmed, offer)`, the one
+  place that decides what a card says; `card_line`, `card_meta`, `offered`.
+  The marks come from `Review.mark_owned`: `in_library` and `library_place`
+  from `Library.places()` (each root as the Rotator names it: `ROTATION`,
+  `RESERVE`, `DUPLICATES`), `once_had` only for ids Wallpaper Engine's folders
+  remember with no copy kept.
+- `tests/perf_gallery.py` (not a test: run it by hand) measures a page of
+  thirty made-up animated previews with threads busy in Python, before and
+  after a change; [Gallery → A card is a few copies](gallery.md#a-card-is-a-few-copies)
+  has the numbers.
 
 **Window requests** (`window_instance`): a second launch or the tray sends one
 line — `show <page>`, which every version understands, or the command form
@@ -508,8 +549,8 @@ for %f in (tests\test_*.py) do .venv\Scripts\python.exe %f
 | `test_steam_api.py` | the Web API client and its cache |
 | `test_authors_store.py` | the authors database: transactions, snapshots, pruning, the second folder, restoring, damaged files |
 | `test_review.py` | the weekly walk; the scan as one flow — the authors said in order, a stop on Steam at the author it was on, carrying on from there asking nobody twice, a cancel, a database or a key that stops it first; the session and `review_last.json`, read back as Overview reads it, tolerant of torn files and unknown fields |
-| `test_review_page.py` | every state's words (the subtitles, the empty and stopped states, the scan's figure, the rows, the plan and its keyless default, the finished state, the sidebar); the page end to end on a Steam of dictionaries: a scan, Done with, subscribing a page and noticing subscriptions made elsewhere, Skip for now, Finish review writing the database, a keyless review warned about, Steam stopping and carrying on, a cancel, a restore during a scan; the author list's keys; Review settings and the authors dialog's restore; no file read in the constructor |
-| `test_gallery.py` | every delegate and the author rows, painted in every state; memory and animation bounds; one Steamworks queue for every subscription |
+| `test_review_page.py` | every state's words (the subtitles, the empty and stopped states, the scan's figure, the rows, the plan and its keyless default, the finished state, the sidebar); the page end to end on a Steam of dictionaries: a scan, Done with, subscribing a page and noticing subscriptions made elsewhere, selecting and Subscribe selected, Grid / List remembered, Skip for now, Finish review writing the database, a keyless review warned about, Steam stopping and carrying on, a cancel, a restore during a scan; the review as a list and back; the author list's keys; Review settings and the authors dialog's restore; no file read in the constructor |
+| `test_gallery.py` | the marks, their chips and edges; the column count by width and the 16:9 crop; every card painted in every state; the clicks (subscribe, Ctrl, Shift, the check, Esc) and the selection across pages; the spinner repainting only itself; the list view's cells, its button and its selection; memory and animation bounds; one Steamworks queue for every subscription |
 | `test_hang_watch.py` | a stuck GUI thread leaves its stacks in the hang log |
 | `test_window_instance.py` | one window, raised from the tray, in a process of its own; the plain request and the command form on the socket |
 | `test_shell.py` | pages in the loop's order, the sidebar and Ctrl+number; `--tab` names; the window command parser; the rail below 1 200 px; the status line bound to the JobCenter (Show, problems until seen); the cross-fade, and none with motion off; the Settings page writing `config.json` and `suite.json`, read-only while the Rotator works; the window and the tray reading each other's `suite.json`; the title bar's hit testing; `ui_snapshot` at a size and scale |
@@ -610,9 +651,8 @@ in the template.
 
 `theme.apply(app)` sets Fusion, the palette, the font and the stylesheet, and
 reads Windows' animation switch. The old tabs' helpers (`label_style`,
-`console_style`, `card_style`, `status_color`, `kind_color`,
-`make_accent`) are mapped onto the tokens until the pages that call them are
-replaced.
+`console_style`, `card_style`, `status_color`, `make_accent`) are mapped onto
+the tokens until the pages that call them are replaced.
 
 ### Icons
 
@@ -652,7 +692,10 @@ spinners.
   `value()` from in its paint: a spinner's angle, a live dot's opacity, a
   skeleton row's opacity (with a `delay` for staggering), the sweep's travel.
   A driver's timer runs only while a subscriber is visible — a hidden page or
-  a minimised window stops it.
+  a minimised window stops it. A driver repaints a subscriber whole; an item
+  view whose one card or row turns a spinner subscribes a `LoopTicker`
+  instead, whose tick repaints just that spinner (the gallery, and a `Table`'s
+  `set_spinning(items)`).
 
 What does not move: the frame, table rows and gallery cards (no enter
 animations), dialogs, and numbers (they step, they do not roll).
@@ -667,12 +710,11 @@ the loops stand on their resting frame.
 `app/ui/kit/` holds the components the redesigned pages are built from. Each
 class is named as in the design, and each has all of the design's states.
 The pages move onto them one step at a time: the frame, Settings,
-Overview, the Tracker, the Rotator and Review are built from it; the Review
-gallery (until step 12) uses its preview loader.
+Overview, the Tracker, the Rotator and Review are built from it.
 
 | Module | Classes |
 |---|---|
-| `buttons.py` | `AccentButton` (the one action that starts the work), `SecondaryButton`, `DangerButton` (never a dialog's default, so Enter cannot delete), `GhostButton` (`outlined=True` for page headers), `IconButton` (30 px, or 22 px as `size="sm"`; its tool tip is required), `LinkButton` (an action written as a link, for a toast, the status line or a list; never a dialog's default). Text buttons take a leading `icon=`, a trailing `key="Ctrl+V"` cap, and `size="sm"`/`"md"`/`"lg"`. |
+| `buttons.py` | `AccentButton` (the one action that starts the work), `SecondaryButton`, `DangerButton` (never a dialog's default, so Enter cannot delete), `GhostButton` (`outlined=True` for page headers), `IconButton` (30 px, or 22 px as `size="sm"`; its tool tip is required), `LinkButton` (an action written as a link, for a toast, the status line or a list; never a dialog's default). Text buttons take a leading `icon=`, a trailing `key="Ctrl+V"` cap, and `size="sm"`/`"md"`/`"lg"`. `button_pixmap(text, variant, state)` and `button_size` draw a button's look for a delegate. |
 | `inputs.py` | `TextInput` (`search=True`, `set_error(message)`), `SpinBox` (mono, `1 000` with a no-break space), `Dropdown` (`add_item(text, data, count=)`, `add_section`, `add_separator`, `prefix="SORT"`) and its list, `DropdownPopup` |
 | `selection.py` | `Checkbox`, `Toggle` (`knob_position`), `SegmentedControl` (two or three segments, `changed`), `Pagination` (`page_changed`), `page_numbers(pages, current)` |
 | `chips.py` | `Chip(variant, text=None)` in exactly fourteen variants; `chip_pixmap` and `chip_size` for delegates |
@@ -683,7 +725,7 @@ gallery (until step 12) uses its preview loader.
 | `tags.py` | `TagSelect` (pills, `3 / 25`, a popup of the Creator's `WE_TAGS` in four columns); `per_file=True` adds the clip's three states — `value()` None follows the batch, a list is its own, `[]` is none. `TagPopup` is the open state. |
 | `progress.py` | `ProgressBar` (3–8 px; determinate, eased over `motion.slow`; indeterminate; error; success; optional caption row) and `ProgressRing` (58, 52, 34 px; percentage, spin, done) |
 | `cards.py` | `StatCard` (default, hover when `clickable` — an empty one too, `set_loading`, empty, `set_empty(why, link=True)` for a reason written as a link, tone `lo` for the last known), `MonitorCard` (compact or `detail=True`; a playlist shown to its end closes the ring in ok, turns the count green with a flash and gives the card an ok edge) and `MonitorView`, the plain values a page fills it from (`remaining_approx` for `≈`; `timer` "paused" or "stopped" says so in REMAINING without changing the badge), `ToolTile` (a tool of the loop on the Overview: status line and tone, thin bar, mono meta; `set_active` accents the one whose job runs, with a pulsing dot; `clicked` on a click, Enter or Space) |
-| `tables.py` | `Table`, `TableModel`, `Column`, `Cell`, `ChipCell`, `Group`, `RowDelegate`, `TableHeader`, `TableBar`, `TableSummary`, `TableFooter`; `ListRow` (`title_note`, `tick`, `dimmed`, `meta_tone`, `thumb_size`, `chips_inline`), `paint_list_row`, `RowList`; `SkeletonRows` (placeholder rows, shimmering or still); `Thumb` and `paint_thumb` |
+| `tables.py` | `Table`, `TableModel`, `Column`, `Cell` (`sub=` a second, quieter line), `ChipCell`, `ButtonCell` (a button drawn in the row, Accent on the row under the pointer; `Table.button_clicked(row, column)`), `BusyCell` (a ring and its words; `Table.set_spinning(items)` turns it), `DiscCell` (a glyph on a disc), `Group`, `RowDelegate`, `TableHeader`, `TableBar`, `TableSummary`, `TableFooter`; `disc_pixmap`, `paint_spinner` (the kit `Spinner`'s ring, for delegates); `ListRow` (`title_note`, `tick`, `dimmed`, `meta_tone`, `thumb_size`, `chips_inline`), `paint_list_row`, `RowList`; `SkeletonRows` (placeholder rows, shimmering or still); `Thumb` and `paint_thumb` |
 | `thumbs.py` | `ThumbLoader`: Steam previews for the gallery (`request`), and a wallpaper folder's own preview (`request_local`), read on a worker and kept in `data/thumbs/local/` |
 | `log.py` | `LogPanel` (a job's log as a card: `append(time, kind, message)`, All / Problems, copy, live dot, "writing to rotator.log" — or a file only read back, `set_file(name, writing=False)` — closes to its header with a problem badge; `fill=True` takes its layout's height and keeps the console open while collapsed, the Overview's glance), `LogModel` (the last 5 000 lines in a ring), `ProblemsFilter`, `LogView`, `ConsoleExcerpt` (a few lines quoted in a console well) |
 | `toast.py` | `Toast` (ok, info, warn, danger; an action link; close) and `ToastHost` (stacks a page's toasts bottom-right, at most four) |

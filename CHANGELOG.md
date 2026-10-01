@@ -6,6 +6,63 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [3.7.0] - 2026-10-01
+
+The twelfth step of the redesign: Review's gallery, as a grid of cards or a
+list, with the design's marks, several cards chosen at once, and the review as
+one list when it is finished. See [Gallery](docs/gallery.md).
+
+### Added
+
+- **Grid or List.** Over an author's gallery, **Grid / List**: the cards, or a
+  table of the same page — the preview, the title over its date, TYPE, SIZE,
+  MARK and a **Subscribe** button that turns blue on the row under the
+  pointer. The choice is remembered.
+- **Choosing several.** Ctrl-click a card, or click the check that appears on
+  the card under the pointer; Shift-click selects up to it; Ctrl+A selects the
+  page; Esc lets go. The bar says *3 selected* and offers **Subscribe
+  selected** next to **Subscribe page**; the author's row says *14 new · 3
+  selected*. A plain click still subscribes.
+- **Open review as a list.** A finished review's wallpapers in one list, every
+  author's under their name, to look back over or subscribe from; **Back to
+  the summary** returns.
+- **"Already have"** is a mark of its own: a copy is kept in the Rotator's
+  folders, and the card says where (*matches a folder in the reserve*). It
+  used to be counted as *was yours*, which now means only "subscribed once
+  and dropped". The finished review counts them apart: *already had* and
+  *were yours*.
+- Kit: `ButtonCell`, `BusyCell` and `DiscCell` for tables, a second line in a
+  `Cell` (`sub=`), `Table.button_clicked` and `Table.set_spinning`;
+  `button_pixmap` / `button_size`; `disc_pixmap` and `paint_spinner`;
+  `animations.LoopTicker`, a loop subscriber that repaints only what turns;
+  `ThumbLoader.forget(id)`.
+
+### Changed
+
+- **The cards are the design's.** A 16:9 preview cropped to fill the card
+  (Workshop previews are mostly square, and used to be letterboxed in 400 px
+  squares), one mark top left — New, Already have, Was yours, Queued,
+  Subscribed — *scene · 214 MB* on the picture, the title and its date under
+  it, and an edge in the mark's colour. Three to five cards across, as the
+  window allows; one used to fit at 1 280 px.
+- Under the pointer a card darkens and says **Click to subscribe**. A card
+  being subscribed to shows a turning ring and *Subscribing…*; those queued
+  behind it *Waiting…*. Subscribed and already-had cards are set back where
+  they stand, and stay when you come back to the author.
+- **Subscribe to all on this page** is **Subscribe page**, in the bar beside
+  the selection's actions.
+- The gallery repaints less for the same animation: with eight previews
+  playing and two threads busy in Python, a frame takes 11 ms at a 1 280 px
+  window (18 ms before, with a fifth of the cards on screen) and 12 ms at
+  2 560 px (71 ms before). `tests/perf_gallery.py` measures it.
+- `review_last.json` keeps how many each author's new wallpapers you already
+  have (`have`), beside `yours`. Older builds ignore it.
+
+### Removed
+
+- The kind colours (`theme.kind_color`, `kind.*` tokens): a card writes its
+  type as plain mono text, as the design does.
+
 ## [3.6.0] - 2026-10-01
 
 The eleventh step of the redesign: Review as one flow — scan, go through the
@@ -1019,7 +1076,8 @@ restructured yet; the tabs keep their layout and take on the new look.
   was right for one library and wrong for every other. Nothing is tagged now
   unless you ask for it.
 
-[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.6.0...HEAD
+[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.7.0...HEAD
+[3.7.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.6.0...v3.7.0
 [3.6.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.5.0...v3.6.0
 [3.5.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.4.1...v3.5.0
 [3.4.1]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.4.0...v3.4.1

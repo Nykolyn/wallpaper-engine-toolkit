@@ -58,6 +58,7 @@ from app.pages.review import (                                            # noqa
 from app.services import snapshot as snapshot_module                      # noqa: E402
 from app.services.snapshot import REVIEW, ReviewState                     # noqa: E402
 from app.settings import Settings                                         # noqa: E402
+from app.ui import gallery as gallery_mod                                    # noqa: E402
 from app.ui.kit import ConfirmDialog, NavState, format as fmt             # noqa: E402
 
 theme.apply(app)
@@ -250,9 +251,9 @@ check("every author gone through, what was subscribed, and the database",
       and "they land in the reserve" not in words.sentence
       and words.sentence.endswith("3 authors added to the authors database and 23 brought up "
                                   "to date."))
-check("the numbers: new items, subscribed (info), were yours (ok)",
+check("the numbers: new items, subscribed (info), already had (warn), were yours (ok)",
       words.metrics == ((120, "new items found"), (23, "subscribed", "info"),
-                        (2, "were yours", "ok")))
+                        (0, "already had", "warn"), (2, "were yours", "ok")))
 check("and when it finished, with the backup", words.foot == "finished 14:12 · backup authors-x.json.gz")
 check("the header says the same", done_subtitle(done_session) == "Finished 14:12 · 12 authors gone through")
 done_session.authors[5].done = False
@@ -465,13 +466,19 @@ check("and written to review_last.json at once",
 print("-- subscribing --")
 queued_for_steam: list = []
 page.subscriptions.add = lambda ids: queued_for_steam.append(list(ids))
-page._update_subscribe_page()
+page._update_bar()
 check("the bar offers what is left on the page",
-      page.gallery_panel.subscribe_page.text() == "Subscribe to all 1 on this page"
-      and page.gallery_panel.subscribe_page.isEnabled())
+      page.gallery_panel.subscribe_page.text() == "Subscribe page"
+      and "the 1 wallpaper on this page" in page.gallery_panel.subscribe_page.toolTip()
+      and page.texts()["bar"]["subscribe_page"])
 page.subscribe_page()
 check("pressing it subscribes to every wallpaper on the page not already taken",
       queued_for_steam == [[w.id for w in page.cards[AUTHORS[0]].offered]])
+check("each waits on its card until Steam is asked for it",
+      all(page.gallery.busy(i) == gallery_mod.WAITING for i in queued_for_steam[0]))
+page.subscriptions.started_item.emit(queued_for_steam[0][0])
+check("and turns its spinner while it is",
+      page.gallery.busy(queued_for_steam[0][0]) == gallery_mod.SUBSCRIBING)
 page.subscribe_page()
 check("and not twice for the same wallpapers", len(queued_for_steam) == 1)
 taken = queued_for_steam[0][0]
@@ -479,11 +486,18 @@ page._subscribed(taken, "subscribed")
 check("a subscription is counted for its author, and shown on the row",
       session.find(AUTHORS[0]).subscribed == {taken}
       and "1 subscribed" in page.authors.list.model_.row(AUTHORS[0]).meta)
+check("and its card is no longer worked on", page.gallery.busy(taken) is None)
 settings.set("review", "subscribe", rs.BY_PAGE)
-page._update_subscribe_page()
+page._update_bar()
 check("subscribing a page needs Steam directly",
       not page.gallery_panel.subscribe_page.isEnabled())
+on_offer = next(w for c in page.cards.values() for w in c.offered
+                if page.gallery.busy(w.id) is None and not w.in_library)
+check("and the cards and the list say a click opens Steam's page",
+      page.gallery.model_.opens_page
+      and page.gallery_list.model_.cell(on_offer, 5).text == "Open in Steam")
 settings.set("review", "subscribe", rs.BY_STEAM)
+page._update_bar()
 
 
 class WatchedLibrary:
@@ -508,6 +522,43 @@ check("a wallpaper subscribed elsewhere is noticed, for the author it is by",
 check("by looking at the folder off the GUI thread, once while a look is out",
       page.library.threads == [False])
 page.library = real_library
+
+print("-- the selection, and the bar --")
+busiest = max(session.authors, key=lambda a: a.new).id
+page.open_author(busiest)
+open_ids = [w.id for w in page.gallery.current_page() if page.gallery.selectable(w)]
+page.gallery.click(open_ids[0], Qt.ControlModifier)
+page.gallery.click(open_ids[1], Qt.ControlModifier)
+bar = page.texts()["bar"]
+check("selecting cards says how many in the bar, and offers Subscribe selected",
+      bar["selected"] == "2 selected" and bar["subscribe_selected"])
+check("and on the author's row", "2 selected" in page.authors.list.model_.row(busiest).meta)
+queued_for_steam.clear()
+page.subscribe_selected()
+check("Subscribe selected queues them in the order chosen and lets go of the selection",
+      queued_for_steam == [open_ids[:2]] and page.gallery.selected_ids() == []
+      and not page.texts()["bar"]["subscribe_selected"]
+      and "selected" not in page.authors.list.model_.row(busiest).meta)
+for item_id in open_ids[:2]:
+    page.gallery.mark_busy(item_id, None)
+page.gallery.click(open_ids[2] if len(open_ids) > 2 else open_ids[0], Qt.ControlModifier)
+page.open_author(AUTHORS[0] if busiest != AUTHORS[0] else AUTHORS[1])
+check("another author's gallery starts with nothing selected",
+      page.gallery.selected_ids() == [] and page.texts()["bar"]["selected"] == "")
+
+page.gallery_panel.view.set_current_index(1)
+check("List shows the table, and the choice is remembered",
+      page.texts()["view"] == "list" and settings.get("review", "view", None) == "list"
+      and page.gallery_panel.stack.currentIndex() == 1)
+page.open_author(busiest)
+check("for the next author too", page.texts()["view"] == "list")
+page.gallery_list.subscribe_requested.emit(open_ids[-1])
+check("the list's Subscribe goes through the same queue",
+      queued_for_steam[-1] == [open_ids[-1]])
+page.gallery.mark_busy(open_ids[-1], None)
+page.set_view("grid")
+check("and Grid back again", page.texts()["view"] == "grid" and
+      settings.get("review", "view", None) == "grid" and page.gallery_panel.stack.currentIndex() == 0)
 
 print("-- skip, then finish --")
 went: list = []
@@ -551,6 +602,34 @@ check("and the database write is journalled", svc.journal.recent(1)[0].kind == "
 page.reopen()
 check("Reopen review goes back to the authors", page.state == "reviewing"
       and page.session is session)
+
+print("-- the review as a list --")
+page._finished(None, [])
+page.open_review_list()
+listed = page.gallery_list.model_
+groups = [listed.group_at(r).title for r in listed.group_rows()]
+expected = [i for i in page._ordered() if page._gallery_items(i)]
+check("Open review as a list: every author's wallpapers under their name, as a list",
+      page.state == "done" and page.right.currentWidget() is page.gallery_panel
+      and page.texts()["view"] == "list"
+      and groups == [session.find(i).name for i in expected]
+      and listed.item_rows() == sum(len(page._gallery_items(i)) for i in expected))
+bar = page.texts()["bar"]
+check("its bar has no pages and no Done with, but a way back to the summary",
+      bar["back"] and not bar["done_with"] and not bar["pages"]
+      and page.texts()["gallery"][0] == "Every author")
+page.open_author(expected[-1])
+check("an author picked on the left is found in the list, not opened on their own",
+      page._listing and page.gallery.total == listed.item_rows())
+check("the remembered view is left as it was", settings.get("review", "view", None) == "grid")
+page.close_review_list()
+check("Back to the summary", page.right.currentIndex() == page_module.STATES.index("done")
+      and not page._listing and page.texts()["view"] == "grid")
+page.open_review_list()
+page.reopen()
+check("Reopen review from the list goes back to the authors' galleries",
+      page.state == "reviewing" and not page._listing
+      and page.right.currentWidget() is page.gallery_panel and page.gallery.paged)
 
 print("-- a review without a key --")
 # a week on: each of them has published one more

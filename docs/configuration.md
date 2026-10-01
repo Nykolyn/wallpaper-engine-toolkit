@@ -158,6 +158,7 @@ each through its own code, and they stay two files.
 | Subscribe by | [Review settings](review.md#how-a-click-subscribes) | `suite.json` (`review.subscribe`: `steam` or `page`) | Steam directly |
 | Second copy of the authors backups | [Review settings](authors-database.md#a-second-copy-somewhere-else) | `suite.json` (`review.backup_mirror`) | none |
 | The author list's order | [Review](review.md) | `suite.json` (`review.sort`, `review.descending`) | known authors first |
+| The gallery as a grid or a list | [Review](gallery.md#grid-or-list) | `suite.json` (`review.view`: `grid` or `list`) | grid |
 
 The window and the tray both keep `suite.json`. Each reads it again when the
 other has written it, before it relies on or changes the lead monitor.

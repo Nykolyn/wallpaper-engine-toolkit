@@ -28,7 +28,7 @@ from __future__ import annotations
 import math
 
 from PySide6.QtCore import QMargins, QPointF, QRectF, QSize, Qt
-from PySide6.QtGui import QFontMetricsF, QPainter, QPainterPath, QPen
+from PySide6.QtGui import QFontMetricsF, QPainter, QPainterPath, QPen, QPixmap
 from PySide6.QtWidgets import (
     QAbstractButton, QPushButton, QSizePolicy, QStyle, QToolButton, QWidget,
 )
@@ -297,6 +297,55 @@ class DangerButton(_TextButton):
         if QPushButton.isDefault(self):
             QPushButton.setDefault(self, False)
         return super().event(event)
+
+
+_drawn: dict[tuple, QPixmap] = {}
+
+
+def button_size(text: str, size: str = "md") -> QSize:
+    """The box a text button of these words takes, border included."""
+    s = theme.BUTTON[size]
+    width = QFontMetricsF(theme.font(s.font)).horizontalAdvance(_plain(text))
+    return QSize(math.ceil(width) + 2 * (s.pad + 1), s.height)
+
+
+def button_pixmap(text: str, variant: str = "secondary", state: str = "default",
+                  size: str = "md", dpr: float = 1.0) -> QPixmap:
+    """A text button's look as a pixmap, for a delegate that draws one in a row
+    (a table's `ButtonCell`): the same fill, depth, edge and words as the
+    widget in that state, without the shadow outside it. Made once per (words,
+    variant, state, size, scale)."""
+    key = (text, variant, state, size, round(dpr, 3))
+    found = _drawn.get(key)
+    if found is not None:
+        return found
+    fill, edge, ink = LOOKS[variant][state]
+    box_size = button_size(text, size)
+    pixmap = QPixmap(math.ceil(box_size.width() * dpr), math.ceil(box_size.height() * dpr))
+    pixmap.setDevicePixelRatio(dpr)
+    pixmap.fill(Qt.transparent)
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.Antialiasing)
+    box = QRectF(0, 0, box_size.width(), box_size.height())
+    r = theme.R_MD
+    if fill is not None:
+        path = QPainterPath()
+        path.addRoundedRect(box, r, r)
+        painter.fillPath(path, token(fill))
+    if state == "pressed":
+        theme.paint_shadow(painter, box, "elev.inset", r)
+    elif variant in RAISED and state != "disabled":
+        theme.paint_sheen(painter, box, r)
+    if edge:
+        painter.setPen(QPen(token(edge), 1))
+        painter.setBrush(Qt.NoBrush)
+        painter.drawRoundedRect(box.adjusted(0.5, 0.5, -0.5, -0.5), r - 0.5, r - 0.5)
+    painter.setFont(theme.font(theme.BUTTON[size].font))
+    painter.setPen(token(ink))
+    painter.drawText(box, Qt.AlignCenter, _plain(text))
+    painter.end()
+    _drawn[key] = pixmap
+    return pixmap
 
 
 class GhostButton(_TextButton):

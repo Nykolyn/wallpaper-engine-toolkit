@@ -326,8 +326,12 @@ class ThumbLoader(QObject):
         self._asked.add(item_id)
         self.pool.start(_Fetch(self, item_id, url))
 
-    def forget(self) -> None:
-        self._asked.clear()
+    def forget(self, item_id: str | None = None) -> None:
+        """Let a preview be asked for again — one, or (with no id) every one."""
+        if item_id is None:
+            self._asked.clear()
+        else:
+            self._asked.discard(item_id)
 
     def retarget(self) -> None:
         """A different page is on screen: drop what was queued for the last one.

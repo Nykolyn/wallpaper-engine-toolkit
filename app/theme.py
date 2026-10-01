@@ -132,14 +132,13 @@ TOKENS: dict[str, str] = {
     # tile (`brand.tile`); the fill is cut out of the outline by this edge.
     "brand.edge": "#222A3B",
 
-    # One hue per kind of wallpaper, which the gallery's cards still use. The
-    # design shows the kind as plain text instead; these go with the gallery
-    # rewrite.
-    "kind.scene": "#5BC8E8",
-    "kind.video": "#C58BFF",
-    "kind.web": "#3DD68C",
-    "kind.application": "#F5A524",
-    "kind.preset": "#98A1B3",
+    # The gallery's cards: the shade over a preview under "Click to subscribe"
+    # or a spinner, the plate under "scene · 214 MB", the halo of the card
+    # under the pointer, and the empty check offered on it.
+    "gallery.shade": "rgba(10,14,22,.66)",
+    "gallery.plate": "rgba(10,13,18,.8)",
+    "gallery.halo": "rgba(76,141,255,.35)",
+    "gallery.check": "rgba(10,13,18,.55)",
 }
 
 # Three surfaces are gradients rather than colours. Stops are (position, value).
@@ -766,6 +765,10 @@ TABLE_SORT_ICON = 11
 TABLE_SELECT_EDGE = 2    # the accent inset down a selected row's left side
 TABLE_ICON = 13          # a column's leading glyph (a video file)
 TABLE_ICON_GAP = 7
+TABLE_SUB_GAP = 3        # a Cell's text to its second line
+TABLE_DISC = 18          # a DiscCell's disc
+TABLE_SPINNER = 14       # a BusyCell's ring
+DISC_GLYPH = 0.6         # a disc's glyph, as a share of the disc
 
 LIST_ROW_PAD = (8, 11)
 LIST_ROW_GAP = 11
@@ -994,10 +997,39 @@ REVIEW_EMPTY_PAD = 40         # the empty and stopped panels' inner margin
 REVIEW_DONE_PAD = 34
 REVIEW_GALLERY_HEAD_PAD = (11, 14)  # an author's name and what is new, over the gallery
 REVIEW_BAR_PAD = (9, 14)      # the gallery's bottom bar
+REVIEW_LIST_BODY_PAD = (13, 14)  # round the gallery's list view
+REVIEW_DONE_NAME = 18         # characters of an author's name in "Done with … →"
 REVIEW_FILTER_WIDTH = 0       # the author filter takes the panel's width
 REVIEW_SETTLE_MS = 220        # the arrow keys open an author once the selection rests
 REVIEW_WATCH_MS = 4000        # a look for wallpapers subscribed elsewhere
 REVIEW_RENDER_MS = 80         # a scan's events, drawn together
+
+# The gallery (app/ui/gallery.py): a grid of cards, 16:9 previews.
+GALLERY_GAP = 14              # between cards, and round the grid
+GALLERY_CARD = 230            # the card width the number of columns aims at
+GALLERY_SLACK = 2             # px the cards leave free, so the last column does not wrap
+GALLERY_COLUMNS = (3, 5)      # the fewest and the most columns
+GALLERY_TEXT_GAP = 6          # the preview to the title, the title to its date
+GALLERY_INSET = 6             # a chip, the plate and a check from the preview's edges
+GALLERY_PLATE_PAD = (1, 5)    # "scene · 214 MB": vertical, horizontal
+GALLERY_PLATE_RADIUS = 3
+GALLERY_CHECK = 18            # the subscribed check, the selection check
+GALLERY_CHECK_HIT = 26        # the selection check's target, round it
+GALLERY_SPINNER = 15          # "Subscribing…"
+GALLERY_HINT_ICON = 14        # the + before "Click to subscribe"
+GALLERY_HINT_GAP = 7
+GALLERY_SELECT_EDGE = 2       # a selected card's edge
+GALLERY_DIM = 0.5             # a card subscribed or already had
+GALLERY_STILL_MAX = 640       # a preview's still is kept no larger than this, px
+GALLERY_PAGE = 30             # wallpapers to a page
+GALLERY_PLAYERS = 8           # previews that may animate at once
+GALLERY_FRAME_MS = 50         # the animation's clock
+GALLERY_LATE = 0.25           # a tick this late, twice running, rests the animation…
+GALLERY_CALM = 2.0            # …until the clock has kept time this long
+GALLERY_SETTLE_MS = 120       # previews are asked for once scrolling rests
+GALLERY_PLAYERS_MS = 150      # who plays is worked out once per burst of arrivals
+GALLERY_IMAGES = 90           # previews kept in memory at most (one page, or a list's view)
+GALLERY_LIST_COLUMNS = {"type": 52, "size": 60, "mark": 104, "action": 96}
 AUTHORS_WIDTH = 600           # the authors database dialog
 AUTHORS_TABLE = 220           # its table of backups
 AUTHORS_COLUMNS = {"taken": 112, "authors": 64, "size": 60}
@@ -1009,17 +1041,6 @@ def status_color(kind: str) -> str:
     """Colour for a card border or a status line: ok / bad / done / muted."""
     return css({"ok": "ok", "bad": "danger", "done": "accent",
                 "muted": "text.mid"}.get(kind, "text.body"))
-
-
-def kind_color(kind: str) -> str:
-    """Colour for a wallpaper's kind — Scene, Video, Web, Application, Preset.
-
-    Anything else falls back to the neutral chip colour. A card draws no chip
-    at all for an item Steam never tagged: an empty space says "unknown" as
-    well as the word would, and more quietly.
-    """
-    token = f"kind.{(kind or '').casefold()}"
-    return css(token if token in TOKENS else "surface.raised")
 
 
 # ---- Qt palette -----------------------------------------------------------

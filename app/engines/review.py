@@ -172,6 +172,8 @@ class Wallpaper:
 
     item: ItemDetails
     subscribed: bool = False
+    # Subscribed once and gone: Wallpaper Engine's folders still remember it,
+    # and no copy of it is kept in the libraries.
     once_had: bool = False
     in_queue: bool = False          # it is in the Wallpaper Engine folder
     new_since_visit: bool = True
@@ -180,11 +182,16 @@ class Wallpaper:
     # because the answer is no — and a card must not claim "new" on the
     # strength of a question it never asked.
     owned_checked: bool = False
+    # A copy is kept in the Rotator's libraries: the gallery's "already have".
+    # ``library_place`` says where (`library.RESERVE`, `ROTATION`, …).
+    in_library: bool = False
+    library_place: str = ""
 
     @property
     def unseen(self) -> bool:
         """Never subscribed, never owned, never copied — genuinely new to you."""
-        return self.owned_checked and not self.subscribed and not self.once_had
+        return (self.owned_checked and not self.subscribed and not self.once_had
+                and not self.in_library)
 
     @property
     def id(self) -> str:
@@ -304,6 +311,11 @@ class AuthorCard:
         """How many of the offered ones were had before and deleted."""
         return sum(1 for w in self.offered if w.once_had)
 
+    @property
+    def have(self) -> int:
+        """How many of the offered ones have a copy kept in the libraries."""
+        return sum(1 for w in self.offered if w.in_library)
+
     def newest_covered(self) -> datetime | None:
         """The creation time the visit date should move to."""
         stamps = [w.item.created for w in self.items if w.item.created]
@@ -359,6 +371,7 @@ class Review:
         self._filling_guard = threading.Lock()
         # Worked out once, off the GUI thread, and shared by every gallery.
         self._owned: set[str] | None = None
+        self._places: dict[str, str] | None = None
         self._owned_lock = threading.Lock()
         # Whatever config.json the last scan read, so the pass that asks what
         # you used to own reads the same one.
@@ -542,14 +555,26 @@ class Review:
                                   for i in ids})
             return self._owned
 
+    def library_places(self) -> dict[str, str]:
+        """Where each workshop id kept in the libraries is (`Library.places`).
+        Cached with :meth:`owned_before`."""
+        with self._owned_lock:
+            if self._places is None:
+                self._places = self.library.places()
+            return self._places
+
     def forget_owned(self) -> None:
         """Drop the cache, so the next ask re-reads the folders and the index."""
         with self._owned_lock:
             self._owned = None
+            self._places = None
 
     def mark_owned(self, card: AuthorCard, owned: set[str] | None = None,
-                   subscribed: set[str] | None = None) -> AuthorCard:
-        """Fill in "was yours" across a card's gallery.
+                   subscribed: set[str] | None = None,
+                   places: dict[str, str] | None = None) -> AuthorCard:
+        """Fill in what you had across a card's gallery: "already have" for a
+        copy kept in the libraries (and where), "was yours" for one only
+        Wallpaper Engine's folders remember.
 
         Cheap once :meth:`owned_before` has been asked once — a set lookup per
         wallpaper — and the slow part of it is the parse behind that set, which
@@ -558,9 +583,13 @@ class Review:
         """
         owned = self.owned_before() if owned is None else owned
         subscribed = self.library.subscribed() if subscribed is None else subscribed
+        places = self.library_places() if places is None else places
         for wallpaper in card.items:
-            wallpaper.once_had = (wallpaper.id in owned
-                                  and wallpaper.id not in subscribed)
+            taken = wallpaper.id in subscribed
+            place = "" if taken else places.get(wallpaper.id, "")
+            wallpaper.in_library = bool(place)
+            wallpaper.library_place = place
+            wallpaper.once_had = wallpaper.id in owned and not taken and not place
             wallpaper.owned_checked = True
         card.owned_checked = True
         return card
@@ -696,6 +725,7 @@ class Review:
             counts["filled"] = len(filled)
             counts["to_review"] = sum(c.badge for c in filled)
             counts["returning"] = sum(c.returning for c in filled)
+            counts["have"] = sum(c.have for c in filled)
             counts["gallery"] = sum(len(c.offered) for c in filled)
         return counts
 
