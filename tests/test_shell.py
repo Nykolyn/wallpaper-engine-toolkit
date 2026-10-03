@@ -112,7 +112,8 @@ class Feed(QObject):
     def __init__(self):
         super().__init__()
         self.results = []
-        self.tracker = SimpleNamespace(config_path="")
+        self.config_path = ""
+        self.error = None
         self.asked = []
 
     def refresh(self):

@@ -40,11 +40,11 @@ marks a reconstructed time, `≈` an estimate, "last known" what Wallpaper
 Engine is no longer there to confirm, and a number that is not known is "—",
 never 0.
 
-Nothing here touches the disk on the window's thread, bar two things the old
-tab did there too and that only a click starts: a new cycle, and rebuilding
-the counts from file times (a stat of every wallpaper; the busy cursor says
-so). Marking a folder [protected] renames it on a worker. The TrackerFeed's
-own looks are its business (app/tracker_feed.py).
+Nothing here touches the disk on the window's thread. Marking a folder
+[protected] renames it on a worker. A new cycle and rebuilding the counts from
+file times (a stat of every wallpaper) are asked of the TrackerFeed, whose
+worker owns the tracker and takes every look (app/tracker_feed.py); the page
+hears back when the count they changed has landed.
 """
 from __future__ import annotations
 
@@ -63,7 +63,7 @@ from PySide6.QtWidgets import (
     QAbstractItemView, QHBoxLayout, QMenu, QStackedLayout, QVBoxLayout, QWidget,
 )
 
-from .. import animations, external, theme
+from .. import external, theme
 from ..engines.rotator.core import PROTECTED_PREFIX, is_protected
 from ..engines.tracker import (
     ANCHOR_ENGINE, ANCHOR_FILE_TIMES, ANCHOR_NONE, ANCHOR_ROTATION, MIN_SAMPLE, TIME_FMT, Cycle,
@@ -788,7 +788,7 @@ def page_timer(feed):
     """The page's own WallpaperTimer: a reader that starts from the tray's
     count and never writes (see the module's docstring)."""
     from ..engines import wallpaper_timer
-    config = getattr(getattr(feed, "tracker", None), "config_path", "") or ""
+    config = getattr(feed, "config_path", "") or ""
     files = getattr(feed, "files", None)
     if not config or files is None:
         return None
@@ -1106,8 +1106,7 @@ class TrackerPage(Page):
         if self._fixture is not None or self._feed is None:
             return
         self._results = list(getattr(self._feed, "results", None) or [])
-        tracker = getattr(self._feed, "tracker", None)
-        self._error = getattr(tracker, "error", None)
+        self._error = getattr(self._feed, "error", None)
 
     def _engine(self) -> bool | None:
         if self._fixture is not None:
@@ -1319,8 +1318,7 @@ class TrackerPage(Page):
 
     def _show_empty(self) -> None:
         title, body, action, target = empty_text(self._error, self._engine(),
-                                                 getattr(getattr(self._feed, "tracker", None),
-                                                         "config_path", ""))
+                                                 getattr(self._feed, "config_path", ""))
         self.empty.set_title(title)
         self.empty.set_body(body)
         self.empty_action.setText(action)
@@ -1629,44 +1627,53 @@ class TrackerPage(Page):
         self._table_monitor = None
         self._render()
 
-    def new_cycle(self, monitor: str) -> bool:
+    def new_cycle(self, monitor: str, then: Callable[[], None] | None = None) -> bool:
+        """Start a monitor's count again, after asking. `then` runs once the
+        count it changed has landed; False when it was not done."""
         p = next((r for r in self._results if r.monitor == monitor), None)
         reached = f" (it has reached {fmt.ratio(p.seen, p.total)})" if p is not None else ""
-        answer = ConfirmDialog(
+        answer = self._answer(ConfirmDialog(
             f"Start {monitor}'s count again?",
             f"The count starts again from the wallpaper on screen, and the current "
             f"cycle{reached} is kept in the archive. Rarely needed: a playlist a rotation "
             f"swapped in is noticed by itself.",
-            self.window(), icon="refresh", confirm_text="Start a new cycle").ask()
+            self.window(), icon="refresh", confirm_text="Start a new cycle"))
         if not answer or self._feed is None or self._fixture is not None:
             return False
-        with animations.busy():
-            self._feed.tracker.reset(monitor)
-            self._feed.refresh()
-        self._list_dirty = True
-        self._read_list()
+        # On the feed's worker, like every look: tracker.json is read and
+        # written there, and the look after it can wait on the wallpaper disk.
+        self._feed.reset(monitor, lambda result: self._cycle_started(monitor, result, then))
         return True
 
-    def rebuild(self) -> str | None:
-        """Work the counts out again from the wallpapers' file times; what came
-        of it, in a sentence, or None when it was not done."""
-        answer = ConfirmDialog(
+    def _cycle_started(self, monitor: str, result, then: Callable[[], None] | None) -> None:
+        if isinstance(result, Exception):
+            self._say("danger", f"{monitor}'s count could not start again: {result}")
+            return
+        self._list_dirty = True
+        self._read_list()
+        if then is not None:
+            then()
+
+    def rebuild(self, then: Callable[[str], None] | None = None) -> bool:
+        """Work the counts out again from the wallpapers' file times, after
+        asking. `then` gets what came of it, in a sentence, once it has; False
+        when it was not done."""
+        answer = self._answer(ConfirmDialog(
             "Rebuild the counts from file times?",
             "Every count that does not follow Wallpaper Engine's own record is worked out "
             "again from the wallpapers' last-access times. It runs by itself when a playlist "
             "is adopted or the looking has been away, so this only forces it.",
-            self.window(), icon="refresh", confirm_text="Rebuild").ask()
+            self.window(), icon="refresh", confirm_text="Rebuild"))
         if not answer or self._feed is None or self._fixture is not None:
-            return None
-        with animations.busy():
-            recovered = self._feed.tracker.rebuild()
-            self._feed.refresh()
+            return False
+        self._feed.rebuild(lambda result: self._rebuilt(result, then))
+        return True
+
+    def _rebuilt(self, result, then: Callable[[str], None] | None) -> None:
         self._list_dirty = True
         self._read_list()
-        if recovered:
-            return (f"Recovered {fmt.counted(recovered, 'wallpaper')} shown while nothing "
-                    f"was watching.")
-        return "Nothing to recover: the counts already match the file times."
+        if then is not None:
+            then(rebuild_sentence(result))
 
     def open_settings(self) -> None:
         """Playlist settings: where the count comes from, and the two ways to
@@ -1680,13 +1687,12 @@ class TrackerPage(Page):
                           icon="tracker", save_text="Done", embedded=embedded)
         form.cancel_button().hide()
 
-        tracker = getattr(self._feed, "tracker", None)
         where = QWidget()
         column = QVBoxLayout(where)
         column.setContentsMargins(0, 0, 0, 0)
         column.setSpacing(theme.SP_6)
-        config = PathField(getattr(tracker, "config_path", "") or "", editable=False, kind="file",
-                           placeholder="config.json not found")
+        config = PathField(getattr(self._feed, "config_path", "") or "", editable=False,
+                           kind="file", placeholder="config.json not found")
         column.addWidget(config)
         facts = label(self._settings_facts(), "type.caption", "lo")
         facts.setWordWrap(True)
@@ -1712,19 +1718,25 @@ class TrackerPage(Page):
         line.addStretch(1)
         column.addLayout(line)
         column.addWidget(result)
-        if getattr(tracker, "atime_ok", None) is False:
+        if getattr(self._feed, "atime_ok", None) is False:
             rebuild.setEnabled(False)
             result.setText("NTFS last-access updates are off on this machine, so time when "
                            "nothing was looking cannot be recovered — keep the tray running.")
             set_tone(result, "warn")
             result.show()
 
-        def rebuilt() -> None:
-            said = self.rebuild()
-            if said:
-                result.setText(said)
+        def say(sentence: str, done: bool = True) -> None:
+            try:
+                result.setText(sentence)
                 set_tone(result, "lo")
                 result.show()
+                rebuild.setEnabled(done)
+            except RuntimeError:
+                pass            # the dialog closed before the feed answered
+
+        def rebuilt() -> None:
+            if self.rebuild(say):
+                say("Rebuilding from file times…", done=False)
         rebuild.clicked.connect(rebuilt)
         form.add_row("Rebuild from file times", again,
                      "Works each count out again from the wallpapers' last-access times.")
@@ -1750,10 +1762,15 @@ class TrackerPage(Page):
         return form
 
     def _cycle_from_form(self, monitor: str, words) -> None:
-        if self.new_cycle(monitor):
+        def said() -> None:
             p = next((r for r in self._results if r.monitor == monitor), None)
-            if p is not None:
+            if p is None:
+                return
+            try:
                 words.setText(f"{p.monitor} · “{p.playlist}” · {fmt.ratio(p.seen, p.total)}")
+            except RuntimeError:
+                pass            # the dialog closed before the feed answered
+        self.new_cycle(monitor, then=said)
 
     def _settings_facts(self) -> str:
         heartbeat = None
@@ -1862,6 +1879,19 @@ class TrackerPage(Page):
             cycle, now, live=bool(p.live),
             described=lambda item: self._described.get(item) or _fixture_row_described(data, item))
         self._show_rows(monitor, rows, in_order, now)
+
+
+# ---- what came of a rebuild ------------------------------------------------------------------------
+
+def rebuild_sentence(result) -> str:
+    """Rebuilding from file times, said once it is done: `result` is the
+    number of wallpapers it recovered, or the exception it raised."""
+    if isinstance(result, Exception):
+        return f"The counts could not be rebuilt: {result}"
+    if result:
+        return (f"Recovered {fmt.counted(result, 'wallpaper')} shown while nothing "
+                f"was watching.")
+    return "Nothing to recover: the counts already match the file times."
 
 
 # ---- the empty states ------------------------------------------------------------------------------

@@ -59,7 +59,7 @@ from app.engines.wallpaper_timer import Countdown                        # noqa:
 from app.pages.tracker import (                                          # noqa: E402
     PlaylistModel, TrackerPage, author_choices, empty_text, finish_at, finish_sentence,
     header_subtitle, monitor_view, nav_state, pace_figure, playlist_rows, provenance,
-    queue_words, reveal, row_matches, when_text,
+    queue_words, rebuild_sentence, reveal, row_matches, when_text,
 )
 from app.services import snapshot as snapshot_module                     # noqa: E402
 from app.settings import Settings                                        # noqa: E402
@@ -570,24 +570,20 @@ class Feed(QObject):
         super().__init__()
         self.results = []
         self.looked = 0
-        self.reset: list[str] = []
-        outer = self
-
-        class Tracker:
-            config_path = "X:/we/config.json"
-            error = None
-            atime_ok = True
-
-            def reset(self, monitor):
-                outer.reset.append(monitor)
-
-            def rebuild(self):
-                return 3
-        self.tracker = Tracker()
+        self.config_path = "X:/we/config.json"
+        self.error = None
+        self.atime_ok = True
         self.files = Files()
+        self.asked: list[tuple] = []        # (what, its done), answered by the test
 
     def refresh(self):
         self.looked += 1
+
+    def reset(self, monitor, done=None):
+        self.asked.append(("reset", monitor, done))
+
+    def rebuild(self, done=None):
+        self.asked.append(("rebuild", done))
 
 
 class FakeTimer:
@@ -776,12 +772,12 @@ check("and a note says it is time, with the way to the Rotator",
       and page.pace.callouts[0]._actions.count() == 1)
 
 feed.results = []
-feed.tracker.error = "Cannot read Wallpaper Engine's config.json: it is not there"
+feed.error = "Cannot read Wallpaper Engine's config.json: it is not there"
 feed.updated.emit()
 check("no config.json: the empty state says where to choose it",
       page.texts()["empty"] == "Wallpaper Engine's config.json was not found"
       and page.nav_state() == NavState())
-feed.tracker.error = None
+feed.error = None
 
 print("-- the lead, and the page's dialogs --")
 lead_settings = Settings({})
@@ -800,6 +796,35 @@ check("Playlist settings: where it reads, rebuild, a new cycle per monitor, and 
       and form.save_button().text() == "Done" and form.cancel_button().isHidden())
 check("its facts point to Settings for what is set there",
       page2._settings_facts().startswith("Also checks every 5 min · lead monitor: Monitor2"))
+
+print("-- a new cycle and a rebuild: asked of the feed, answered later --")
+page2._answer = lambda dialog: False
+asked_before = len(feed.asked)
+check("cancelled, the feed is not asked",
+      not page2.new_cycle("Monitor1") and not page2.rebuild() and len(feed.asked) == asked_before)
+page2._answer = lambda dialog: True
+followed: list[str] = []
+check("New cycle… asks the feed, whose worker owns the tracker, and does not wait",
+      page2.new_cycle("Monitor2", then=lambda: followed.append("Monitor2"))
+      and feed.asked[-1][:2] == ("reset", "Monitor2") and followed == [])
+feed.asked[-1][2](None)
+check("what asked follows once the feed answers", followed == ["Monitor2"])
+page2.new_cycle("Monitor1", then=lambda: followed.append("Monitor1"))
+feed.asked[-1][2](OSError("tracker.json is read-only"))
+check("one that failed says so, and nothing follows",
+      page2.messages[-1] == ("danger", "Monitor1's count could not start again: "
+                                       "tracker.json is read-only")
+      and followed == ["Monitor2"])
+said_back: list[str] = []
+check("Rebuild asks the feed too", page2.rebuild(said_back.append)
+      and feed.asked[-1][0] == "rebuild" and said_back == [])
+feed.asked[-1][1](3)
+check("and says what came of it in the words it always had",
+      said_back == ["Recovered 3 wallpapers shown while nothing was watching."])
+check("nothing to recover, or a failure, said as plainly",
+      rebuild_sentence(0) == "Nothing to recover: the counts already match the file times."
+      and rebuild_sentence(OSError("the disk is asleep"))
+      == "The counts could not be rebuilt: the disk is asleep")
 
 
 print("-- fixtures --")

@@ -13,6 +13,10 @@ everything on other drives (a test's own temp folders).
     ...build pages, load fixtures...
     check("nothing on the wallpaper disk from the GUI thread", not gui_guard.violations)
 
+A test that needs real files there — a real Tracker reading a made-up
+config.json — makes them in a temporary folder and calls `watch(folder)`, and
+the guard treats that folder as the wallpaper disk too.
+
 It only records: raising would make the page take a path it never takes for
 real, and hide the next call.
 """
@@ -27,6 +31,12 @@ import traceback
 DRIVES = ("W:", "X:")
 violations: list[str] = []
 _installed = False
+_watched: list[str] = []        # folders treated as the wallpaper disk, by watch()
+
+
+def watch(folder) -> None:
+    """Treat this folder, and everything in it, as the wallpaper disk."""
+    _watched.append(os.path.normcase(os.path.abspath(os.fspath(folder))))
 
 
 def _on_disk(arg) -> bool:
@@ -36,7 +46,14 @@ def _on_disk(arg) -> bool:
         return False
     if isinstance(text, bytes):
         text = text.decode(errors="replace")
-    return isinstance(text, str) and text[:2].upper() in DRIVES
+    if not isinstance(text, str):
+        return False
+    if text[:2].upper() in DRIVES:
+        return True
+    if _watched:
+        path = os.path.normcase(os.path.abspath(text))
+        return any(path == w or path.startswith(w.rstrip(os.sep) + os.sep) for w in _watched)
+    return False
 
 
 def _where() -> str:

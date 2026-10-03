@@ -38,7 +38,7 @@ app/
 ├── tray_icon.py          the tray's ring: four states, drawn per size; the taskbar's colour
 ├── tray_menu.py          the tray's menu: a QMenu that paints itself
 ├── tray_words.py         the tray's tooltip, menu hints and balloon copy; three small readers
-├── tracker_feed.py       one tracker, looked at when Wallpaper Engine writes
+├── tracker_feed.py       one tracker, looked at on a worker when Wallpaper Engine writes
 ├── autostart.py          the logon task, and the rename migration
 ├── external.py           starting other programs without the toolkit's own DLLs
 ├── services/             what the pages report their work to, and read the loop from:
@@ -208,14 +208,17 @@ file functions to raise there):
   and `messages` are there for tests.
 - `Countdowns` runs a `WallpaperTimer` of its own while the page is on screen,
   as a reader: `open_memory=None`, `save_path=None`, `restore_path` the tray's
-  `wallpaper_timer.json`, `follow_files=False` (the feed stats the files). It
-  is made again each time the page is shown, so it starts from the tray's
-  latest count; it also gives each monitor's resolution.
+  `wallpaper_timer.json`, `follow_files=False` (the feed's worker stats the
+  files, and the timer reads the copy the feed keeps in `files`). It is made
+  again each time the page is shown, so it starts from the tray's latest
+  count; it also gives each monitor's resolution.
 - A row's click opens Explorer through `reveal(item)` on a thread.
 
-Only two things a click starts run on the window's thread, as the old tab's
-did: a new cycle and rebuilding from file times (`Tracker.reset` /
-`Tracker.rebuild`, with the busy cursor). Its fixtures are
+A new cycle and rebuilding from file times are asked of the feed
+(`TrackerFeed.reset(monitor, done)` / `rebuild(done)`), whose worker owns the
+`Tracker`; `done` runs on the window's thread once the look after it has
+landed, with the number recovered or the exception raised, and the page says
+what came of it. Its fixtures are
 `tests/fixtures/ui/tracker.json` (`tracking`, `paused`, `disconnected`,
 `finished`, `restarted`, `we-off`, `single-monitor`, `no-config`,
 `no-playlist`); `Page.frame_fixture(state)` names the frame's state each goes
@@ -569,6 +572,7 @@ for %f in (tests\test_*.py) do .venv\Scripts\python.exe %f
 | `test_creator_page.py` | skip/selection counts, tag cells, keyboard selection, playlist visibility, fixtures without drive I/O, a threaded read and subset build through JobCenter and the journal, notification and retry |
 | `test_tracker.py` | anchoring a cycle, rebuilding history, merging two writers, following the engine's deck, when to look |
 | `test_wallpaper_timer.py` | the PLPV0005 parser, the file watcher, the countdown, pause rules |
+| `test_tracker_feed.py` | a real Tracker on a made-up config.json and state file, every look on the feed's worker and no file call on the window's thread (`gui_guard.watch`); the window's copy of the files and a countdown reading it; a new cycle and a rebuild answered after their look; another config.json under a look; looks asked for while one runs; a failing look said once; the worker stopping with its owner |
 | `test_playlist_refresh.py` | finding the rotation's playlist, refilling it, restarting one monitor's pass, the state file written back byte for byte |
 | `test_rotator_cleanup.py` | the reserve check and what it offers to delete, ticked by default; the duplicates listed with sizes, junctions not followed; the Rotator page with its folders unset listing, checking, rotating and deleting nothing; a rotation from the page logging to its own run file and side-file entry |
 | `test_rotator_page.py` | the next run's steps and captions from `preview()`; the start question for a normal run, `[protected]` folders, duplicates and a reset; the broken-folders groups and their defaults; the history's rows (old runs without a side file), summary and CSV; a finished run's steps and sentences; the event → state machine; a run end to end on folders made here (check, clean-up, question, rotation, journal, log), stop after this step, retry, rebuild (Wallpaper Engine stood in for), a run's log read back, CSV export; 33 000 rows built, sorted and scrolled with every file call on the window's thread failing; every fixture |

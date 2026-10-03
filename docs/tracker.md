@@ -302,6 +302,15 @@ about 50 ms on the tray's GUI thread plus a rewrite of the 200 KB
 290 changes on two monitors. A look now costs about 4 ms, and the file is
 written only when something in it changed.
 
+Every look is taken on a thread of its own, in the tray and in the window
+alike. A look reads `config.json` and the files of the playlist's wallpapers,
+and on a library kept on a hard disk that has spun down, the first file it
+touches waits for the disk: the tray's hang log once caught 54 seconds inside
+the probe, with the tray icon and the window frozen all that time. Now the
+count simply arrives when the disk does, and nothing else waits for it. A new
+cycle and rebuilding from file times run on the same thread, after any look
+already under way.
+
 A slower **safety check** stays, every five minutes by default ("Also check
 every" on the [Settings](settings.md#wallpaper-engine) page), for what no write announces — chiefly a wallpaper deleted
 from disk. Where there is no readable `playliststate.bin` at all, the tracker

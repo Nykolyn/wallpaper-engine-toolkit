@@ -203,9 +203,8 @@ def build_window(page_key: str):
         updated = Signal()
         config_changed = Signal()
         results: list = []
-
-        class tracker:                  # noqa: N801 — stands in for an attribute
-            config_path = ""
+        config_path = ""
+        error = None
 
         def refresh(self):
             pass

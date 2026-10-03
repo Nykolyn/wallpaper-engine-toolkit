@@ -149,6 +149,7 @@ class SettingsPage(Page):
             services.jobs.changed.connect(self._jobs_changed)
         if feed is not None:
             feed.updated.connect(self._fill_monitors)
+            feed.config_changed.connect(self._feed_config_changed)
         self._jobs_changed()
         self._fill_monitors()
         self.connect_review(on_review_settings, on_authors)
@@ -219,7 +220,7 @@ class SettingsPage(Page):
     def _engine_panel(self) -> GlassPanel:
         panel, column = self._panel("Wallpaper Engine")
         known = self.settings.get("tracker", "we_config", None) or (
-            self._feed.tracker.config_path if self._feed is not None else "")
+            self._feed.config_path if self._feed is not None else "")
         self.we_config = PathField(known or "", kind="file", placeholder="Choose config.json",
                                    dialog_title="Wallpaper Engine's config.json",
                                    file_filter="config.json (config.json)")
@@ -367,6 +368,12 @@ class SettingsPage(Page):
         if self._feed is not None:
             self._feed.use_config(path)
         self.changed.emit("tracker")
+
+    def _feed_config_changed(self) -> None:
+        # With nothing chosen, the field shows where the feed found config.json,
+        # which its worker may only have worked out after this page was built.
+        if not self.settings.get("tracker", "we_config", None):
+            self.we_config.set_path(self._feed.config_path)
 
     def _set_heartbeat(self, minutes: int) -> None:
         seconds = int(minutes) * 60
