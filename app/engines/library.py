@@ -38,10 +38,6 @@ from . import steam_paths
 
 INDEX_PATH = app_data_dir() / "library.json"
 
-# Steam's own answer, asked for rather than assumed. "" when Steam is not
-# installed, which the search below simply skips over.
-DEFAULT_WORKSHOP = steam_paths.as_text(steam_paths.workshop_dir())
-
 # The manifest names its workshop id under one of these; older Wallpaper Engine
 # versions wrote the second spelling.
 _ID_KEYS = ("workshopid", "workshopId")
@@ -55,10 +51,14 @@ PLACE_ORDER = (ROTATION, RESERVE, DUPLICATES, LIBRARY)
 
 
 def find_workshop_content(hint: str | Path | None = None) -> Path | None:
-    """Where Steam puts subscribed Wallpaper Engine items."""
+    """Where Steam puts subscribed Wallpaper Engine items. Asks Steam, and
+    stats each place it might be: call it off the GUI thread, as a review does."""
     candidates = [Path(hint)] if hint else []
-    if DEFAULT_WORKSHOP:
-        candidates.append(Path(DEFAULT_WORKSHOP))
+    # Steam's own answer, asked for rather than assumed. None when Steam is not
+    # installed, which the search simply skips over.
+    workshop = steam_paths.workshop_dir()
+    if workshop is not None:
+        candidates.append(workshop)
     try:
         from .tracker import find_we_config
         config = find_we_config()

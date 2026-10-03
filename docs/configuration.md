@@ -190,6 +190,18 @@ wrong.
 Results are cached for the life of the process. `steam_paths.forget()` drops the
 cache if Steam moves underneath a running app.
 
+**It is found in the background.** Every step reads the disk Steam is on, which
+can be a hard disk that has spun down: 0.3 ms awake, as long as the disk takes
+to wake otherwise. The window and the tray start `steam_paths.find_in_background()`
+as they start, and read the answers with `steam_paths.known(lookup)`, which is
+`None` until they are in and never waits; their GUI threads never call a lookup
+themselves. Until the answer arrives a detected default is empty, as with no
+Steam at all, so nothing can start writing to it; when it arrives
+(`steam_paths.when_found`) the fields that were waiting fill in, unless
+something else was chosen meanwhile. A first run's `data/config.json` is
+written only then, so its `destination` is never saved empty for want of an
+answer that was a moment away.
+
 ## Secrets
 
 One value must not live in the source tree, in `suite.json`, or in a log line:

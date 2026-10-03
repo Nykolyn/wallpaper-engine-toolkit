@@ -34,7 +34,7 @@ from ..branding import FULL_NAME
 from ..engines.rotator.config import Config
 from ..services.snapshot import PLAYLIST, RESERVE, ROTATION
 from ..settings import (
-    DEFAULT_COPIER_DEST, DEFAULT_CREATOR_SOURCE, DEFAULT_CREATOR_TARGET, Settings, app_data_dir,
+    DEFAULT_CREATOR_SOURCE, Settings, app_data_dir, default_copier_dest, default_creator_target,
 )
 from ..tracker_feed import heartbeat_setting
 from ..ui.kit import (
@@ -193,13 +193,13 @@ class SettingsPage(Page):
             column.addWidget(row)
 
         self.copier_dest = PathField(
-            self.settings.get("copier", "dest", DEFAULT_COPIER_DEST),
+            self.settings.get("copier", "dest", default_copier_dest()),
             placeholder="Choose where the Copier writes", dialog_title="Copier destination")
         self.creator_source = PathField(
             self.settings.get("creator", "source", DEFAULT_CREATOR_SOURCE),
             placeholder="Choose a folder of video clips", dialog_title="Creator source")
         self.creator_target = PathField(
-            self.settings.get("creator", "target", DEFAULT_CREATOR_TARGET),
+            self.settings.get("creator", "target", default_creator_target()),
             placeholder="Choose where new wallpapers go", dialog_title="Creator output")
         column.addWidget(_Row("Copier destination", self.copier_dest,
                               "Where the Copier writes its copies."))
@@ -342,6 +342,16 @@ class SettingsPage(Page):
         self.changed.emit("rotator")
         if self._services is not None:
             self._services.snapshot.refresh([RESERVE, ROTATION])
+
+    def show_found_folders(self) -> None:
+        """Steam's folders are known (steam_paths.when_found): the defaults that
+        waited for them, in the fields where nothing is chosen."""
+        for field, section, key, default in (
+                (self.copier_dest, "copier", "dest", default_copier_dest),
+                (self.creator_target, "creator", "target", default_creator_target)):
+            if not self.settings.get(section, key, None) and field.path() != default():
+                field.set_path(default())
+        self.show_rotator()
 
     def show_rotator(self) -> None:
         """Show the Rotator's settings again, as another page saved them."""

@@ -49,7 +49,7 @@ app/
 │   ├── runs.py           begin(): a page's work told to all of them at once
 │   └── textfile.py       reading a file from its end
 ├── engines/
-│   ├── steam_paths.py    where Steam, its libraries and Wallpaper Engine are
+│   ├── steam_paths.py    where Steam, its libraries and Wallpaper Engine are, found in the background
 │   ├── copier.py         sequential duplication queue, verification and retry
 │   ├── creator.py        projects from videos: ffmpeg preview.gif + project.json
 │   ├── tracker.py        playlist progress, and when to look at it
@@ -572,6 +572,8 @@ for %f in (tests\test_*.py) do .venv\Scripts\python.exe %f
 | `test_creator_page.py` | skip/selection counts, tag cells, keyboard selection, playlist visibility, fixtures without drive I/O, a threaded read and subset build through JobCenter and the journal, notification and retry |
 | `test_tracker.py` | anchoring a cycle, rebuilding history, merging two writers, following the engine's deck, when to look |
 | `test_wallpaper_timer.py` | the PLPV0005 parser, the file watcher, the countdown, pause rules |
+| `test_steam_paths.py` | Steam's folders found on a thread of their own: nothing known and nothing waited for before, the answer and `when_found` after; the Rotator's first-run settings saved only once it is in, an empty, chosen or missing destination each kept or filled as it should be; no Steam at all |
+| `test_startup.py` | a plain start of the window and of the tray with `gui_guard` on before `app.settings` is imported and Steam made up on a guarded folder that answers late: no GUI-thread call on its disk, the fields empty meanwhile, then filled in (a chosen one left alone), the Rotator's defaults saved then, the Tracker's config.json found |
 | `test_tracker_feed.py` | a real Tracker on a made-up config.json and state file, every look on the feed's worker and no file call on the window's thread (`gui_guard.watch`); the window's copy of the files and a countdown reading it; a new cycle and a rebuild answered after their look; another config.json under a look; looks asked for while one runs; a failing look said once; the worker stopping with its owner |
 | `test_playlist_refresh.py` | finding the rotation's playlist, refilling it, restarting one monitor's pass, the state file written back byte for byte |
 | `test_rotator_cleanup.py` | the reserve check and what it offers to delete, ticked by default; the duplicates listed with sizes, junctions not followed; the Rotator page with its folders unset listing, checking, rotating and deleting nothing; a rotation from the page logging to its own run file and side-file entry |
@@ -583,7 +585,7 @@ for %f in (tests\test_*.py) do .venv\Scripts\python.exe %f
 | `test_icons.py` | every icon draws, in the colour and at the size asked; unknown names raise |
 | `test_kit_controls.py` | every kit control in every state; the fourteen chips, the Pagination rule, the Toggle with motion off, Dropdown rows that cannot be chosen, a DangerButton that never takes Enter, the ring for the keyboard only |
 | `test_kit_feedback.py` | the log's 5 000-line ring, newest first, and its Problems filter; the console following the newest line until you scroll down; the panel closing over `motion.slow`, the newest line in its header; toasts stacking, going after 6 s and danger staying; the status line's five states and a count that never elides; a destructive dialog defaulting to Cancel, its group boxes, summary and Danger text following the ticks, Esc cancelling; a form's Save waiting for valid fields |
-| `test_keyboard.py` | every page in every made-up state: Tab down the sidebar, the header, the page in reading order and the status line, never stuck in a table; Ctrl+number and Ctrl+F; focus rings for the keyboard only; a name on every IconButton, chip, nav item and list; no text under 10 px or dimmer than `text.lo`; spinners at rest with motion off; nothing on the wallpaper disk from the GUI thread (`gui_guard.py`) |
+| `test_keyboard.py` | every page in every made-up state: Tab down the sidebar, the header, the page in reading order and the status line, never stuck in a table; Ctrl+number and Ctrl+F; focus rings for the keyboard only; a name on every IconButton, chip, nav item and list; no text under 10 px or dimmer than `text.lo`; spinners at rest with motion off; nothing on the wallpaper disk from the GUI thread (`gui_guard.py`, on from the first import) |
 | `test_kit_data.py` | the formats; a PathField checked on a worker; a per-clip TagSelect's three states; MonitorView to card; TableModel groups, sorting and zebra; 33 000 rows built under 100 ms and only visible rows painted; a ButtonsCell's slots, clicks, marks, tool tips and double-click; local previews cached by path and time; no file-system call on the GUI thread |
 | `test_animations.py` | motion, by sampling real widgets over real time; the curve, the loops, reduced motion |
 | `test_steam_api.py` | the Web API client and its cache |

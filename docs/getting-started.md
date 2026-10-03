@@ -61,6 +61,11 @@ If Steam is not installed, or Wallpaper Engine is in a library Steam has not
 recorded, these arrive empty and the [Settings](settings.md) page asks for
 them. Nothing is filled in with a path that does not exist.
 
+They are looked up in the background while the window opens, so with Steam on
+a hard disk that is asleep they can arrive a few seconds after the window does,
+and fill in where they are shown
+([how](configuration.md#how-the-detected-ones-are-found)).
+
 The folders that **cannot** be derived start empty on purpose: where you keep
 video clips, your rotation reserve, and the folder duplicates are moved to. A
 blank field that asks is better than a filled one that is wrong, for a tool
