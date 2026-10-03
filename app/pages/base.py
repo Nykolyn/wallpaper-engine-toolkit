@@ -16,8 +16,7 @@ it comes on screen and goes off it:
   `frame_fixture(state)`: the frame's state that goes with one of them.
 
 `SideScroll` is the 330 px column a page's left side is (the Tracker's
-monitors, the Rotator's next run). `LegacyPage` puts one of the old tabs in
-the frame until its own page replaces it.
+monitors, the Rotator's next run).
 """
 from __future__ import annotations
 
@@ -131,57 +130,3 @@ class SideScroll(QScrollArea):
 
     def scrolls(self) -> bool:
         return self.verticalScrollBar().maximum() > 0
-
-
-class LegacyPage(Page):
-    """One of the old tabs, in the new frame, until its own page replaces it.
-
-    The tab keeps its behaviour; the page adds a little room round it, a title
-    and subtitle for the header, and the tab's `on_shown()`, if it has one.
-    What its sidebar item says is set from outside (see `app/pages/legacy.py`).
-    """
-
-    def __init__(self, key: str, title: str, icon: str, tab: QWidget, subtitle: str = "",
-                 parent: QWidget | None = None):
-        self.key, self.title, self.icon = key, title, icon
-        super().__init__(parent)
-        self.tab = tab
-        column = QVBoxLayout(self)
-        column.setContentsMargins(0, 0, 0, 0)
-        # The old tabs were laid out for a window that grew to fit them (the
-        # Tracker's needs 930 px); the frame's is 720 px at the least. Below a
-        # tab's own minimum the page scrolls rather than squeezing it.
-        self.scroll = QScrollArea()
-        self.scroll.setWidgetResizable(True)
-        self.scroll.setFrameShape(QScrollArea.NoFrame)
-        holder = QWidget()
-        inner = QVBoxLayout(holder)
-        # The tabs lay themselves out with the style's own margins inside this.
-        inner.setContentsMargins(theme.SP_6, theme.SP_4, theme.SP_6, theme.SP_6)
-        inner.addWidget(tab)
-        self.scroll.setWidget(holder)
-        column.addWidget(self.scroll)
-        self.set_subtitle(subtitle)
-        if hasattr(tab, "settings_requested"):
-            tab.settings_requested.connect(lambda: self.navigate.emit("settings"))
-
-    def content_minimum(self, width: int | None = None) -> QSize:
-        # Measured once the stylesheet has reached the tab: before, its
-        # widgets are smaller than they will be. A tab with wrapped lines
-        # needs more height than its minimum says; the scroll area gives it
-        # its height for the width it has, and so does this.
-        holder = self.scroll.widget()
-        holder.ensurePolished()
-        for child in holder.findChildren(QWidget):
-            child.ensurePolished()
-        layout = holder.layout()
-        layout.activate()
-        need = holder.minimumSizeHint()
-        if width is not None and layout.hasHeightForWidth():
-            need.setHeight(max(need.height(), holder.heightForWidth(max(width, need.width()))))
-        return need
-
-    def on_shown(self) -> None:
-        shown = getattr(self.tab, "on_shown", None)
-        if shown is not None:
-            shown()

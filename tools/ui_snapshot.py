@@ -13,11 +13,8 @@ machine's), no TrackerFeed, services that are never started and a Snapshot
 that reads nothing (a fixture's finished job would otherwise have it count
 the Rotator's folders, and with no config that is this machine's own
 myprojects), made-up folders on a drive `X:` that it reports as present, and
-the frame's state from `tests/fixtures/ui/shell.json`. Pages that have a page of their own
-(Overview, Rotator, Tracker, Review, Settings) are the real ones, and `load_fixture(state)` puts
-them in the state asked for; the old tabs are not built at all — a stand-in says
-where each one goes — because building them reads the library, Steam and
-Wallpaper Engine.
+the frame's state from `tests/fixtures/ui/shell.json`. All pages are the real ones, populated by load_fixture(state). No live
+engines, feeds, Steam or Wallpaper Engine library scans run.
 
 - `--page`: overview, rotator, tracker, review, creator, copier, settings.
 - `--state`: a state of the frame (`--list` shows them: idle, running, clean,
@@ -77,12 +74,13 @@ def main(argv=None) -> int:
     if args.list:
         from app.pages.overview import OverviewPage
         from app.pages.creator import CreatorPage
+        from app.pages.copier import CopierPage
         from app.pages.review import ReviewPage
         from app.pages.rotator import RotatorPage
         from app.pages.settings import SettingsPage
         from app.pages.tracker import TrackerPage
         print("states:", ", ".join(states))
-        for page in (OverviewPage, RotatorPage, TrackerPage, ReviewPage, CreatorPage, SettingsPage):
+        for page in (OverviewPage, RotatorPage, TrackerPage, ReviewPage, CreatorPage, CopierPage, SettingsPage):
             print(f"{page.key}:", ", ".join(page.FIXTURES))
         return 0
     if out is None:
@@ -163,6 +161,7 @@ def build_window(page_key: str):
     from app.pages.base import Page
     from app.pages.overview import OverviewPage
     from app.pages.creator import CreatorPage
+    from app.pages.copier import CopierPage
     from app.pages.review import ReviewPage
     from app.pages.rotator import RotatorPage
     from app.pages.settings import SettingsPage
@@ -196,19 +195,6 @@ def build_window(page_key: str):
         def set_heartbeat(self, seconds):
             pass
 
-    class StandIn(Page):
-        """Where an old tab goes; the tab itself is not built here."""
-
-        def __init__(self, key: str, title: str, icon: str):
-            self.key, self.title, self.icon = key, title, icon
-            super().__init__()
-            column = QVBoxLayout(self)
-            note = label(f"The {title} tab is not drawn in snapshots: it reads this "
-                         f"machine's library. Its page comes in its own step.", "type.body", "lo")
-            note.setAlignment(Qt.AlignCenter)
-            note.setWordWrap(True)
-            column.addWidget(note)
-
     settings = Settings({})
     feed = StandInFeed()
     svc = services.Services(data_dir=Path(os.environ["WALLPAPER_TOOLKIT_DATA"]),
@@ -219,7 +205,7 @@ def build_window(page_key: str):
              TrackerPage(feed, svc, settings=settings),
              ReviewPage(settings, svc),
              CreatorPage(settings, svc, config),
-             StandIn("copier", "Copier", "copier"),
+             CopierPage(settings, svc, config),
              SettingsPage(settings, config, feed=feed, services=svc)]
     key = page_for(page_key)
     if key is None:

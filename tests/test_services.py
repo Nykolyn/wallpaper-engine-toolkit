@@ -825,22 +825,22 @@ check("fail journals <activity>.failed, titled from the run",
       == ("scan.failed", "Scanning folder “new” failed", "Steam refused the key"))
 
 print("-- the Copier tab, end to end --")
-from app.ui.copier_tab import CopierTab                                       # noqa: E402
+from app.pages.copier import CopierPage                                       # noqa: E402
 
 source = folder("wired", "copy-source", "wallpaper-a")
 (source / "project.json").write_text("{}", encoding="utf-8")
 (source / "preview.gif").write_bytes(b"GIF89a")
 dest = folder("wired", "copy-dest")
-copier = CopierTab(Settings({"copier": {"dest": str(dest)}}))
-copier._add_row(str(source), 2)
-copier._start()
+copier = CopierPage(Settings({"copier": {"dest": str(dest)}}), installed)
+copier.add_jobs([str(source)], 2)
+copier._begin()
 check("Start makes a Copier job", installed.jobs.is_running("copier")
       or installed.jobs.last_finished("copier") is not None)
 check("… which ends when the copies are made",
       wait_for(lambda: installed.jobs.last_finished("copier") is not None, 10000))
 done = installed.jobs.last_finished("copier")
 check("… clean, with the count in its summary",
-      done.result == "clean" and done.summary == "2 of 2 copies made" and done.total == 2)
+      done.result == "clean" and done.summary == "2 of 2 copies made" and done.total == 16)
 entry = installed.journal.recent(1)[0]
 check("… journalled as copy.clean", entry.kind == "copy.clean" and entry.tool == "copier")
 copier_lines = [(k, m) for _, k, m in installed.logs.tail("copier", 50)]

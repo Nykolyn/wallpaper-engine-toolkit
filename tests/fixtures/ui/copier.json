@@ -1,0 +1,106 @@
+{
+  "destination": "X:\\Library\\Reserve",
+  "reserve": "X:\\Library\\Reserve",
+  "myprojects": "X:\\Studio\\myprojects",
+  "free": 1932735283200,
+  "started": "2026-10-03T13:51:00",
+  "ended": "2026-10-03T14:04:00",
+  "elapsed": 780,
+  "speed": 155189248,
+  "jobs": [
+    {
+      "sources": [
+        "X:\\Sources\\Coastal evenings"
+      ],
+      "copies": 3,
+      "files": 9,
+      "size": 754974720,
+      "destination": "X:\\Studio\\myprojects",
+      "running": {
+        "state": "done",
+        "ok": 3,
+        "done_files": 9,
+        "done_bytes": 754974720,
+        "elapsed": 128,
+        "speed": 0
+      },
+      "done": {
+        "state": "done",
+        "ok": 3,
+        "done_files": 9,
+        "done_bytes": 754974720,
+        "elapsed": 128,
+        "speed": 0
+      }
+    },
+    {
+      "sources": [
+        "X:\\Sources\\Night gardens"
+      ],
+      "copies": 3,
+      "files": 24,
+      "size": 2264924160,
+      "running": {
+        "state": "copying",
+        "ok": 1,
+        "done_files": 14,
+        "done_bytes": 1404252979,
+        "elapsed": 98,
+        "speed": 155189248
+      },
+      "done": {
+        "state": "done",
+        "ok": 3,
+        "done_files": 24,
+        "done_bytes": 2264924160,
+        "elapsed": 128,
+        "speed": 0
+      }
+    },
+    {
+      "sources": [
+        "X:\\Sources\\Cloud study"
+      ],
+      "copies": 3,
+      "files": 9,
+      "size": 503316480,
+      "running": {
+        "state": "failed",
+        "ok": 1,
+        "done_files": 3,
+        "done_bytes": 167772160,
+        "elapsed": 40,
+        "speed": 0,
+        "reason": "Access denied writing Cloud study_copy2. Check destination permissions and whether files are in use."
+      },
+      "done": {
+        "state": "failed",
+        "ok": 1,
+        "done_files": 3,
+        "done_bytes": 167772160,
+        "elapsed": 40,
+        "speed": 0,
+        "reason": "Access denied writing Cloud study_copy2. Check destination permissions and whether files are in use."
+      }
+    },
+    {
+      "sources": [
+        "X:\\Sources\\Winter light"
+      ],
+      "copies": 2,
+      "files": 14,
+      "size": 6710886400,
+      "running": {
+        "state": "queued"
+      },
+      "done": {
+        "state": "done",
+        "ok": 2,
+        "done_files": 14,
+        "done_bytes": 6710886400,
+        "elapsed": 128,
+        "speed": 0
+      }
+    }
+  ]
+}

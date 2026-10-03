@@ -46,8 +46,8 @@ from app.engines.rotator.config import Config                                   
 from app.main_window import (                                                         # noqa: E402
     DEFAULT_PAGE, PAGE_ORDER, MainWindow, next_in_loop, page_for,
 )
-from app.pages.base import LegacyPage, Page                                           # noqa: E402
-from app.pages.legacy import nav_for                                                  # noqa: E402
+from app.pages.base import Page                                           # noqa: E402
+from app.pages.copier import CopierPage                                                  # noqa: E402
 from app.pages.rotator import nav_state as rotator_nav                             # noqa: E402
 from app.pages.overview import OverviewPage                                           # noqa: E402
 from app.pages.settings import SettingsPage                                           # noqa: E402
@@ -192,39 +192,6 @@ frame = (w.sidebar.geometry(), w.status.geometry(), w.title_bar.geometry())
 w.show_page("tracker")
 check("the frame does not move when the page changes",
       (w.sidebar.geometry(), w.status.geometry(), w.title_bar.geometry()) == frame)
-
-class Tab(QWidget):
-    settings_requested = Signal()
-
-    def __init__(self):
-        super().__init__()
-        self.shown = 0
-
-    def on_shown(self):
-        self.shown += 1
-
-
-old = Tab()
-legacy = LegacyPage("rotator", "Rotator", "rotator", old, "a subtitle")
-asked = []
-legacy.navigate.connect(asked.append)
-old.settings_requested.emit()
-legacy.on_shown()
-check("an old tab's \u201cChange in Settings\u201d asks for the Settings page",
-      asked == ["settings"] and legacy.subtitle() == "a subtitle")
-check("and the tab hears that it is on screen", old.shown == 1)
-
-tall = QWidget()
-tall.setMinimumSize(700, 1200)
-roomy = LegacyPage("review", "Review", "review", tall)
-roomy.resize(800, 500)
-roomy.show()
-app.processEvents()
-check("an old tab taller than the page keeps its height, and the page scrolls",
-      tall.height() >= 1200 and roomy.scroll.verticalScrollBar().maximum() > 0)
-check("and says how much room it needs", roomy.content_minimum().height() >= 1200
-      and roomy.content_minimum().width() >= 700)
-roomy.hide()
 
 print("-- --tab --")
 check("--tab takes the old tab names and the page keys, in any case",
@@ -480,11 +447,9 @@ check("after problems: how many, in warn", rotator_nav(center, snap)
 going = center.start("rotator", "Run 39")
 going.update("moving", 412, 1000)
 check("while it runs: its bar", rotator_nav(center, snap) == NavState.progress(412, 1000))
-check("the Creator owns its nav state; only Copier remains legacy",
-      not nav_for("creator", center, snap).text and nav_for("copier", center, snap).text == "idle")
-snap[PLAYLIST] = Reading(playlist, 1.0)
-check("the Tracker has a page of its own now: the old tabs' nav leaves it alone",
-      nav_for("tracker", center, snap) == NavState())
+copier_page = CopierPage(Settings({}))
+check("Copier owns its idle nav", copier_page.nav_state().text == "idle")
+copier_page.deleteLater()
 
 print("-- the title bar and Windows --")
 check("the offscreen window has no native frame to lean on",

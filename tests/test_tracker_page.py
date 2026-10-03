@@ -1152,7 +1152,7 @@ window.move(300, 200)
 window.show()
 app.processEvents()
 tracker_in_window = window.pages["tracker"]
-copier_tab = window.pages["copier"].tab
+copier_tab = window.pages["copier"]
 sent_folder = str(MYP / "w_copy")
 sent_row = PlaylistRow(entry(MYP / "w_copy"), "queue", 1, folder=sent_folder,
                        title="Harbour Lights")

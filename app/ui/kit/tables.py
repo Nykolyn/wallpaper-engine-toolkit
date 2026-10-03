@@ -59,6 +59,7 @@ from . import icons
 from .base import label
 from .buttons import button_pixmap, button_size, icon_button_pixmap
 from .chips import chip_pixmap, chip_size
+from .inputs import SpinBox
 from .thumbs import ThumbLoader, shared as shared_loader
 
 ALIGNMENTS = {"left": Qt.AlignLeft, "right": Qt.AlignRight, "center": Qt.AlignHCenter}
@@ -325,6 +326,16 @@ class ProgressCell:
     fraction: float | None = None
     tone: str = "accent"
     busy: bool = False
+    caption: str = ""
+
+
+@dataclass(frozen=True)
+class SpinCell:
+    """A count painted at rest; double-click or F2 opens one kit SpinBox."""
+    value: int
+    minimum: int = 1
+    maximum: int = 99_999
+    enabled: bool = True
 
 
 @dataclass(frozen=True)
@@ -427,8 +438,10 @@ def _text_of(value) -> str:
         return ", ".join(value.tags)
     if isinstance(value, CheckCell):
         return "Selected" if value.checked else "Not selected"
+    if isinstance(value, SpinCell):
+        return str(value.value)
     if isinstance(value, ProgressCell):
-        return "working" if value.busy else f"{round((value.fraction or 0) * 100)}%"
+        return value.caption or ("working" if value.busy else f"{round((value.fraction or 0) * 100)}%")
     return str(value)
 
 
@@ -970,6 +983,23 @@ class RowDelegate(QStyledItemDelegate):
         painter.fillRect(QRectF(rect.left(), rect.top() + rect.height() - 1, rect.width(), 1),
                          self.colour("border.hairline"))
 
+    def createEditor(self, parent, option, index):
+        model = index.model()
+        value = model.cell(model.item_at(index.row()), index.column())
+        if isinstance(value, SpinCell) and value.enabled:
+            editor = SpinBox(parent, minimum=value.minimum, maximum=value.maximum, value=value.value)
+            editor.setAccessibleName(model.columns[index.column()].title)
+            return editor
+        return None
+
+    def setEditorData(self, editor, index):
+        editor.setValue(int(index.data(Qt.EditRole)))
+        editor.selectAll()
+
+    def setModelData(self, editor, model, index):
+        editor.interpretText()
+        model.setData(index, editor.value(), Qt.EditRole)
+
     def paint_cell(self, painter: QPainter, left: float, top: float, width: float,
                    height: float, model: TableModel, item, c: int, column: Column) -> None:
         value = model.cell(item, c)
@@ -989,7 +1019,8 @@ class RowDelegate(QStyledItemDelegate):
             return
         align = ALIGNMENTS[column.align]
         if isinstance(value, ProgressCell):
-            bar = QRectF(x, middle - theme.TABLE_PROGRESS_HEIGHT / 2,
+            caption_h = theme.line_height("type.monoXs") + theme.SP_4 if value.caption else 0
+            bar = QRectF(x, middle - (theme.TABLE_PROGRESS_HEIGHT + caption_h) / 2,
                          right - x, theme.TABLE_PROGRESS_HEIGHT)
             painter.setPen(Qt.NoPen)
             painter.setBrush(self.colour("surface.well"))
@@ -1004,6 +1035,21 @@ class RowDelegate(QStyledItemDelegate):
                     fill.setWidth(bar.width() * max(0, min(1, value.fraction)))
                 painter.setBrush(self.colour(value.tone))
                 painter.drawRoundedRect(fill, theme.TABLE_PROGRESS_HEIGHT / 2, theme.TABLE_PROGRESS_HEIGHT / 2)
+            if value.caption:
+                self._text(painter, QRectF(x, bar.bottom() + theme.SP_4, right - x, caption_h),
+                           value.caption, "type.monoXs", value.tone if value.tone == "danger" else "text.lo", Qt.AlignLeft)
+            return
+        if isinstance(value, SpinCell):
+            box = QRectF(x, middle - theme.CONTROL_HEIGHT / 2, right - x, theme.CONTROL_HEIGHT)
+            painter.setPen(QPen(self.colour("border.control"), 1))
+            painter.setBrush(self.colour("surface.well"))
+            painter.drawRoundedRect(box, theme.R_MD, theme.R_MD)
+            self._text(painter, box.adjusted(theme.SP_8, 0, -theme.SP_16, 0), str(value.value),
+                       "type.monoSm", "text.body" if value.enabled else "text.lo", Qt.AlignLeft)
+            side = theme.TABLE_SORT_ICON
+            for glyph, y in (("chevU", middle - side), ("chevD", middle)):
+                painter.drawPixmap(QPointF(right - side - theme.SP_2, y),
+                                   icons.pixmap(glyph, "text.lo", side, self._dpr))
             return
         if isinstance(value, (TagsCell, CheckCell)):
             tile = (tags_pixmap(value.tags, value.tone, right - x, self._dpr)

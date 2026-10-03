@@ -1141,22 +1141,7 @@ QPushButton:disabled {
     border-color: $(border.control);
     color: $(text.disabled);
 }
-QPushButton[accent="true"] {
-    background: $(accent);
-    border-color: $(accent);
-    color: $(text.onAccent);
-}
-QPushButton[accent="true"]:hover {
-    background: $(accent.hover); border-color: $(accent.hover);
-}
-QPushButton[accent="true"]:pressed {
-    background: $(accent.press); border-color: $(accent.press);
-}
-QPushButton[accent="true"]:disabled {
-    background: $(accent/.3);
-    border-color: transparent;
-    color: $(text.onAccent/.5);
-}
+
 QToolButton {
     background: transparent;
     border: 1px solid transparent;
@@ -1547,41 +1532,6 @@ def unresolved(qss: str) -> list[str]:
     return _PLACEHOLDER.findall(qss)
 
 
-# ---- Fragments for widgets that stay hand-styled -----------------------------
-
-def console_style() -> str:
-    """The log panels, which are deliberately a terminal rather than a page."""
-    return (f"background: {css('surface.console')}; color: {css('console.text')}; "
-            f"border: 1px solid {css('border.hairline')}; border-radius: {R_MD}px; "
-            f"padding: 8px; {qss_font('type.mono')}")
-
-
-def make_accent(button) -> None:
-    """Mark the one button that starts the work, so it stands out from Cancel."""
-    button.setProperty("accent", True)
-    # A property set after the widget exists needs the style re-evaluated.
-    button.style().unpolish(button)
-    button.style().polish(button)
-
-
-def label_style(kind: str = "muted", size: int | None = None,
-                weight: int | None = None) -> str:
-    """A secondary text line: muted / faint / ok / warn / danger / accent.
-
-    `size` is in px, as the callers have always written it.
-    """
-    token = {
-        "muted": "text.mid", "faint": "text.lo", "text": "text.body",
-        "ok": "ok", "warn": "warn", "danger": "danger", "accent": "accent",
-    }.get(kind, "text.mid")
-    parts = [f"color: {css(token)};", "background: transparent;"]
-    if size:
-        parts.append(f"font-size: {point_size(size):g}pt;")
-    if weight:
-        parts.append(f"font-weight: {weight};")
-    return " ".join(parts)
-
-
 # ---- Applying it ----------------------------------------------------------
 
 def icon_path() -> Path:
@@ -1613,3 +1563,13 @@ def apply(app: QApplication) -> None:
     app.setFont(font("type.body"))
     app.setStyleSheet(stylesheet())
     app.setWindowIcon(app_icon())
+
+# Copier: shared table at all widths, with editable copy counts (gate G2 A).
+COPIER_COLUMNS = (None, 62, 76, 150, 126, 68, 48)
+COPIER_RING = 52
+COPIER_PATH_WIDTH = 330
+COPIER_RENDER_MS = 100
+COPIER_SCAN_DEBOUNCE_MS = 180
+COPIER_LOG_HEIGHT = 120
+
+COPIER_ROW_HEIGHT = 48

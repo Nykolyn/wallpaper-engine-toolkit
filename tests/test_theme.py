@@ -266,17 +266,10 @@ check("the Creator's card helpers went with its old tab",
       not hasattr(theme, "status_color") and not hasattr(theme, "card_style"))
 check("the Rotator tab's helpers went with it", not hasattr(theme, "level_color")
       and "rotatorTabs" not in theme.stylesheet())
-check("a secondary line is text.mid, a faint one text.lo",
-      theme.css("text.mid") in theme.label_style("muted")
-      and theme.css("text.lo") in theme.label_style("faint"))
-check("label sizes are still given in px and written in pt",
-      "font-size: 9.75pt" in theme.label_style("text", size=13))
-check("the console is the console surface in mono",
-      theme.css("surface.console") in theme.console_style()
-      and "Consolas" in theme.console_style())
-button = QWidget()
-theme.make_accent(button)
-check("make_accent marks the button for the accent rule", button.property("accent") is True)
+check("the last old tab leaves no hand-styled helpers",
+      all(not hasattr(theme, name) for name in ("label_style", "console_style", "make_accent"))
+      and 'QPushButton[accent="true"]' not in theme.stylesheet())
+
 
 
 print()

@@ -1,76 +1,110 @@
 # Copier
 
-**Mass-duplicates Wallpaper Engine folders, N copies each.**
+**Duplicate wallpaper folders N times each, in a sequential queue.**
 
-## What it is for
+Wallpaper Engine playlists have no per-entry weight. If a wallpaper has three
+copies in the playlist, it gets three entries instead of one. Selecting the
+original as well adds another entry. Copies are independent folders and can
+also be edited as separate projects.
 
-Wallpaper Engine plays a playlist by picking from its entries. Every entry is
-equally likely, which means a wallpaper you would rather see often appears
-exactly as often as one you are indifferent to. There is no weight setting.
+![Copier queue](images/copier-queue.png)
 
-Duplicating a folder is the weight setting. Three copies of a wallpaper in a
-playlist of two hundred is three chances instead of one.
+## Prepare the queue
 
-The other use is editorial: a copy is a separate project, so you can change its
-`project.json`, crop it differently, or set different properties without
-touching the original.
+1. **Choose folders**, drop folders from Explorer, or use **Paste path**
+   (**Ctrl+V** on the Copier page). The folder chooser supports Ctrl/Shift
+   selection. A folder already in the queue is not added twice.
+2. Set **Copies** for each job (default **3**). Double-click the cell or press
+   **F2** to use the spin box. One means one numbered duplicate.
+3. Set **Copy to** above the table, or open **Destination** in the page header
+   to change it in Settings. A row's folder button overrides that job's
+   destination; leave the override empty to follow the global destination.
+4. Optionally turn on **Verify each copy**.
+5. Review the jobs, expanded file/byte totals and free space, then press
+   **Start copying** and confirm the destinations.
 
-## When to reach for it
+The trash button or **Delete** removes a queued row. **Clear queue** removes
+waiting jobs. Neither action deletes source or destination files.
 
-- A handful of wallpapers should come up more often than the rest.
-- You want to fork a wallpaper and edit the copy.
-- You need a bulk test set — twenty copies of one folder to see how a playlist
-  of that size behaves.
+Folder sizes and free space are read in the background. Until a size is known,
+the table shows an ellipsis. Jobs on the same filesystem share one free-space
+budget even when they target different folders. A warning explains when the
+queue does not fit. The engine checks available space again before copying
+each job; a job that cannot fit fails, and the next one is still tried.
 
-## How to use it
+Paste accepts one path per line, optionally followed by a positive copy count:
 
-1. The **destination** — where the copies are written — is set on the
-   [Settings](settings.md#folders) page and shown at the top of the Copier.
-   It arrives pre-filled with Wallpaper Engine's `myprojects` folder.
-2. Add source folders. Drop them onto the list, use the button, or send one
-   from the [Tracker](tracker.md#a-rows-actions)'s playlist. Each row is one
-   folder plus a count.
-3. Set the count per row. The default is 3.
-4. Press the accented button to start.
+    "X:\Sources\Coastal evenings" 3
+    X:\Sources\Night gardens 5
 
-Copies are named after the original with a `_copy1`, `_copy2`, … suffix, so
-they sort next to it and are obvious to remove later.
+Quotes around the complete path let a folder name end in a number. A blank
+line is ignored; zero copies is rejected.
 
-The log panel reports each copy as it lands, and the progress bar tracks the
-whole job rather than the current folder.
+## While copying
 
-## Folders from the Tracker
+Jobs run one at a time. **Pause** takes effect between files; the file already
+being written finishes first. **Resume** continues. **Stop** interrupts large
+files between chunks and removes the unfinished copy; fully completed copies
+stay. If cleanup itself fails, the error names the partial folder that remains.
 
-**Send to Copier** at the end of a row in the Tracker's playlist puts that
-wallpaper's folder on this list, for the default 3 copies, while you stay on the
-Tracker; its toast's **Show** brings you here. A folder already on the list is
-not added again. Nothing is copied until you start here, so you can send a few,
-change their counts and remove what you did not mean. A folder marked
-[protected] on the Tracker is sent under its new name.
+The header and each row show progress, with live bytes per second.
+Time remaining is marked **≈** and is shown only when a live rate is available.
+File counts include every file across every requested copy. The log expands
+during a run. The sidebar, global status line, journal and off-page toast
+report the same operation.
 
-## How it works
+An unreadable source or write/verification error stops only its job. The
+failure stays in the row and callout, and the queue continues.
+**Retry** during a run appends the failed jobs after the waiting ones.
+**Skip** dismisses them from the work still to do and preserves their reason
+in the row tooltip. Folders sent from Tracker while a run is active wait for
+the next explicit Start.
 
-The engine (`app/engines/copier.py`) is the original `wallpaper_copier` code,
-reused unchanged. It runs on a background thread and reports through callbacks;
-`app/workers.py` bridges those callbacks onto Qt signals so the window updates
-safely.
+## Results and retry
 
-A copy is a plain recursive directory copy. Nothing rewrites `project.json`, so
-a copy carries the original's title — Wallpaper Engine shows several entries
-with the same name, which is what you want when the point is weighting, and
-what you edit when the point is forking.
+The finished screen shows successful/failed jobs, bytes and files copied,
+elapsed time and average speed. **Retry the failed job** returns unfinished
+work to the queue for review and another explicit Start. Already completed
+copies are remembered for this session and are not made again.
 
-## Settings it keeps
+**Open destination** opens the selected row's destination, or the global
+destination when no row is selected. **Clear finished** clears completed,
+failed, stopped and skipped rows from the page; it never removes their files.
+The queue and retry records are not restored after closing the app.
 
-The destination is remembered in `data/suite.json` under `copier`. The per-row
-counts are not remembered — they belong to the job, not the page.
+## Numbering and verification
 
-## Watch out for
+Copies use the original folder name with `_copy1`, `_copy2`, and so on.
+Numbering continues **after the highest existing suffix**, even if earlier
+numbers are missing. Existing directories are never merged into or overwritten.
+Subfolders, including empty ones, are preserved.
 
-- **Copies are real folders.** Twenty copies of a 400 MB scene wallpaper is
-  8 GB. The Rotator's [reserve check](rotator.md#the-reserve-check) will not
-  flag them, because they are valid wallpapers.
-- **A rotation treats copies as ordinary folders**, so they can be carried back
-  to the reserve like anything else. If copies exist to weight a *current*
-  playlist, prefix them with `[protected]` — see
-  [protected folders](rotator.md#protected-folders).
+Verification compares relative file names, file count and each file's size,
+and also detects source changes during the copy. It does not hash file content.
+A truncated or missing file fails that copy; the newly created incomplete
+folder is removed, and the job retains the reason.
+
+A destination inside a source folder is rejected. Linked files, symbolic
+links and junctions in a source are rejected rather than traversed.
+
+## Folders from Tracker
+
+**Send to Copier** on a Tracker row adds its folder for three copies while you
+stay on Tracker. The toast's **Show** opens Copier. Repeated sends do not add a
+second job. A folder renamed with `[protected]` is sent under its new name.
+Nothing is copied until you start the queue.
+
+Review's gallery retains **Subscribe selected** and **Subscribe page**; it
+does not send items to Copier.
+
+## Settings and storage
+
+The default destination and verification choice are remembered in
+`data/suite.json`, under `copier.dest` and `copier.verify`. Counts, destination
+overrides and the queue belong to the current session.
+
+Copies occupy real disk space: twenty copies of a 400 MB wallpaper need about
+8 GB. Nothing rewrites `project.json`, so copies keep the original display
+title until you edit them. A rotation treats these as ordinary folders;
+use [protected folders](rotator.md#protected-folders) when copies must stay
+in the current playlist.

@@ -65,6 +65,8 @@ ACTIVITIES = {
     "copy": ("copier", "a Copier run"),
 }
 EVENTS = {
+    "copy.job.done": ("copier", "one queue job finished"),
+    "copy.job.failed": ("copier", "one queue job failed; the queue continues"),
     "run.started": ("rotator", "a rotation began"),
     "duplicates.set_aside": ("rotator", "a rotation found folders already in the reserve "
                                         "and moved them to the duplicates folder"),
