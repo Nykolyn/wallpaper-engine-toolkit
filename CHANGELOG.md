@@ -6,6 +6,24 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [3.12.1] - 2026-10-03
+
+### Fixed
+
+- **The tray and the window no longer freeze while the wallpaper disk spins
+  up.** The tracker's every look, read of `config.json` and probe of the
+  playlist's wallpapers ran on the GUI thread of both programs, so with the
+  library's hard disk asleep each waited for it: the tray's hang log caught
+  54 seconds inside the probe. The look is now taken on a thread of the
+  tracker's own, which owns the tracker and hands back what it saw, and the
+  countdown rings follow the two files through a copy it keeps up to date
+  rather than stat'ing them themselves. **New cycle** and **Rebuild from file
+  times** keep their questions and their words, and are answered once the
+  count they changed has landed; a failure says so instead of vanishing.
+  `tests/test_tracker_feed.py` runs a real tracker against made-up files that
+  `gui_guard` treats as the wallpaper disk, and finds no file call on the
+  window's thread (the old feed made eight in its first look).
+
 ## [3.12.0] - 2026-10-03
 
 **The redesign, whole.** Since 2.2.0 the window has been rebuilt, one page per
@@ -1319,7 +1337,8 @@ restructured yet; the tabs keep their layout and take on the new look.
   was right for one library and wrong for every other. Nothing is tagged now
   unless you ask for it.
 
-[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.12.0...HEAD
+[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.12.1...HEAD
+[3.12.1]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.12.0...v3.12.1
 [3.12.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.11.0...v3.12.0
 [3.11.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.10.0...v3.11.0
 [3.10.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.9.0...v3.10.0

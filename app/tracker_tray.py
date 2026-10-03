@@ -35,8 +35,7 @@ from PySide6.QtWidgets import QApplication, QSystemTrayIcon
 from . import theme, tray_words as words, window_instance
 from .branding import DISPLAY_NAME
 from .hang_watch import HangWatch
-from .engines.tracker import (
-    FALLBACK_SECONDS, TIME_FMT, Progress, Tracker, app_data_dir, pick_primary)
+from .engines.tracker import FALLBACK_SECONDS, TIME_FMT, Progress, app_data_dir, pick_primary
 from .engines.wallpaper_timer import Countdown, WallpaperTimer
 from .settings import Settings
 from .tracker_feed import TRAY_MUTEX, TrackerFeed, heartbeat_setting
@@ -107,14 +106,16 @@ class TrackerTray:
         self._following: bool | None = None
         self._balloon: str | None = None
 
-        # The count and the countdown read the same two files through one
-        # watcher. The count does not wait on the countdown's tick, though: that
-        # tick reads other processes' windows and memory, and if it ever fails
-        # the count must carry on regardless.
+        # The count and the countdown follow the same two files, which the
+        # feed's worker reads (see TrackerFeed). The count does not wait on the
+        # countdown's tick, though: that tick reads other processes' windows and
+        # memory, and if it ever fails the count must carry on regardless.
+        self.clock: WallpaperTimer | None = None
         self.feed = TrackerFeed(self.settings.get("tracker", "we_config", None),
                                 heartbeat_setting(self.settings))
         self.feed.updated.connect(self._on_update)
         self.feed.config_changed.connect(self._build_clock)
+        self.feed.failed.connect(log)
         self._build_clock()
 
         # Which colours the icon wears depends on the taskbar's, which Windows
@@ -140,12 +141,14 @@ class TrackerTray:
         self.clock_timer.timeout.connect(self._tick_clock)
         self.clock_timer.start(CLOCK_TICK_MS)
 
-    @property
-    def tracker(self) -> Tracker:
-        return self.feed.tracker
-
     def _build_clock(self):
-        self.clock = WallpaperTimer(self.tracker.config_path, files=self.feed.files)
+        if not self.feed.config_path:
+            self.clock = None           # until the feed's worker finds config.json
+            return
+        # It follows the feed's copy of the files rather than stat'ing them
+        # itself: they are on the wallpaper disk, and this is the GUI thread.
+        self.clock = WallpaperTimer(self.feed.config_path, files=self.feed.files,
+                                    follow_files=False)
         self.clock.log = log            # whether Wallpaper Engine's own timer was found
 
     # ------------------------------------------------------------- polling
@@ -163,7 +166,7 @@ class TrackerTray:
     def _tick_clock(self):
         """Advance every monitor's countdown by a second and redraw if it shows."""
         try:
-            self.countdowns = self.clock.tick()
+            self.countdowns = self.clock.tick() if self.clock is not None else {}
         except Exception:                          # noqa: BLE001
             # The countdown reads other processes' windows through ctypes; if
             # that ever fails the playlist count must carry on regardless.
@@ -241,13 +244,13 @@ class TrackerTray:
         # short line per monitor and nothing else; the detail is in the menu
         # and in the window a click opens.
         tooltip = words.tooltip(self.results, primary, self.countdowns,
-                                self.tracker.error or "")
+                                self.feed.error or "")
         if tooltip != self.icon.toolTip():
             self.icon.setToolTip(tooltip)
 
     def _rebuild_menu(self):
         primary, state, fraction, number = self._reading()
-        line = words.header_line(state, primary, self.tracker.error or "")
+        line = words.header_line(state, primary, self.feed.error or "")
         self.menu.set_model(build_model(
             state, fraction, number, line,
             run_hint=words.run_hint(words.next_run_number()),
@@ -373,9 +376,9 @@ def run_tray() -> int:
             log(f"no notification area after {TRAY_WAIT_SECONDS}s — "
                 f"counting on without an icon")
 
-        # The tray's own GUI thread reads Wallpaper Engine's files on whatever
-        # disk they are on; if one of those reads ever holds it for seconds,
-        # this says which.
+        # Wallpaper Engine's files are read on the feed's worker, so nothing
+        # here should wait on a disk; if anything ever holds the GUI thread
+        # for seconds, this says what.
         watch = HangWatch(app_data_dir() / "tracker-hangs.log", "the tray tracker").start()
         tray = TrackerTray(app)   # the local reference is what keeps the icon alive
         log(f"running; tray icon visible: {tray.icon.isVisible()}")

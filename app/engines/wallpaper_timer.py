@@ -272,6 +272,24 @@ class EngineFiles:
         self._refresh_config()
         self._refresh_state()
 
+    # What a follower reads, as `reads()` hands it over and `take_reads()` takes it.
+    READS = ("config", "config_error", "config_version", "state_version",
+             "state_written", "decks", "state_ok")
+
+    def reads(self) -> tuple:
+        """The last reads as they stand, for a copy on another thread.
+
+        Nothing in them is changed in place, since a read replaces `config` and
+        `decks` with new objects, so the copy can share them.
+        """
+        return tuple(getattr(self, name) for name in self.READS)
+
+    def take_reads(self, reads: tuple) -> None:
+        """Take what another watcher last read (its `reads()`): how the window's
+        thread follows files a worker watches, without reading them itself."""
+        for name, value in zip(self.READS, reads):
+            setattr(self, name, value)
+
     def _refresh_config(self) -> None:
         key = self._key(self.config_path)
         if key is None:

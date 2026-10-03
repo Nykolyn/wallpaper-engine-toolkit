@@ -195,9 +195,10 @@ missing, look there.
 
 ## The window stopped answering
 
-It should not — see [Gallery](gallery.md#and-never-at-the-windows-expense) for
-what made it freeze before and what changed. If it happens anyway, the record is
-already written:
+It should not — see [Gallery](gallery.md#and-never-at-the-windows-expense) and
+[Tracker](tracker.md#when-it-looks) for what made the window and the tray
+freeze before and what changed. If it happens anyway, the record is already
+written:
 
 - `data/window-hangs.log` — the toolkit window. When its GUI thread goes five
   seconds without answering, the stack of every thread is written here while it

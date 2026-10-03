@@ -493,13 +493,15 @@ from app import window_instance                                             # no
 class FakeFeed(QObject):
     updated = Signal()
     config_changed = Signal()
+    failed = Signal(str)
 
     def __init__(self, *args, **kwargs):
         super().__init__()
         self.results: list = []
         self.following = True
         self.files = None
-        self.tracker = SimpleNamespace(config_path=None, error="")
+        self.config_path = "X:/we/config.json"
+        self.error = ""
 
 
 class FakeClock:
@@ -635,7 +637,7 @@ shell.messageClicked.emit()
 check("and a click on that opens the Tracker", opened == [("Tracker", None)])
 window_instance.ask_to_show = real_show
 tray.feed.results = []
-tray.feed.tracker.error = "config.json not found"
+tray.feed.error = "config.json not found"
 tray._on_update()
 tray._tick_clock()
 check("with no playlist the tooltip is the tracker's error and the icon asks",
