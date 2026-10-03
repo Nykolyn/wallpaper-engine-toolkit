@@ -6,7 +6,25 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-## [3.12.1] - 2026-10-03
+## [3.12.2] - 2026-10-03
+
+### Fixed
+
+- **The window and the tray no longer wait for Steam's disk before they
+  appear.** Importing the settings looked Steam up on the spot (its registry
+  entry, `libraryfolders.vdf`, Wallpaper Engine's folder and `config.json`) to
+  fill in the default folders, on the main thread of both programs, before
+  either had drawn anything; with Steam on a hard disk that had spun down,
+  both waited for it to wake. Steam's folders are now found on a thread of
+  their own from the moment either program starts. Until they are known the
+  default folders are empty, as with no Steam, so nothing can start writing
+  to them; when they arrive, the Settings page, the Copier, the Creator, the
+  Rotator and the Tracker fill in where nothing else was chosen. A first
+  run's Rotator settings are saved only then, never with an empty myprojects.
+  `tests/test_startup.py` starts the window and the tray with `gui_guard` on
+  from the first import and Steam made up on a guarded folder that answers
+  late, and finds nothing on its disk from either GUI thread; the old import
+  made four such calls and waited for every one.
 
 ### Fixed
 
@@ -1337,7 +1355,8 @@ restructured yet; the tabs keep their layout and take on the new look.
   was right for one library and wrong for every other. Nothing is tagged now
   unless you ask for it.
 
-[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.12.1...HEAD
+[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.12.2...HEAD
+[3.12.2]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.12.1...v3.12.2
 [3.12.1]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.12.0...v3.12.1
 [3.12.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.11.0...v3.12.0
 [3.11.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.10.0...v3.11.0

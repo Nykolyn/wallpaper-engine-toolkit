@@ -21,13 +21,23 @@ has never been opened — each of them simply yields ``None``, and the caller
 shows an empty field instead of a wrong one. The results are cached because
 they cannot change while the app is running without Steam being reinstalled
 underneath it.
+
+Each lookup touches the disk Steam is on, and that can be a hard disk that has
+spun down: 0.3 ms awake, as long as it takes to wake otherwise. So the window
+and the tray never ask on their GUI thread. They start `find_in_background()`
+as they start and read `known(lookup)`, which is None until that thread has
+the answer, and say "not known yet" the way they say "Steam is not here";
+`when_found` says when it arrives. A worker thread that needs an answer calls
+the lookup itself: it may wait.
 """
 from __future__ import annotations
 
 import re
 import sys
+import threading
 from functools import lru_cache
 from pathlib import Path
+from typing import Callable
 
 # Wallpaper Engine on Steam.
 WALLPAPER_ENGINE_APPID = "431960"
@@ -191,8 +201,79 @@ def as_text(path: Path | None) -> str:
     return str(path) if path is not None else ""
 
 
+# ---- Found in the background ----------------------------------------------------
+
+_LOOKUPS = (steam_root, library_roots, library_for_app, wallpaper_engine_dir,
+            workshop_dir, myprojects_dir, we_config)
+_found = threading.Event()
+_lock = threading.Lock()
+_finding: threading.Thread | None = None
+_waiting: list[Callable[[], None]] = []
+
+
+def find_in_background() -> None:
+    """Start answering every lookup on a thread of its own, once."""
+    global _finding
+    with _lock:
+        if _found.is_set() or _finding is not None:
+            return
+        _finding = threading.Thread(target=_find, daemon=True, name="steam folders")
+        _finding.start()
+
+
+def _find() -> None:
+    for lookup in _LOOKUPS:
+        try:
+            lookup()
+        except Exception:               # noqa: BLE001 — nothing here may stop the rest
+            pass
+    with _lock:
+        _found.set()
+        waiting = list(_waiting)
+        _waiting.clear()
+    for callback in waiting:
+        callback()
+
+
+def found() -> bool:
+    """Whether every lookup has its answer, so `known` gives it."""
+    return _found.is_set()
+
+
+def known(lookup: Callable[[], Path | None]) -> Path | None:
+    """What a lookup found, once `find_in_background` has found it; None until
+    then, without waiting and without touching the disk. Asking starts the
+    finding if nothing has yet."""
+    if not _found.is_set():
+        find_in_background()
+        return None
+    return lookup()
+
+
+def when_found(callback: Callable[[], None]) -> None:
+    """Call `callback` once every lookup has its answer: now, when they have,
+    or else on the finding thread as it finishes. Starts the finding."""
+    with _lock:
+        if not _found.is_set():
+            _waiting.append(callback)
+            callback = None
+    if callback is None:
+        find_in_background()
+    else:
+        callback()
+
+
+def wait_found(timeout: float | None = None) -> bool:
+    """Wait for the answers (a worker's or a test's business, never the GUI's)."""
+    find_in_background()
+    return _found.wait(timeout)
+
+
 def forget() -> None:
     """Drop the cache. For tests, and for after Steam moves under a running app."""
-    for cached in (steam_root, library_roots, library_for_app, wallpaper_engine_dir,
-                   workshop_dir, myprojects_dir, we_config):
+    global _finding
+    for cached in _LOOKUPS:
         cached.cache_clear()
+    with _lock:
+        _found.clear()
+        _finding = None

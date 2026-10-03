@@ -15,7 +15,7 @@ from PySide6.QtWidgets import QAbstractItemView, QHBoxLayout, QStackedWidget, QV
 
 from .. import external, theme
 from ..engines import creator as engine
-from ..settings import DEFAULT_CREATOR_MODE, DEFAULT_CREATOR_TARGET
+from ..settings import DEFAULT_CREATOR_MODE, default_creator_target
 from ..services import Run
 from ..ui.kit import (
     AccentButton, ActivityLine, BusyCell, Callout, CardTitle, Cell, CheckCell, Chip,
@@ -218,7 +218,7 @@ class CreatorPage(Page):
         self._read_worker = None
         self._workers = []
         self._tag_editor = None
-        self._target = settings.get("creator", "target", DEFAULT_CREATOR_TARGET)
+        self._target = settings.get("creator", "target", default_creator_target())
         self._estimate = None
         self.messages = []
         self.signals = BuildSignals(self)
@@ -951,7 +951,7 @@ class CreatorPage(Page):
         self._on_screen = True
         if self._fixture is not None or self.state in ("reading", "building"):
             return
-        target = self.settings.get("creator", "target", DEFAULT_CREATOR_TARGET)
+        target = self.settings.get("creator", "target", default_creator_target())
         self.target.set_path(target)
         source = self.settings.get("creator", "source", "")
         if source and (source != self.source.path() or self.state == "empty"):

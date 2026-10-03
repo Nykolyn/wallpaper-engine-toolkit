@@ -22,6 +22,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from app.engines import steam_paths                            # noqa: E402
 from app.engines.rotator import config as rc                  # noqa: E402
 from app.engines.rotator.config import Config, History, RunRecord   # noqa: E402
 from app.engines.rotator.core import Rotator                   # noqa: E402
@@ -226,6 +227,9 @@ page.deleteLater()
 # ---- the Rotator's settings -------------------------------------------------------------
 
 print("-- config.json cannot be read --")
+# Defaults are written once Steam's folders are known (test_steam_paths.py has
+# what happens before); here they are, as by the time a page could show this.
+steam_paths.wait_found(30)
 folder = fresh("config")
 rc.CONFIG_PATH.write_text('{"source": "D:\\\\Wallpapers\\\\reserve", "cou', encoding="utf-8")
 c = Config.load()

@@ -58,9 +58,13 @@ from .wallpaper_timer import WRITE_LAG, EngineFiles, MonitorDeck, wallpaper_engi
 
 STATE_PATH = app_data_dir() / "tracker.json"
 
-# Where Steam says Wallpaper Engine is. "" when Steam is not installed here,
-# in which case find_we_config() falls through to its own search.
-DEFAULT_WE_CONFIG = steam_paths.as_text(steam_paths.we_config())
+
+def default_we_config() -> str:
+    """Where Steam says config.json is, once that is known without waiting
+    (steam_paths.known); "" before then, and when Steam is not installed here.
+    A first guess, for the GUI thread; off it, `find_we_config` is the answer."""
+    return steam_paths.as_text(steam_paths.known(steam_paths.we_config))
+
 
 TIME_FMT = "%Y-%m-%d %H:%M:%S"
 
@@ -117,8 +121,12 @@ def _steam_roots() -> list[Path]:
 
 
 def find_we_config() -> str | None:
-    """Best guess at Wallpaper Engine's config.json, or None if nothing matches."""
-    candidates: list[Path] = [Path(DEFAULT_WE_CONFIG)] if DEFAULT_WE_CONFIG else []
+    """Best guess at Wallpaper Engine's config.json, or None if nothing matches.
+
+    Stats paths on every drive, Steam's own first: call it off the GUI thread.
+    """
+    steam = steam_paths.we_config()
+    candidates: list[Path] = [steam] if steam is not None else []
     for root in _steam_roots():
         candidates.append(root / "steamapps" / "common" / "wallpaper_engine" / "config.json")
     for drive in "WCDEFGHIJ":
@@ -1182,7 +1190,7 @@ class Tracker:
     """Reads Wallpaper Engine and keeps `data/tracker.json` up to date."""
 
     def __init__(self, config_path: str | None = None, files: EngineFiles | None = None):
-        self.config_path = config_path or find_we_config() or DEFAULT_WE_CONFIG or ""
+        self.config_path = config_path or find_we_config() or ""
         # Shared with the countdown in the tray, so each file is watched once.
         self.files = files or EngineFiles(self.config_path)
         self.error: str | None = None

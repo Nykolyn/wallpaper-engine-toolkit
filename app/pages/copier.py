@@ -19,7 +19,7 @@ from PySide6.QtWidgets import (
 from .. import external, theme
 from ..engines import copier as engine
 from ..services import Run
-from ..settings import DEFAULT_COPIER_COUNT, DEFAULT_COPIER_DEST
+from ..settings import DEFAULT_COPIER_COUNT, default_copier_dest
 from ..ui.kit import (
     AccentButton, ButtonsCell, Callout, CardTitle, Cell, CellButton, Checkbox, Elided, Glyph,
     ChipCell, Column, ConfirmDialog, EmptyState, FormDialog, GhostButton,
@@ -270,7 +270,7 @@ class CopierPage(Page):
         table_column.setSpacing(0)
         self.toolbar = TableBar()
         self.toolbar.add(label("Copy to", "type.h3", "body"))
-        self.destination = PathField(self.settings.get("copier", "dest", DEFAULT_COPIER_DEST),
+        self.destination = PathField(self.settings.get("copier", "dest", default_copier_dest()),
                                      placeholder="Choose destination", dialog_title="Copy to")
         self.destination.setMaximumWidth(theme.COPIER_PATH_WIDTH)
         self.destination.path_changed.connect(self._destination_changed)
@@ -749,7 +749,7 @@ class CopierPage(Page):
         self._on_screen = True
         if self._fixture is not None or self.state == "running":
             return
-        path = self.settings.get("copier", "dest", DEFAULT_COPIER_DEST)
+        path = self.settings.get("copier", "dest", default_copier_dest())
         if path != self.destination.path():
             self.destination.set_path(path)
             self.queue_changed()

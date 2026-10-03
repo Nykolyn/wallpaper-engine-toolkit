@@ -87,11 +87,15 @@ class Config:
     Engine's own myprojects folder, which Steam put somewhere specific. The
     reserve and the duplicates bin are folders you choose, so they start
     empty and the Rotator tab asks for them rather than inventing them.
+
+    Steam's answer is found in the background (steam_paths.known), so a
+    default destination can still be "" when this is made, as with no Steam
+    at all; `take_found_folders` fills it in once the answer is there.
     """
 
     source: str = ""
     destination: str = field(
-        default_factory=lambda: steam_paths.as_text(steam_paths.myprojects_dir()))
+        default_factory=lambda: steam_paths.as_text(steam_paths.known(steam_paths.myprojects_dir)))
     duplicates: str = ""
     count: int = 1000
     # Close Wallpaper Engine for the move, refill the playlist built from the
@@ -104,6 +108,10 @@ class Config:
         self._extra: dict = {}
         self.problem = ""
         self.notice = ""
+        # The fields that hold a default rather than what the file said, and
+        # whether the defaults are still to be written (see `_save_defaults`).
+        self._defaulted: set[str] = {f.name for f in fields(self)}
+        self._unsaved = False
 
     @classmethod
     def load(cls) -> "Config":
@@ -135,11 +143,36 @@ class Config:
                           f"{kept.name} and the defaults are used.")
                 c = cls()
                 c.notice = notice
-                c.save()
+                c._save_defaults()
                 return c
         c = cls()
-        c.save()
+        c._save_defaults()
         return c
+
+    def _save_defaults(self) -> None:
+        """Write the defaults, unless Steam's answer is not in yet: written then,
+        the destination it stands in for would be "" for good."""
+        if steam_paths.found():
+            self.save()
+        else:
+            self._unsaved = True
+
+    def take_found_folders(self) -> bool:
+        """Once Steam's folders are known (steam_paths.when_found): its myprojects
+        for a destination that was only ever an empty default, and the save of the
+        defaults that waited for it. True when the destination changed. Not
+        saved over a file that could not be read (`problem`).
+
+        Raises OSError when the save cannot be made.
+        """
+        changed = False
+        if "destination" in self._defaulted and not self.destination:
+            self.destination = steam_paths.as_text(steam_paths.known(steam_paths.myprojects_dir))
+            changed = bool(self.destination)
+        if (changed or self._unsaved) and not self.problem:
+            self._unsaved = False
+            self.save()
+        return changed
 
     @classmethod
     def from_dict(cls, data: dict) -> "Config":
@@ -147,6 +180,7 @@ class Config:
         type replaced by its default."""
         defaults = cls()
         known = {f.name for f in fields(cls)}
+        defaulted = set(known)
         values = {}
         for name in known:
             value, default = data.get(name, getattr(defaults, name)), getattr(defaults, name)
@@ -158,8 +192,11 @@ class Config:
             else:
                 ok = isinstance(value, type(default))
             values[name] = value if ok else default
+            if ok and name in data:
+                defaulted.discard(name)
         c = cls(**values)
         c._extra = {k: v for k, v in data.items() if k not in known}
+        c._defaulted = defaulted
         return c
 
     def save(self) -> None:

@@ -35,7 +35,7 @@ from typing import Callable
 from PySide6.QtCore import QObject, Signal
 
 from .engines.tracker import (
-    DEFAULT_WE_CONFIG, HEARTBEAT_SECONDS, WATCH_SECONDS, PollSchedule, Progress, Tracker)
+    HEARTBEAT_SECONDS, WATCH_SECONDS, PollSchedule, Progress, Tracker, default_we_config)
 from .engines.wallpaper_timer import EngineFiles
 
 # The tray tracker holds this mutex for as long as it runs (tracker_tray), so
@@ -141,10 +141,10 @@ class TrackerFeed(QObject):
         self._generation = 0
         self._waiting: dict[int, Callable[[object], None] | None] = {}
         self._asked = 0
-        # Where the worker will look, until it says otherwise. It only differs
-        # when nothing is chosen and Steam's own place has no config.json, and
-        # finding one elsewhere means stat'ing paths on every drive.
-        self._take_config(config_path or DEFAULT_WE_CONFIG or "")
+        # Where the worker will look, until it says otherwise. With nothing
+        # chosen that is Steam's own place, if it is known yet, and "" if not:
+        # finding config.json means stat'ing paths on every drive.
+        self._take_config(config_path or default_we_config())
 
         self._built.connect(self._on_built)
         self._files_read.connect(self._on_files_read)

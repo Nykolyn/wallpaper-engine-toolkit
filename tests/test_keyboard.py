@@ -29,6 +29,10 @@ sys.stdout.reconfigure(errors="replace")
 
 import gui_guard  # noqa: E402
 
+# On from here: importing the app, every page made, every state shown. Steam's
+# folders are found on a thread of their own (steam_paths), not at import.
+gui_guard.install()
+
 from PySide6.QtCore import Qt                                           # noqa: E402
 from PySide6.QtGui import QFontInfo                                     # noqa: E402
 from PySide6.QtTest import QTest                                        # noqa: E402
@@ -43,10 +47,6 @@ from app.ui.kit import Elided, Table  # noqa: E402
 from app.ui.kit.base import TONE_TOKENS, tab_stops  # noqa: E402
 import app.pages, app.pages.copier, app.pages.creator, app.pages.overview  # noqa: E401,E402,F401
 import app.pages.review, app.pages.rotator, app.pages.settings, app.pages.tracker  # noqa: E401,E402,F401
-
-# On from here: every page made, every state shown. (Importing the app detects
-# Steam's folders once, at start, on the main thread: a known follow-up, not a page's.)
-gui_guard.install()
 
 results: list[bool] = []
 

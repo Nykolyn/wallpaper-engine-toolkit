@@ -114,6 +114,13 @@ def main():
     QApplication.setHighDpiScaleFactorRoundingPolicy(
         Qt.HighDpiScaleFactorRoundingPolicy.PassThrough)
 
+    # Where Steam put Wallpaper Engine, worked out on a thread from the start:
+    # the window and the tray both need it, and Steam may be on a disk that
+    # takes seconds to wake. Until it is known it is not guessed at (see
+    # app/engines/steam_paths.py).
+    from app.engines import steam_paths
+    steam_paths.find_in_background()
+
     _migrate_autostart()
 
     args = sys.argv[1:]

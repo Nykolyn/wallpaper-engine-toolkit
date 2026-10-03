@@ -23,19 +23,28 @@ from .engines import steam_paths
 # It is looked up rather than assumed, so the first launch on any machine
 # arrives with the right target already filled in.
 #
+# Looked up in the background, though (steam_paths.find_in_background): Steam
+# may be on the wallpaper disk, and this module is imported by the window and
+# the tray before either has drawn anything. Until the answer is in, the default
+# is "", as it is with no Steam at all; a page shows it when it arrives
+# (steam_paths.when_found), and nothing writes to an empty folder.
+#
 # The others — where you keep video clips, where you keep previews — are
 # nobody else's business to guess, and an empty field that asks is better than
 # a filled one that is wrong. They default to "" and the tab shows a picker.
 
-_MYPROJECTS = steam_paths.as_text(steam_paths.myprojects_dir())
+def default_myprojects() -> str:
+    """Wallpaper Engine's myprojects as Steam has it, once known; "" before."""
+    return steam_paths.as_text(steam_paths.known(steam_paths.myprojects_dir))
+
 
 # Copier (was DEFAULT_DEST / DEFAULT_COUNT in wallpaper_copier/ui.py)
-DEFAULT_COPIER_DEST = _MYPROJECTS
+default_copier_dest = default_myprojects
 DEFAULT_COPIER_COUNT = 3
 
 # Creator (builds projects from videos alone, generating the preview)
 DEFAULT_CREATOR_SOURCE = ""
-DEFAULT_CREATOR_TARGET = _MYPROJECTS
+default_creator_target = default_myprojects
 DEFAULT_CREATOR_MODE = "Move"
 
 # The Creator tab was once two tabs, and the surviving one stored its settings
