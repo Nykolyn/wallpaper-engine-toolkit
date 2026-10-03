@@ -6,6 +6,31 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [3.9.0] - 2026-10-03
+
+### Added
+
+- Creator reads video dimensions, length and size on a worker, streams its table,
+  and supports stopping the read. Select files, use batch or individual tags
+  (including custom tags), skip untagged files, and pause or stop a build.
+- Creator's completion report shows new previews and folder ids, explains every
+  skipped or failed file, and offers a tagged subset retry. Rebuild the playlist
+  when the output is the Rotator destination. Jobs, logs, the journal and
+  off-page completion notifications follow each build.
+
+### Changed
+
+- Creator uses the redesigned page with source/output panels, state-specific
+  progress, tables and a completion list. Removed its old card-based tab and
+  unused theme helpers.
+
+### Fixed
+
+- **Move could permanently delete an original video when writing project.json
+  failed.** Creator now copies the video, writes and reads back project.json,
+  checks the copied video size and preview, then removes the source. Failed or
+  cancelled builds remove only incomplete output and keep their source videos.
+
 ## [3.8.0] - 2026-10-01
 
 Two things to do from a row of the Tracker's playlist: send the wallpaper to
@@ -1116,7 +1141,8 @@ restructured yet; the tabs keep their layout and take on the new look.
   was right for one library and wrong for every other. Nothing is tagged now
   unless you ask for it.
 
-[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.8.0...HEAD
+[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.9.0...HEAD
+[3.9.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.8.0...v3.9.0
 [3.8.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.7.0...v3.8.0
 [3.7.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.6.0...v3.7.0
 [3.6.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.5.0...v3.6.0

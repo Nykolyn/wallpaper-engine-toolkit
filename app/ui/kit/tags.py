@@ -6,6 +6,8 @@ tags go, lays the 25 out in four columns with a box each, and ends with
 "N selected" and Clear. The tags are the Creator's own list
 (`app.engines.creator.WE_TAGS`), not a copy of it; they keep the order they
 were ticked in, as `clean_tags` keeps whatever order somebody chose.
+An "Other tag…" field edits any additional, comma-separated free-text tags,
+which Wallpaper Engine also accepts in project.json.
 
 **Per file** (`per_file=True`, for one clip in the Creator) a TagSelect has
 three states, the ones the Creator's engine already reads from a clip:
@@ -32,6 +34,7 @@ from ...engines.creator import WE_TAGS, clean_tags
 from . import icons
 from .base import Caster, Interactive, elevation_margins, follow, label
 from .buttons import GhostButton
+from .inputs import TextInput
 from .selection import SegmentedControl
 
 TAG_MODES = ("batch", "own", "none")
@@ -104,6 +107,10 @@ class TagSelect(Interactive, Caster, QWidget):
     def is_checked(self, tag: str) -> bool:
         return tag in self.tags()
 
+    def other_tags(self) -> list[str]:
+        """The resolved free-text tags, outside the known options."""
+        return [tag for tag in self.tags() if tag not in self._options]
+
     # -- what the user does
 
     def toggle(self, tag: str) -> None:
@@ -120,6 +127,21 @@ class TagSelect(Interactive, Caster, QWidget):
     def clear(self) -> None:
         """No tags at all (for one clip: none, not the batch's)."""
         self._own = []
+        self._user_changed()
+
+    def set_other_tags(self, tags) -> None:
+        """Replace the free-text tags, keeping chosen tags in their order.
+
+        Editing while following the batch starts an own list from its tags,
+        just as ticking a box does. Known tags typed here are accepted too.
+        """
+        incoming = clean_tags(tags)
+        current = [tag for tag in self.tags()
+                   if tag in self._options or tag in incoming]
+        chosen = clean_tags(current + incoming)
+        if self._own is not None and self._own == chosen:
+            return
+        self._own = chosen
         self._user_changed()
 
     def follow_batch(self) -> None:
@@ -160,7 +182,10 @@ class TagSelect(Interactive, Caster, QWidget):
             return "batch"
         if self._per_file and not self._own:
             return "none"
-        return f"{len(self.tags())} / {len(self._options)}"
+        tags = self.tags()
+        known = sum(tag in self._options for tag in tags)
+        others = len(tags) - known
+        return f"{known} / {len(self._options)}" + (f" +{others}" if others else "")
 
     def selected_text(self) -> str:
         return f"{len(self.tags())} selected"
@@ -420,6 +445,7 @@ class TagPopup(Caster, QWidget):
         QWidget.__init__(self, parent if embedded else select, flags)
         self.select = select
         self._embedded = embedded
+        self._editing_other = False
         if not embedded:
             self.setAttribute(Qt.WA_TranslucentBackground)
             self.setAttribute(Qt.WA_NoMouseReplay)
@@ -441,6 +467,12 @@ class TagPopup(Caster, QWidget):
         column.addWidget(hint)
         self.grid = _TagGrid(select, inner)
         column.addWidget(self.grid)
+        self.other = TextInput(placeholder="Other tag…")
+        self.other.setAccessibleName("Other tags, comma separated")
+        self.other.setToolTip("Add any other tags, separated by commas")
+        self.other.textEdited.connect(self._other_edited)
+        self.other.editingFinished.connect(self.refresh)
+        column.addWidget(self.other)
         column.addWidget(_Rule())
         footer = QHBoxLayout()
         footer.setSpacing(theme.SP_10)
@@ -457,6 +489,10 @@ class TagPopup(Caster, QWidget):
 
     def refresh(self) -> None:
         self._selected.setText(self.select.selected_text())
+        if not self._editing_other:
+            text = ", ".join(self.select.other_tags())
+            if self.other.text() != text:
+                self.other.setText(text)
         if self.modes is not None:
             index = TAG_MODES.index(self.select.mode())
             if self.modes.current_index() != index:
@@ -464,6 +500,15 @@ class TagPopup(Caster, QWidget):
                 self.modes.set_current_index(index)
                 self.modes.blockSignals(False)
         self.grid.update()
+
+    def _other_edited(self, text: str) -> None:
+        # Keep what is being typed, including a trailing comma or space. The
+        # resolved tags are cleaned now; the field settles when editing ends.
+        self._editing_other = True
+        try:
+            self.select.set_other_tags(text.split(","))
+        finally:
+            self._editing_other = False
 
     def _window_margins(self) -> QMargins:
         if self._embedded:

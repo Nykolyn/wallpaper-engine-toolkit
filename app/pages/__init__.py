@@ -8,6 +8,7 @@
   from there.
 - review: what is new from the authors behind the wallpapers you put aside;
   review_settings holds its two dialogs, review_fixtures its made-up states.
+- creator: videos read on a worker, selected and built with verified source removal.
 - settings: what is set once.
 - legacy: what the old tabs' sidebar items say, until their pages say it.
 
@@ -24,7 +25,7 @@ __all__ = ["Page", "LegacyPage", "build_pages"]
 def build_pages(window) -> list[Page]:
     from ..engines.rotator.config import Config
     from ..ui.copier_tab import CopierTab
-    from ..ui.creator_tab import CreatorTab
+    from .creator import CreatorPage
     from .legacy import LegacyNav
     from .overview import OverviewPage
     from .review import ReviewPage
@@ -38,14 +39,12 @@ def build_pages(window) -> list[Page]:
     # (the Settings page's Rotator fields are read-only while it runs). The
     # Tracker reads where myprojects is from it, for Mark [protected].
     config = Config.load()
-    creator = CreatorTab(settings)
     copier = CopierTab(settings)
     rotator_page = RotatorPage(config, services)
+    creator_page = CreatorPage(settings, services, config, on_rebuild=rotator_page.rebuild_playlist)
     tracker_page = TrackerPage(feed, services, settings=settings, config=config)
     review_page = ReviewPage(settings, services)
     legacy = [
-        LegacyPage("creator", "Creator", "creator", creator,
-                   "Wallpapers made from video clips"),
         LegacyPage("copier", "Copier", "copier", copier,
                    "Copies of folders, so a playlist shows them more often"),
     ]
@@ -56,6 +55,8 @@ def build_pages(window) -> list[Page]:
     def changed(what: str) -> None:
         if what == "rotator":
             rotator_page.config_changed()
+        if what == "creator" and creator_page._on_screen:
+            creator_page.on_shown()
 
     def to_copier(folders: list) -> None:
         tracker_page.copier_took(folders, copier.add_folders(folders))
@@ -67,4 +68,4 @@ def build_pages(window) -> list[Page]:
     tracker_page.copier_requested.connect(to_copier)
     window._legacy_nav = LegacyNav(legacy, services, window)
     return [OverviewPage(services, feed, settings=settings), rotator_page, tracker_page,
-            review_page, *legacy, settings_page]
+            review_page, creator_page, *legacy, settings_page]

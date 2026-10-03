@@ -44,6 +44,7 @@ from .tables import (
     ListRow, ListRowDelegate, RowDelegate, RowList, SkeletonRows, Table, TableBar, TableFooter,
     TableHeader, TableModel, TableSummary, Thumb, buttons_width, disc_pixmap, paint_list_row,
     paint_spinner, paint_thumb,
+    CheckCell, TagsCell, ProgressCell,
 )
 from .tags import TagPopup, TagSelect
 from .thumbs import ThumbLoader
@@ -65,6 +66,7 @@ __all__ = [
     "Table", "TableModel", "TableHeader", "RowDelegate", "Column", "Cell", "ChipCell", "Group",
     "ButtonCell", "ButtonsCell", "CellButton", "buttons_width", "BusyCell", "DiscCell",
     "disc_pixmap", "paint_spinner",
+    "TagsCell", "CheckCell", "ProgressCell",
     "TableBar", "TableSummary", "TableFooter", "ListRow", "ListRowDelegate", "RowList",
     "SkeletonRows",
     "paint_list_row", "Thumb", "paint_thumb", "ThumbLoader",

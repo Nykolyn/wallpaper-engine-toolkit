@@ -55,6 +55,7 @@ def run() -> tuple[bool, str]:
                          "the Tracker page, its titles and authors read off the window's thread"),
                         ("app.pages.review",
                          "the Review page: the scan, the authors, finishing a review"),
+                        ("app.pages.creator", "the Creator page: reading, building and verified Move"),
                         ("app.pages.review_settings",
                          "Review settings, the authors database and its backups"),
                         ("app.window_frame", "the window's own title bar")):

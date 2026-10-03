@@ -1232,15 +1232,20 @@ def fields_section() -> Section:
                 tags(None, per_file=True, batch=batch),
                 tags(("Anime", "Girls", "Music", "Retro", "Relaxing"), per_file=True, batch=batch),
                 tags((), per_file=True, batch=batch))
+    selects.add("TagSelect free text", "known count + custom tags",
+                tags(("Game", "Cosmic", "Soft light")),
+                tags(("Cosmic",), per_file=True, batch=batch))
 
     section.body.addSpacing(12)
     row = QHBoxLayout()
     row.setSpacing(40)
     for select, note in ((tags(), "Open: the hint, the 25 in four columns (the pointer on "
-                                  "Landscape), “3 selected” and Clear. surface.popup at elev.3."),
-                         (tags(("Anime", "Girls"), per_file=True, batch=batch),
+                                  "Landscape), Other tag… for free text, “3 selected” and Clear. "
+                                  "surface.popup at elev.3."),
+                         (tags(("Anime", "Cosmic"), per_file=True, batch=batch),
                           "Per file, three states first: follow the batch, own tags, or none. "
-                          "Ticking a box while following starts an own list from the batch's.")):
+                          "Ticking a box or editing Other tag… while following starts an own "
+                          "list from the batch's. Free text is comma separated.")):
         column = QVBoxLayout()
         column.setSpacing(6)
         in_state(select, "focus")
@@ -1452,9 +1457,9 @@ def tables_section() -> Section:
     from PySide6.QtGui import QStandardItem, QStandardItemModel
 
     from app.ui.kit import (
-        ChipCell, Column, Dropdown, GhostButton, GlassPanel, IconButton, ListRow, RowList,
+        CheckCell, ChipCell, Column, Dropdown, GhostButton, GlassPanel, IconButton, ListRow, RowList,
         SegmentedControl, Table, TableBar, TableFooter, TableModel, TableSummary, TextInput,
-        ThumbLoader,
+        TagsCell, ThumbLoader,
     )
     from app.ui.kit import format as fmt
     from app.ui.kit.tables import LIST_ROW_ROLE, LIST_STATE_ROLE, list_row_height
@@ -1503,7 +1508,7 @@ def tables_section() -> Section:
     column.setSpacing(0)
     column.addWidget(TableSummary(["41 files", "3 need tags", "1.4 GB", r"D:\videos\clips"]))
     clips = [("harbour_dusk.mp4", "Nature", "3840×2160", 24, 182),
-             ("pine_mist.mp4", "Nature", "2560×1440", 40, 142),
+             ("pine_mist.mp4", "Nature, Cosmic", "2560×1440", 40, 142),
              ("tram_night_02.webm", None, "3840×2160", 18, 96),
              ("polar_sky.mp4", "Nature", "3840×2160", 72, 318),
              ("campfire_loop.mp4", "Game", "2560×1440", 30, 74),
@@ -1512,16 +1517,20 @@ def tables_section() -> Section:
     class Clips(TableModel):
         def cell(self, item, c):
             name, tag, resolution, seconds, megabytes = item
-            if c == 1:
-                return ChipCell("Known", tag) if tag else ChipCell("NeedsTags")
-            if c == 3:
-                return f"{seconds // 60}:{seconds % 60:02d}"
+            if c == 0:
+                return CheckCell(name != "wet_street.mkv")
+            if c == 2:
+                return (TagsCell(tag.split(", "), "text.lo" if name == "harbour_dusk.mp4"
+                                 else "text.body") if tag else ChipCell("NeedsTags"))
             if c == 4:
+                return f"{seconds // 60}:{seconds % 60:02d}"
+            if c == 5:
                 return fmt.size(megabytes * 1024 ** 2)
-            return item[c]
+            return item[c - 1]
 
     clip_table = Table()
-    clip_table.setModel(Clips([Column("File", None, icon="video"), Column("Tag", 96),
+    clip_table.setModel(Clips([Column("", theme.CHECK_BOX, "center", sortable=False),
+                               Column("File", None, icon="video"), Column("Tag", 120),
                                Column("Resolution", 84, "right", mono=True),
                                Column("Length", 48, "right", mono=True),
                                Column("Size", 60, "right", mono=True, tone="text.mid")],
@@ -1535,6 +1544,18 @@ def tables_section() -> Section:
     column.addWidget(clip_footer)
     files.setFixedWidth(760)
     section.body.addWidget(files)
+
+    from app.ui.kit import ProgressCell
+    section.body.addWidget(overline("Per-file progress — waiting · working without a percentage · verified"))
+    progress_table = Table()
+    progress_table.setModel(TableModel([Column("File"), Column("Progress", theme.CREATOR_RESULT_COLUMNS[2])],
+                                      [("Waiting", ProgressCell()),
+                                       ("Making preview", ProgressCell(busy=True)),
+                                       ("Verified", ProgressCell(1.0, "ok"))]))
+    progress_table.set_spinning([1])
+    progress_table.setFixedHeight(progress_table.horizontalHeader().sizeHint().height()
+                                  + theme.CREATOR_READ_SKELETONS * progress_table.row_height())
+    section.body.addWidget(progress_table)
 
     # Cells for work done from a row (the gallery's list): a title over a quieter line
     # (`Cell.sub`), a button that turns Accent on the row under the pointer (`ButtonCell`,

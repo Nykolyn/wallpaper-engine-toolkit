@@ -262,9 +262,8 @@ check("and stays inside it", canvas.pixelColor(150, 50).alpha() == 0)
 
 # ---- the helpers the old tabs still call ----------------------------------------------
 
-check("status colours map onto the tokens",
-      theme.status_color("bad") == theme.css("danger")
-      and theme.status_color("done") == theme.css("accent"))
+check("the Creator's card helpers went with its old tab",
+      not hasattr(theme, "status_color") and not hasattr(theme, "card_style"))
 check("the Rotator tab's helpers went with it", not hasattr(theme, "level_color")
       and "rotatorTabs" not in theme.stylesheet())
 check("a secondary line is text.mid, a faint one text.lo",

@@ -480,7 +480,8 @@ check("after problems: how many, in warn", rotator_nav(center, snap)
 going = center.start("rotator", "Run 39")
 going.update("moving", 412, 1000)
 check("while it runs: its bar", rotator_nav(center, snap) == NavState.progress(412, 1000))
-check("the Creator and the Copier say idle", nav_for("creator", center, snap).text == "idle")
+check("the Creator owns its nav state; only Copier remains legacy",
+      not nav_for("creator", center, snap).text and nav_for("copier", center, snap).text == "idle")
 snap[PLAYLIST] = Reading(playlist, 1.0)
 check("the Tracker has a page of its own now: the old tabs' nav leaves it alone",
       nav_for("tracker", center, snap) == NavState())

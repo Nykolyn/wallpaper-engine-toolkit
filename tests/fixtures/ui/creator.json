@@ -1,0 +1,58 @@
+{
+  "target": "X:\\Studio\\myprojects",
+  "tags": ["Nature", "Game", "My tag"],
+  "empty": {},
+  "ffmpeg-missing": {"source": "X:\\Studio\\clips"},
+  "reading": {
+    "source": "X:\\Studio\\clips", "checked": 4, "total": 12,
+    "current": "orbit.webm",
+    "items": [
+      {"name": "amber.mp4", "size": 190840832, "width": 3840, "height": 2160, "duration": 24},
+      {"name": "cedar.mkv", "size": 148897792, "width": 2560, "height": 1440, "duration": 40, "tags": ["Nature"]},
+      {"name": "cloud.mov", "size": 100663296, "width": 1920, "height": 1080, "duration": 18, "tags": []},
+      {"name": "notes.txt", "size": 320, "reason": "unsupported — .txt"}
+    ]
+  },
+  "scanned": {
+    "source": "X:\\Studio\\clips", "move": true, "estimate": 240,
+    "items": [
+      {"name": "amber.mp4", "size": 190840832, "width": 3840, "height": 2160, "duration": 24},
+      {"name": "cedar.mkv", "size": 148897792, "width": 2560, "height": 1440, "duration": 40, "tags": ["Nature"]},
+      {"name": "cloud.mov", "size": 100663296, "width": 1920, "height": 1080, "duration": 18, "tags": []},
+      {"name": "fern.mp4", "size": 333447168, "width": 3840, "height": 2160, "duration": 72},
+      {"name": "glass.webm", "size": 77594624, "width": 2560, "height": 1440, "duration": 30, "tags": ["Game"]},
+      {"name": "mist.mkv", "size": 92274688, "width": 1920, "height": 1080, "duration": 52, "tags": []},
+      {"name": "orbit.webm", "size": 220200960, "width": 3840, "height": 2160, "duration": 36},
+      {"name": "prism.mov", "size": 213909504, "width": 2560, "height": 1440, "duration": 125, "tags": []},
+      {"name": "river.mp4", "size": 247463936, "width": 2560, "height": 1440, "duration": 45, "tags": ["My tag"]},
+      {"name": "tide.mp4", "size": 125829120, "width": 3840, "height": 2160, "duration": 33}
+    ]
+  },
+  "building": {
+    "source": "X:\\Studio\\clips", "move": true, "checked": 4, "total": 8,
+    "started": "2026-10-03T13:48:00", "current": "orbit.webm", "written": 610000000, "estimate": 240,
+    "rows": [
+      {"name": "orbit.webm", "status": "working", "phase": "making preview · 210 MB"},
+      {"name": "amber.mp4", "status": "ok", "folder": "amber-101", "phase": "done · amber-101"},
+      {"name": "cedar.mkv", "status": "ok", "folder": "cedar-102", "phase": "done · cedar-102"},
+      {"name": "cloud.mov", "status": "skipped", "reason": "skipped — no tags"},
+      {"name": "glass.webm", "status": "ok", "folder": "glass-103", "phase": "done · glass-103"},
+      {"name": "river.mp4", "status": "ok", "folder": "river-104", "phase": "done · river-104"},
+      {"name": "tide.mp4", "status": "queued"},
+      {"name": "fern.mp4", "status": "queued"}
+    ]
+  },
+  "done": {
+    "source": "X:\\Studio\\clips", "ended": "2026-10-03T13:52:12", "elapsed": 252, "written": 1500000000,
+    "report": [
+      {"name": "amber.mp4", "status": "ok", "folder": "amber-101"},
+      {"name": "cedar.mkv", "status": "ok", "folder": "cedar-102"},
+      {"name": "glass.webm", "status": "ok", "folder": "glass-103"},
+      {"name": "river.mp4", "status": "ok", "folder": "river-104"},
+      {"name": "tide.mp4", "status": "ok", "folder": "tide-105"},
+      {"name": "fern.mp4", "status": "ok", "folder": "fern-106"},
+      {"name": "cloud.mov", "status": "skipped", "reason": "skipped — no tags", "video_path": "X:\\Studio\\clips\\cloud.mov"},
+      {"name": "prism.mov", "status": "failed", "reason": "could not be read — file may be damaged", "video_path": "X:\\Studio\\clips\\prism.mov"}
+    ]
+  }
+}

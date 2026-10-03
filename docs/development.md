@@ -72,7 +72,7 @@ app/
     │                       the formats, data display (paths, tags, progress,
     │                       cards, tables, thumbs), feedback (log, toast,
     │                       statusline, dialogs), and the frame (shell)
-    ├── copier_tab.py, creator_tab.py
+    ├── copier_tab.py
     └── gallery.py        Review's gallery: the grid of cards, the list, the marks
 ```
 
@@ -81,9 +81,12 @@ window that draws the design system from the app's own code, and a picture of
 the real window in a made-up state (see [Look and feel](#look-and-feel) and
 [Snapshots](#snapshots)).
 
-Only the GUI layer is new. The callback-based Copier and Creator engines are
-driven through small Qt signal bridges in `app/workers.py`, so their background
-threads update the UI safely.
+The Copier callback engine uses `app/workers.py`. Creator's page owns a
+`ReadWorker` for source metadata and `BuildSignals` for its callback engine;
+all worker results reach widgets through queued Qt signals. `SourceModel` and
+`ResultModel` use the kit's virtualized Table, including tag pills, checkboxes
+and indeterminate per-item progress. Source metadata is cached on VideoItem,
+so table painting never stats a video.
 
 ## The frame and its pages
 
@@ -548,7 +551,8 @@ for %f in (tests\test_*.py) do .venv\Scripts\python.exe %f
 
 | File | Covers |
 |---|---|
-| `test_creator.py` | project.json, and which tags win between a batch and one clip |
+| `test_creator.py` | Move preserves sources when JSON, copy or verification fails; metadata parsing, a single probe per file, read cancellation, pause/resume, subset builds, report reasons and the three tag states |
+| `test_creator_page.py` | skip/selection counts, tag cells, keyboard selection, playlist visibility, fixtures without drive I/O, a threaded read and subset build through JobCenter and the journal, notification and retry |
 | `test_tracker.py` | anchoring a cycle, rebuilding history, merging two writers, following the engine's deck, when to look |
 | `test_wallpaper_timer.py` | the PLPV0005 parser, the file watcher, the countdown, pause rules |
 | `test_playlist_refresh.py` | finding the rotation's playlist, refilling it, restarting one monitor's pass, the state file written back byte for byte |
@@ -668,7 +672,7 @@ in the template.
 
 `theme.apply(app)` sets Fusion, the palette, the font and the stylesheet, and
 reads Windows' animation switch. The old tabs' helpers (`label_style`,
-`console_style`, `card_style`, `status_color`, `make_accent`) are mapped onto
+`console_style`, `make_accent`) are mapped onto
 the tokens until the pages that call them are replaced.
 
 ### Icons
@@ -934,11 +938,13 @@ empty) as jobs put in the JobCenter, a reading put in the Snapshot
 the loop; `MainWindow.load_fixture(state)` applies one, then the page's own
 `load_fixture` (its state of that name, or its first). A page with more to
 make up keeps it in a file of its own: `overview.json`, `tracker.json`,
-`rotator.json`, `review.json`. A
+`rotator.json`, `review.json`, `creator.json`. A
 page's own states (`--list` prints them per page: the Tracker's `tracking`,
 `paused`, `disconnected`, `finished`, …) are asked for the same way; the page's
 `frame_fixture(state)` says which of the frame's states goes with each, and
-what of it the page changes (its sidebar item, "Next in the loop").
+what of it the page changes (its sidebar item, "Next in the loop", and jobs).
+Creator exposes `empty`, `reading`, `scanned`, `building`, `done` and
+`ffmpeg-missing`; its reading/building frame jobs use the page's own counts.
 A page state that opens a dialog (the Rotator's `confirm` and `broken`, Review's
 `settings` and `authors`) keeps it
 as `page.fixture_dialog`; the tool draws its grab over the window's, scrim and

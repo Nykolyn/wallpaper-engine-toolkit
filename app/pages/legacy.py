@@ -15,7 +15,7 @@ def nav_for(key: str, jobs, snapshot=None) -> NavState:
     """The sidebar state of the old tab `key`, from the JobCenter."""
     if any(job.tool == key for job in jobs.running()):
         return NavState.status("working")
-    if key in ("creator", "copier"):
+    if key == "copier":
         return NavState.status("idle")
     return NavState()
 
