@@ -955,8 +955,21 @@ TRACKER_AUTHORS = 140         # the author list, at the least
 TRACKER_COLUMNS = {"number": 32, "author": 88, "type": 48, "shown": 64, "state": 64,
                    "actions": 2 * ICON_BUTTON["sm"][0] + TABLE_BUTTONS_GAP}
 
-# -- the Rotator (RotatorIdle, RotatorRunning, RotatorDone, RotatorProblems)
+# -- Creator (reading, scanned, building, done)
 
+CREATOR_SIDE = 330
+CREATOR_COLUMNS = (18, None, 110, 86, 58, 70)
+CREATOR_RESULT_COLUMNS = (None, 110, 84)
+CREATOR_READ_SKELETONS = 3
+CREATOR_RUN_ROWS = 7
+CREATOR_EMPTY_WIDTH = 360
+CREATOR_RING = 58
+CREATOR_RENDER_MS = 90
+CREATOR_LOG_HEIGHT = 120
+TABLE_PROGRESS_HEIGHT = 5
+TABLE_PROGRESS_SWEEP = .35
+
+# -- the Rotator (RotatorIdle, RotatorRunning, RotatorDone, RotatorProblems)
 ROTATOR_SIDE = 330            # the left column: the next run, the run under way, its result
 ROTATOR_PANEL_GAP = 11        # a left panel's parts
 ROTATOR_FIELDS_GAP = 7        # FOLDERS: its overline and the two fields
@@ -1036,14 +1049,6 @@ GALLERY_LIST_COLUMNS = {"type": 52, "size": 60, "mark": 104, "action": 96}
 AUTHORS_WIDTH = 600           # the authors database dialog
 AUTHORS_TABLE = 220           # its table of backups
 AUTHORS_COLUMNS = {"taken": 112, "authors": 64, "size": 60}
-
-
-# ---- Semantic colours the old tabs ask for ---------------------------------
-
-def status_color(kind: str) -> str:
-    """Colour for a card border or a status line: ok / bad / done / muted."""
-    return css({"ok": "ok", "bad": "danger", "done": "accent",
-                "muted": "text.mid"}.get(kind, "text.body"))
 
 
 # ---- Qt palette -----------------------------------------------------------
@@ -1549,19 +1554,6 @@ def console_style() -> str:
     return (f"background: {css('surface.console')}; color: {css('console.text')}; "
             f"border: 1px solid {css('border.hairline')}; border-radius: {R_MD}px; "
             f"padding: 8px; {qss_font('type.mono')}")
-
-
-def card_style(object_name: str, color_: str) -> str:
-    """A preview card, tinted by whether its item is ready, skipped or built.
-
-    The hover rule is what makes a wall of cards feel alive under the cursor;
-    Qt applies it instantly, which is the right speed for pointer feedback.
-    """
-    return (f"#{object_name} {{ background: {css('surface.wash')}; "
-            f"border: 1px solid {css('border.hairline')}; border-left: 3px solid {color_}; "
-            f"border-radius: {R_LG}px; }}"
-            f"#{object_name}:hover {{ background: {css('surface.raised')}; "
-            f"border-color: {css('border.strong')}; border-left-color: {color_}; }}")
 
 
 def make_accent(button) -> None:

@@ -44,13 +44,14 @@ animations.ENABLED = True
 from app.engines import creator                                                # noqa: E402
 from app.ui import kit                                                         # noqa: E402
 from app.ui.kit import (                                                       # noqa: E402
-    ActivityLine, Cell, ChipCell, Column, EmptyState, Group, MonitorCard, MonitorView,
+    ActivityLine, Cell, CheckCell, ChipCell, Column, EmptyState, Group, MonitorCard, MonitorView,
     PathField, ProgressBar, ProgressRing, StatCard, StepList, Table, TableFooter, TableModel,
-    TableSummary, TagSelect, Thumb, ThumbLoader, ToolTile,
+    TableSummary, TagsCell, TagSelect, Thumb, ThumbLoader, ToolTile,
 )
 from app.ui.kit import base, thumbs                                            # noqa: E402
 from app.ui.kit import format as fmt                                           # noqa: E402
 from app.ui.kit.tags import TagPopup                                           # noqa: E402
+from app.ui.kit.tables import check_pixmap, tags_pixmap                         # noqa: E402
 
 NB = chr(0xA0)
 results: list[bool] = []
@@ -297,6 +298,44 @@ check("the footer counts them", batch_popup._selected.text() == "3 selected")
 batch_popup.clear_button.click()
 check("and Clear there clears", tags.value() == [])
 check("a TagSelect draws closed and open", drawn(tags) and drawn(batch_popup))
+
+tags.set_value(["Game", "Cinematic", "Nature"])
+tags.set_other_tags([" Cinematic ", "Dreamscape", "Dreamscape", None, " "])
+check("free-text tags are cleaned and preserve the order of existing choices",
+      tags.value() == ["Game", "Cinematic", "Nature", "Dreamscape"]
+      and tags.other_tags() == ["Cinematic", "Dreamscape"])
+check("the built-in count distinguishes additional free-text tags",
+      tags.count_text() == "2 / 25 +2" and tags.selected_text() == "4 selected")
+check("the popup shows existing free-text tags and the Other tag placeholder",
+      batch_popup.other.text() == "Cinematic, Dreamscape"
+      and batch_popup.other.placeholderText() == "Other tag…"
+      and batch_popup.other.accessibleName() == "Other tags, comma separated")
+batch_popup.other.setFocus()
+batch_popup.other.selectAll()
+QTest.keyClicks(batch_popup.other, "Cosmic, Soft light, ")
+check("typing custom tags updates the value without rewriting the input mid-edit",
+      tags.value() == ["Game", "Nature", "Cosmic", "Soft light"]
+      and batch_popup.other.text() == "Cosmic, Soft light, ")
+QTest.keyClick(batch_popup.other, Qt.Key_Return)
+check("finishing the edit settles the cleaned custom text",
+      batch_popup.other.text() == "Cosmic, Soft light")
+batch_popup.clear_button.click()
+check("Clear clears the custom field too", tags.value() == [] and batch_popup.other.text() == "")
+clip.set_batch_tags(["Game", "Cosmic"])
+clip.follow_batch()
+clip.set_other_tags(["Ambient"])
+check("editing custom tags while following the batch starts an own list",
+      clip.value() == ["Game", "Ambient"] and clip.mode() == "own")
+clip.set_batch_tags(["Nature"])
+check("the new own custom tags no longer follow batch changes",
+      clip.tags() == ["Game", "Ambient"])
+clip.set_value(["Ambient"])
+clip.set_other_tags([])
+check("removing the last custom tag means no tags, not follow batch",
+      clip.value() == [] and clip.mode() == "none")
+clip.follow_batch()
+check("Follow batch restores the batch after a custom edit",
+      clip.value() is None and clip.tags() == ["Nature"] and popup.other.text() == "")
 
 
 # ---- progress -----------------------------------------------------------------------------------
@@ -574,6 +613,38 @@ check("a column spec refuses what it cannot draw",
       raises(lambda: Column("x", align="justify"), ValueError)
       and raises(lambda: Column("x", thumb="huge"), KeyError)
       and raises(lambda: Column("x", elide="middle"), ValueError))
+
+class TagRows(TableModel):
+    def cell(self, item, column):
+        return item[column]
+
+
+tag_rows = TagRows([Column("", 24, "center", sortable=False), Column("Tags", None)],
+                  [(CheckCell(True), TagsCell(["Nature", "Cosmic"], "text.lo")),
+                   (CheckCell(False, False), TagsCell(["Game", "Dreamscape"])),
+                   (CheckCell(False), ChipCell("NeedsTags"))])
+check("tag and selection cells provide meaningful model text",
+      tag_rows.data(tag_rows.index(0, 0)) == "Selected"
+      and tag_rows.data(tag_rows.index(1, 0)) == "Not selected"
+      and tag_rows.data(tag_rows.index(0, 1)) == "Nature, Cosmic")
+check("tag cells store an immutable list and distinguish following/own tones",
+      tag_rows.cell(tag_rows.item_at(0), 1).tags == ("Nature", "Cosmic")
+      and tag_rows.cell(tag_rows.item_at(0), 1).tone == "text.lo"
+      and tag_rows.cell(tag_rows.item_at(1), 1).tone == "text.body")
+wide_tags = tags_pixmap(("Nature", "Cosmic"), "text.body", 240, 1.5)
+narrow_tags = tags_pixmap(("Nature", "Cosmic"), "text.body", 42, 1.5)
+check("tag tiles respect a narrow cell and cache by width, tone and scale",
+      narrow_tags.deviceIndependentSize().width() <= 42
+      and wide_tags is tags_pixmap(("Nature", "Cosmic"), "text.body", 240, 1.5)
+      and tags_pixmap(("Nature", "Cosmic"), "text.lo", 240, 1.5) is not wide_tags)
+check("selected, unselected and disabled checkboxes draw different states",
+      check_pixmap(True, True, 1.5) is check_pixmap(True, True, 1.5)
+      and check_pixmap(True, True, 1.5).toImage() != check_pixmap(False, True, 1.5).toImage()
+      and check_pixmap(True, True, 1.5).toImage() != check_pixmap(True, False, 1.5).toImage())
+tag_table = Table()
+tag_table.setModel(tag_rows)
+tag_table.resize(330, 170)
+check("a table paints tag pills, NeedsTags and selection checkboxes", drawn(tag_table))
 
 # 33 000 rows, as the reserve has
 BIG = 33_000

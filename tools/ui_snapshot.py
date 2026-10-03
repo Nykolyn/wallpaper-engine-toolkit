@@ -76,12 +76,13 @@ def main(argv=None) -> int:
                                     .read_text(encoding="utf-8")) if k != "//"]
     if args.list:
         from app.pages.overview import OverviewPage
+        from app.pages.creator import CreatorPage
         from app.pages.review import ReviewPage
         from app.pages.rotator import RotatorPage
         from app.pages.settings import SettingsPage
         from app.pages.tracker import TrackerPage
         print("states:", ", ".join(states))
-        for page in (OverviewPage, RotatorPage, TrackerPage, ReviewPage, SettingsPage):
+        for page in (OverviewPage, RotatorPage, TrackerPage, ReviewPage, CreatorPage, SettingsPage):
             print(f"{page.key}:", ", ".join(page.FIXTURES))
         return 0
     if out is None:
@@ -94,6 +95,11 @@ def main(argv=None) -> int:
         return 2
 
     window = build_window(args.page)
+    if args.page == "creator":
+        # Match the fixture's output to the Rotator so the Done action is exercised.
+        import json
+        window.pages["creator"].config.destination = json.loads(
+            (ROOT / "tests/fixtures/ui/creator.json").read_text(encoding="utf-8"))["target"]
     fixture = frame_fixture(window.pages[page_for(args.page)], args.state, states,
                             load_shell_fixture)
     if fixture is None:
@@ -135,6 +141,8 @@ def frame_fixture(page, state: str, states: list[str], load) -> dict | None:
         fixture["nav"] = {**fixture.get("nav", {}), **spec["nav"]}
     if "next" in spec:
         fixture["next"] = spec["next"]
+    if "jobs" in spec:
+        fixture["jobs"] = spec["jobs"]
     return fixture
 
 
@@ -154,6 +162,7 @@ def build_window(page_key: str):
     from app.main_window import MainWindow, page_for
     from app.pages.base import Page
     from app.pages.overview import OverviewPage
+    from app.pages.creator import CreatorPage
     from app.pages.review import ReviewPage
     from app.pages.rotator import RotatorPage
     from app.pages.settings import SettingsPage
@@ -209,7 +218,7 @@ def build_window(page_key: str):
              RotatorPage(config, svc),
              TrackerPage(feed, svc, settings=settings),
              ReviewPage(settings, svc),
-             StandIn("creator", "Creator", "creator"),
+             CreatorPage(settings, svc, config),
              StandIn("copier", "Copier", "copier"),
              SettingsPage(settings, config, feed=feed, services=svc)]
     key = page_for(page_key)

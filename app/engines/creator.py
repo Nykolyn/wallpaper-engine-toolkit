@@ -8,8 +8,9 @@ clips needs nothing else to become a folder of working wallpapers.
 For every video in the source folder it:
   1. Creates  target/<name>-<random_suffix>
   2. Renders  preview.gif  from the video (square 1:1, 5 s, skipping the first second)
-  3. Moves (or copies) the video inside
-  4. Writes   project.json  in Wallpaper Engine format
+  3. Copies the video inside
+  4. Writes and verifies project.json, the video and the preview
+  5. Removes the source only after verification, when Move is selected
 
 An earlier version of this engine required a matching preview file to already
 exist for every clip, and skipped the ones without. That turned out to be the
@@ -176,14 +177,44 @@ def _run(args):
     )
 
 
-def probe_duration(ffmpeg, video_path):
-    """Video length in seconds, parsed from ffmpeg's banner. None if unknown."""
+def parse_probe_output(stderr):
+    """Read length and video dimensions from a single ffmpeg input banner.
+
+    ``ffmpeg -i`` normally returns a nonzero code because it has no output;
+    stream metadata, rather than that code, tells us whether a video was read.
+    Restrict the resolution match to a Video stream so codec ids and audio
+    stream values cannot accidentally become dimensions.
+    """
+    metadata = {"duration": None, "width": None, "height": None, "video": False}
+    duration = re.search(r"Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)", stderr or "")
+    if duration:
+        hours, minutes, seconds = duration.groups()
+        metadata["duration"] = int(hours) * 3600 + int(minutes) * 60 + float(seconds)
+    for line in (stderr or "").splitlines():
+        if not re.search(r"Stream\s.*?Video:", line):
+            continue
+        if "attached pic" in line:
+            continue
+        metadata["video"] = True
+        dimensions = re.search(r"(?:^|[\s,])(\d+)x(\d+)(?=[\s,\[]|$)",
+                               line.split("Video:", 1)[1])
+        if dimensions and "attached pic" not in line:
+            width, height = map(int, dimensions.groups())
+            if width > 0 and height > 0:
+                metadata.update(width=width, height=height)
+                break
+    return metadata
+
+
+def probe_metadata(ffmpeg, video_path):
+    """Probe a video once, returning its length and resolution."""
     proc = _run([ffmpeg, "-i", video_path])
-    m = re.search(r"Duration: (\d+):(\d+):(\d+\.?\d*)", proc.stderr or "")
-    if not m:
-        return None
-    h, mn, s = m.groups()
-    return int(h) * 3600 + int(mn) * 60 + float(s)
+    return parse_probe_output(proc.stderr)
+
+
+def probe_duration(ffmpeg, video_path):
+    """Backwards-compatible duration helper; source reads use probe_metadata."""
+    return probe_metadata(ffmpeg, video_path)["duration"]
 
 
 def _segment(duration):
@@ -250,6 +281,12 @@ class VideoItem:
         self.basename = os.path.basename(self.video_path)          # clip.mp4
         self.filename = os.path.splitext(self.basename)[0]         # clip
         self.size = self._safe_size(self.video_path)
+        self._exists = os.path.isfile(self.video_path)
+        self.width = None
+        self.height = None
+        self.duration = None
+        self.metadata_read = False
+        self.reason = None
         # None means "whatever the batch is tagged with"; a list — even an empty
         # one — means this clip was decided about on its own. The difference
         # matters: clearing a clip's tags has to survive the batch changing.
@@ -264,8 +301,83 @@ class VideoItem:
 
     @property
     def valid(self):
-        """Every readable video is buildable — the preview is generated."""
-        return os.path.isfile(self.video_path)
+        """Cached scan result, safe for a table to read on the GUI thread."""
+        return self._exists and self.reason is None
+
+    @property
+    def resolution(self):
+        return f"{self.width}×{self.height}" if self.width and self.height else None
+
+
+def resolve_tags(item, batch_tags=()):
+    """Follow the batch only when the clip has no tag decision of its own."""
+    return clean_tags(batch_tags if item.tags is None else item.tags)
+
+
+def needs_tags(item, batch_tags=()):
+    return not resolve_tags(item, batch_tags)
+
+
+def _cancelled(cancelled):
+    if cancelled is None:
+        return False
+    return cancelled.is_set() if hasattr(cancelled, "is_set") else bool(cancelled())
+
+
+def read_source(source_dir, on_item=None, cancelled=None, ffmpeg=None, on_check=None):
+    """Read a folder on a worker, streaming each file with cached metadata.
+
+    Return the files checked so far if stopped. Unsupported files remain in the
+    result with a reason, so the page can explain the usable/unsupported count.
+    ``on_item(item, checked, total)`` runs on the caller's worker thread. Nothing
+    is written, and each supported file uses exactly one ffmpeg probe.
+    """
+    if _cancelled(cancelled):
+        return []
+    if not os.path.isdir(source_dir):
+        raise FileNotFoundError(f"Source folder not found: {source_dir}")
+    ffmpeg = ffmpeg or find_ffmpeg()
+    if not ffmpeg:
+        raise RuntimeError("ffmpeg not found. Install ffmpeg or imageio-ffmpeg.")
+    paths = []
+    with os.scandir(source_dir) as entries:
+        for entry in entries:
+            if _cancelled(cancelled):
+                return []
+            if entry.is_file():
+                paths.append(entry.path)
+    paths.sort(key=lambda path: (os.path.basename(path).casefold(), path))
+    total = len(paths)
+    items = []
+    for path in paths:
+        if _cancelled(cancelled):
+            break
+        if on_check:
+            on_check(os.path.basename(path), len(items), total)
+        item = VideoItem(path)
+        extension = os.path.splitext(path)[1].lower()
+        if extension not in VIDEO_EXTS:
+            item.reason = f"unsupported — {extension or 'no file extension'}"
+        else:
+            try:
+                # Stat alone does not establish that the worker can read it.
+                with open(path, "rb") as source:
+                    source.read(1)
+                metadata = probe_metadata(ffmpeg, path)
+                item.metadata_read = True
+                item.duration = metadata["duration"]
+                item.width = metadata["width"]
+                item.height = metadata["height"]
+                if not metadata["video"] or item.size <= 0:
+                    item.reason = "could not be read — file may be damaged"
+            except (OSError, subprocess.SubprocessError):
+                item.reason = "could not be read — file may be damaged"
+        if _cancelled(cancelled):
+            break
+        items.append(item)
+        if on_item:
+            on_item(item, len(items), total)
+    return items
 
 
 def scan_source(source_dir):
@@ -293,31 +405,39 @@ class BuildEngine:
     """
     Background engine that turns bare videos into Wallpaper Engine projects.
 
-    Callbacks (optional, called from the worker thread) — same shape as
-    creator.BuildEngine so the UI layer stays uniform:
-        log(text)               — a log line
-        progress(done, total)   — overall progress by video
-        item_done(name, status) — per-video result ('ok' | 'failed')
-        finished(report)        — completion (report = list of dict)
+    Optional callbacks run on the worker thread:
+        log(text)                              — a log line
+        progress(done, total)                  — overall progress by video
+        item_done(name, status, folder, preview_path) — per-video result
+        finished(report)                       — completion (list of dict)
     """
 
-    def __init__(self, log=None, progress=None, item_done=None, finished=None):
+    def __init__(self, log=None, progress=None, item_done=None, finished=None,
+                 item_progress=None, item_result=None):
         self._log = log or (lambda *_: None)
         self._progress = progress or (lambda *_: None)
         self._item_done = item_done or (lambda *_: None)
         self._finished = finished or (lambda *_: None)
+        self._item_progress = item_progress or (lambda *_: None)
+        self._item_result = item_result or (lambda *_: None)
 
         self._cancel = threading.Event()
+        self._resume = threading.Event()
+        self._resume.set()
         self._thread = None
 
     # ----- thread control -----------------------------------------------------
 
-    def start(self, items, target_dir, move=True, tags=None):
+    def start(self, items, target_dir, move=True, tags=None, skip_needs_tags=False):
         if self.is_running():
             return False
         self._cancel.clear()
+        self._resume.set()
+        # Freeze the selected subset for this run.
+        items = list(items)
         self._thread = threading.Thread(
-            target=self._run, args=(items, target_dir, move, clean_tags(tags)),
+            target=self._run,
+            args=(items, target_dir, move, clean_tags(tags), skip_needs_tags),
             daemon=True,
         )
         self._thread.start()
@@ -325,23 +445,45 @@ class BuildEngine:
 
     def cancel(self):
         self._cancel.set()
+        self._resume.set()
+
+    def pause(self):
+        """Let the current wallpaper finish, then wait before the next one."""
+        self._resume.clear()
+
+    def resume(self):
+        self._resume.set()
+
+    def is_paused(self):
+        return not self._resume.is_set()
 
     def is_running(self):
         return self._thread is not None and self._thread.is_alive()
 
     # ----- main logic ---------------------------------------------------------
 
-    def _run(self, items, target_dir, move, tags):
+    def _wait_until_ready(self):
+        while not self._resume.wait(0.1):
+            if self._cancel.is_set():
+                return False
+        return not self._cancel.is_set()
+
+    @staticmethod
+    def _entry(item, status="failed", reason=None):
+        return {"name": item.basename, "status": status, "folder": None,
+                "preview": None, "preview_path": None, "reason": reason,
+                "size": item.size, "bytes_written": 0, "video_path": item.video_path}
+
+    def _run(self, items, target_dir, move, tags, skip_needs_tags=False):
         report = []
         total = len(items)
         self._progress(0, total)
 
         ffmpeg = find_ffmpeg()
+        run_error = None
         if not ffmpeg:
-            self._log("[ERROR] ffmpeg not found. Install it or add the "
-                      "imageio-ffmpeg package (pip install imageio-ffmpeg).")
-            self._finished(report)
-            return
+            run_error = "ffmpeg not found; install ffmpeg or imageio-ffmpeg"
+            self._log(f"[ERROR] {run_error}")
 
         self._log(
             f"[START] Building {total} video(s). Mode: "
@@ -352,21 +494,32 @@ class BuildEngine:
                   + (" (clips with their own tags override this)"
                      if any(getattr(i, "tags", None) is not None for i in items) else ""))
 
-        try:
-            os.makedirs(target_dir, exist_ok=True)
-        except OSError as exc:
-            self._log(f"[ERROR] Could not create target folder: {exc}")
-            self._finished(report)
-            return
+        if not run_error:
+            try:
+                os.makedirs(target_dir, exist_ok=True)
+            except OSError as exc:
+                run_error = f"could not create target folder: {exc}"
+                self._log(f"[ERROR] {run_error}")
 
         done = 0
         for it in items:
-            if self._cancel.is_set():
-                self._log("[CANCEL] Operation cancelled by user.")
-                break
-            entry = self._process_item(it, target_dir, move, ffmpeg, tags)
+            if not self._wait_until_ready():
+                entry = self._entry(it, "skipped", "stopped — not built")
+            elif getattr(it, "reason", None):
+                status = "skipped" if it.reason.startswith("unsupported") else "failed"
+                entry = self._entry(it, status, it.reason)
+            elif skip_needs_tags and needs_tags(it, tags):
+                entry = self._entry(it, "skipped", "skipped — no tags")
+            elif run_error:
+                entry = self._entry(it, "failed", f"failed — {run_error}")
+            else:
+                entry = self._process_item(it, target_dir, move, ffmpeg, tags)
             report.append(entry)
-            self._item_done(it.basename, entry["status"])
+            self._item_result(entry)
+            self._item_done(it.basename, entry["status"], entry["folder"],
+                            entry["preview_path"])
+            if entry["reason"]:
+                self._log(f"[{entry['status'].upper()}] {it.basename}: {entry['reason']}")
             done += 1
             self._progress(done, total)
 
@@ -374,18 +527,23 @@ class BuildEngine:
         self._finished(report)
 
     def _process_item(self, item, target_dir, move, ffmpeg, tags=()):
-        entry = {"name": item.basename, "status": "failed", "folder": None,
-                 "preview": None}
+        entry = self._entry(item)
         folder = None
+        committed = False
         try:
+            if not os.path.isfile(item.video_path):
+                entry["reason"] = "could not be read — file may be damaged"
+                return entry
             folder_name = f"{item.filename}-{generate_suffix()}"
-            folder = os.path.join(target_dir, folder_name)
-            os.makedirs(folder, exist_ok=True)
-            entry["folder"] = folder_name
+            candidate = os.path.join(target_dir, folder_name)
+            os.makedirs(candidate)
+            folder = candidate
 
             # --- preview: GIF, falling back to a still frame ---
+            self._item_progress(item.basename, "making preview", None)
             self._log(f"[GIF]   {item.basename} → rendering preview…")
-            duration = probe_duration(ffmpeg, item.video_path)
+            duration = (item.duration if item.metadata_read
+                        else probe_duration(ffmpeg, item.video_path))
             gif_path = os.path.join(folder, "preview.gif")
             preview_name = None
 
@@ -403,37 +561,75 @@ class BuildEngine:
             if not preview_name:
                 self._log(f"[ERROR] {item.basename}: could not create any preview.")
                 self._cleanup(folder)
+                entry["reason"] = "could not be read — file may be damaged"
                 return entry
-            entry["preview"] = preview_name
 
             if self._cancel.is_set():
                 self._cleanup(folder)
                 self._log(f"[CANCEL] {item.basename}: rolled back.")
+                entry.update(status="skipped", reason="stopped — not built")
                 return entry
 
             # --- video ---
             dst_video = os.path.join(folder, item.basename)
-            if move:
-                shutil.move(item.video_path, dst_video)
-            else:
-                shutil.copy2(item.video_path, dst_video)
+            # Move is copy + verify + remove. Removing the source earlier would
+            # make a later JSON write failure delete the only copy at cleanup.
+            source_size = os.path.getsize(item.video_path)
+            self._item_progress(item.basename, "copying video", os.path.join(folder, preview_name))
+            shutil.copy2(item.video_path, dst_video)
 
             # --- project.json ---
             # A clip that was decided about on its own keeps its own answer,
             # including an empty one.
-            own = getattr(item, "tags", None)
             data = build_project_json(item.basename, item.filename, preview_name,
-                                      tags if own is None else own)
-            with open(os.path.join(folder, "project.json"), "w", encoding="utf-8") as f:
+                                      resolve_tags(item, tags))
+            project_path = os.path.join(folder, "project.json")
+            self._item_progress(item.basename, "writing project.json", os.path.join(folder, preview_name))
+            with open(project_path, "w", encoding="utf-8") as f:
                 json.dump(data, f, ensure_ascii=False, indent="\t")
 
-            entry["status"] = "ok"
+            self._item_progress(item.basename, "verifying wallpaper", os.path.join(folder, preview_name))
+            self._verify_project(folder, item.basename, preview_name, data,
+                                 source_size)
+            if self._cancel.is_set():
+                self._cleanup(folder)
+                self._log(f"[CANCEL] {item.basename}: rolled back.")
+                entry.update(status="skipped", reason="stopped — not built")
+                return entry
+            # Measure everything that the report needs before removing input.
+            bytes_written = sum(os.path.getsize(os.path.join(folder, name))
+                                for name in (item.basename, preview_name, "project.json"))
+            if move:
+                os.remove(item.video_path)
+            committed = True
+            entry.update(status="ok", folder=folder_name, preview=preview_name,
+                         preview_path=os.path.join(folder, preview_name),
+                         bytes_written=bytes_written)
             self._log(f"[OK]    {folder_name}")
         except Exception as exc:  # noqa: BLE001 — one failure must not stop the run
-            self._log(f"[ERROR] {item.basename}: {exc}")
-            if folder:
+            if committed:
+                # A notification failure after a successful Move must never
+                # remove the now-only copy of the video.
+                return entry
+            entry["reason"] = f"failed — {exc}"
+            if folder and os.path.isdir(folder):
                 self._cleanup(folder)
+            self._log(f"[ERROR] {item.basename}: {exc}")
         return entry
+
+    @staticmethod
+    def _verify_project(folder, basename, preview_name, expected, source_size):
+        """Read back a complete project before Move can remove its source."""
+        if source_size <= 0:
+            raise OSError("source video is empty")
+        if os.path.getsize(os.path.join(folder, basename)) != source_size:
+            raise OSError("copied video size does not match the source")
+        if os.path.getsize(os.path.join(folder, preview_name)) <= 0:
+            raise OSError("preview is empty")
+        with open(os.path.join(folder, "project.json"), encoding="utf-8") as f:
+            actual = json.load(f)
+        if actual != expected:
+            raise OSError("project.json did not read back correctly")
 
     @staticmethod
     def _cleanup(folder):
@@ -446,10 +642,11 @@ class BuildEngine:
     def _print_summary(self, report):
         ok = sum(1 for e in report if e["status"] == "ok")
         failed = sum(1 for e in report if e["status"] == "failed")
+        skipped = sum(1 for e in report if e["status"] == "skipped")
         gifs = sum(1 for e in report if e["preview"] == "preview.gif")
         stills = sum(1 for e in report if e["preview"] == "preview.jpg")
         self._log("")
         self._log("=" * 50)
-        self._log(f"RESULT: created {ok}, failed {failed} "
+        self._log(f"RESULT: created {ok}, skipped {skipped}, failed {failed} "
                   f"(previews: {gifs} gif, {stills} still).")
         self._log("=" * 50)

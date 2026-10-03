@@ -149,57 +149,133 @@ check("and are made only of digits, so any filesystem takes them",
       all(s.isdigit() for s in suffixes))
 
 
-# ---- The widgets that carry all this ---------------------------------------
+# ---- Move never consumes an input after a JSON write failure ----------------
 
-from PySide6.QtWidgets import QApplication                # noqa: E402
+from unittest.mock import patch
 
-_app = QApplication.instance() or QApplication([])
 
-from app.ui.creator_tab import TagDialog, VideoCard, describe_tags   # noqa: E402
+def fake_gif(ffmpeg, video, output, duration=None):
+    Path(output).write_bytes(b"preview")
+    return True
 
-check("a tag list reads as a sentence", describe_tags(["Anime", "Game"]) == "Anime, Game")
-check("and an empty one says so rather than showing nothing",
-      describe_tags([], "none") == "none")
 
-dialog = TagDialog(["Anime", "Something else"])
-check("a known tag comes back ticked", dialog.boxes["Anime"].isChecked())
-check("an unknown one goes in the free-text field",
-      dialog.extra.text() == "Something else")
-check("and both survive the round trip",
-      dialog.value() == ["Anime", "Something else"])
+move_source = TMP / "move-source.mp4"
+move_source.write_bytes(b"original video")
+move_target = TMP / "move-target"
+engine = cr.BuildEngine()
+with patch.object(cr, "probe_duration", return_value=10.0), \
+        patch.object(cr, "make_gif", side_effect=fake_gif), \
+        patch.object(cr.json, "dump", side_effect=OSError("disk full")):
+    failed = engine._process_item(cr.VideoItem(str(move_source)),
+                                  str(move_target), True, "fake-ffmpeg")
+check("Move preserves the source when project.json fails",
+      failed["status"] == "failed" and move_source.read_bytes() == b"original video")
+check("Move removes the incomplete output when project.json fails",
+      not list(move_target.iterdir()))
 
-batch_dialog = TagDialog(None, batch=["Anime"])
-check("a clip set to follow the batch says so", batch_dialog.follow.isChecked())
-check("and answers None rather than a list", batch_dialog.value() is None)
-check("with the boxes disabled, so the two cannot be set at once",
-      not batch_dialog._grid_host.isEnabled())
 
-batch_dialog.follow.setChecked(False)
-check("un-following re-enables them", batch_dialog._grid_host.isEnabled())
-check("and the answer becomes a list — an empty one, having ticked nothing",
-      batch_dialog.value() == [])
+import threading
+import subprocess
 
-plain = TagDialog(["Anime"])
-check("the batch's own dialog has no follow checkbox to offer",
-      plain.follow is None)
+banner = """Input #0, mov, from 'sample.mp4':
+  Duration: 01:02:03.50, start: 0.000000, bitrate: 1500 kb/s
+  Stream #0:0(und): Video: h264 (High) (avc1 / 0x31637661), yuv420p, 1920x1080 [SAR 1:1 DAR 16:9], 24 fps
+  Stream #0:1: Audio: aac, 48000 Hz, stereo
+"""
+parsed = cr.parse_probe_output(banner)
+check("one ffmpeg banner yields length and video dimensions",
+      parsed == dict(duration=3723.5, width=1920, height=1080, video=True))
+check("audio dimensions are never video dimensions",
+      cr.parse_probe_output("Stream #0:0: Audio: pcm, 1920x1080")["width"] is None)
+check("an unavailable duration remains unknown",
+      cr.parse_probe_output("Duration: N/A\nStream #0:0: Video: vp9, yuv420p, 3840x2160, 30 fps")["duration"] is None)
+check("codec hex identifiers are not dimensions", parsed["width"] == 1920)
+check("a damaged input has no video stream", not cr.parse_probe_output("Invalid data found")["video"])
 
-fresh = cr.VideoItem(str(clip))
-card = VideoCard(fresh, ["Anime", "Game"])
-check("a card following the batch shows the batch's tags",
-      "Anime, Game" in card.tags_btn.text())
-card.set_batch_tags(["Retro"])
-check("and follows it when it changes", "Retro" in card.tags_btn.text())
+read_dir = TMP / "read"
+read_dir.mkdir()
+for name in ("a.mp4", "b.mkv", "notes.txt", "z.webm"):
+    (read_dir / name).write_bytes(b"sample")
+calls = []
+def fake_run(args):
+    calls.append(args)
+    return subprocess.CompletedProcess(args, 1, "", banner)
+with patch.object(cr, "_run", side_effect=fake_run):
+    streamed = []
+    read = cr.read_source(str(read_dir), lambda item, n, total: streamed.append((n, total)), ffmpeg="fake")
+check("read streams sorted rows including unsupported reasons",
+      [i.basename for i in read] == ["a.mp4", "b.mkv", "notes.txt", "z.webm"]
+      and read[2].reason.startswith("unsupported") and streamed[-1] == (4, 4))
+check("read probes every supported video once", len(calls) == 3)
+check("read caches metadata without future filesystem calls",
+      read[0].resolution == "1920×1080" and read[0].duration == 3723.5)
+stop = threading.Event()
+with patch.object(cr, "_run", side_effect=fake_run):
+    partial = cr.read_source(str(read_dir), lambda *_: stop.set(), stop, ffmpeg="fake")
+check("cancel keeps only the rows already checked", len(partial) == 1)
+check("cancel before read touches nothing", cr.read_source("missing", cancelled=stop) == [])
+with patch.object(cr, "_run", return_value=subprocess.CompletedProcess([], 1, "", "Invalid data")):
+    broken = cr.read_source(str(read_dir), ffmpeg="fake")
+check("damaged files have an actionable reason", broken[0].reason == "could not be read — file may be damaged")
 
-fresh.tags = ["Nature"]
-card._refresh_tags_button()
-check("a card with its own tags shows those instead",
-      "Nature" in card.tags_btn.text() and "Retro" not in card.tags_btn.text())
+own = cr.VideoItem(str(clip))
+check("NeedsTags follows an empty batch", cr.needs_tags(own, []))
+check("NeedsTags resolves a nonempty batch", not cr.needs_tags(own, ["Nature"]))
+own.tags = []
+check("explicit none stays NeedsTags with a tagged batch", cr.needs_tags(own, ["Nature"]))
+own.tags = ["Custom"]
+check("own tags override an empty batch", cr.resolve_tags(own, []) == ["Custom"])
 
-fresh.tags = []
-card._refresh_tags_button()
-check("and one deliberately untagged says none, not the batch's",
-      "none" in card.tags_btn.text() and "Retro" not in card.tags_btn.text())
+copy_target = TMP / "copy-target"
+with patch.object(cr, "probe_duration", return_value=10), patch.object(cr, "make_gif", side_effect=fake_gif):
+    copied = engine._process_item(cr.VideoItem(str(clip)), str(copy_target), False, "fake")
+check("Copy verifies a complete wallpaper and leaves input",
+      copied["status"] == "ok" and clip.exists() and Path(copied["preview_path"]).exists())
+with patch.object(cr, "probe_duration", return_value=10), patch.object(cr, "make_gif", side_effect=fake_gif), \
+        patch.object(cr.BuildEngine, "_verify_project", side_effect=OSError("size mismatch")):
+    failed_verify = engine._process_item(cr.VideoItem(str(move_source)), str(move_target), True, "fake")
+check("Move preserves input after failed verification", move_source.exists() and "size mismatch" in failed_verify["reason"])
+with patch.object(cr, "probe_duration", return_value=10), patch.object(cr, "make_gif", side_effect=fake_gif):
+    moved = engine._process_item(cr.VideoItem(str(move_source)), str(move_target), True, "fake")
+check("Move removes input only after verified output exists",
+      moved["status"] == "ok" and not move_source.exists()
+      and (move_target / moved["folder"] / "move-source.mp4").read_bytes() == b"original video")
 
+reports, notifications = [], []
+subset = cr.BuildEngine(finished=reports.append, item_done=lambda *args: notifications.append(args))
+selected = read[:2]
+selected[0].tags = ["Nature"]
+selected[1].tags = []
+subset_target = TMP / "subset"
+with patch.object(cr, "find_ffmpeg", return_value="fake"), patch.object(cr, "make_gif", side_effect=fake_gif):
+    subset._run(selected, str(subset_target), False, [], True)
+check("subset builds only given tagged files and reports no-tag skips",
+      len(list(subset_target.iterdir())) == 1 and len(reports[0]) == 2
+      and reports[0][1]["reason"] == "skipped — no tags")
+check("item_done carries the new id and preview path",
+      len(notifications[0]) == 4 and notifications[0][2] and Path(notifications[0][3]).exists())
+
+entered, proceed, second = threading.Event(), threading.Event(), threading.Event()
+pause_engine = cr.BuildEngine()
+def paused_run(args):
+    if "-i" in args:
+        if not entered.is_set():
+            pause_engine.pause()
+            entered.set()
+            proceed.wait(5)
+        else:
+            second.set()
+    return subprocess.CompletedProcess(args, 1, "", banner)
+pause_items = [cr.VideoItem(str(read_dir / name)) for name in ("a.mp4", "b.mkv")]
+with patch.object(cr, "find_ffmpeg", return_value="fake"), patch.object(cr, "_run", side_effect=paused_run), \
+        patch.object(cr, "make_gif", side_effect=fake_gif):
+    pause_engine.start(pause_items, str(TMP / "pause"), move=False)
+    reached = entered.wait(5)
+    proceed.set()
+    check("pause waits between items", reached and not second.wait(.15))
+    pause_engine.resume()
+    pause_engine._thread.join(5)
+    check("resume continues the next item", second.is_set() and not pause_engine.is_running())
 
 print()
 print("PASSED %d/%d" % (sum(results), len(results)))

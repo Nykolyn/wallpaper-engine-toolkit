@@ -848,10 +848,10 @@ check("… and its log lines are in the copier's file, tags turned into kinds",
       copier_lines[0][0] == "start" and ("done", "2 of 2 copies made") == copier_lines[-1]
       and any(k == "done" and "wallpaper-a_copy1" in m for k, m in copier_lines))
 
-print("-- the Creator tab's report --")
-from app.ui.creator_tab import CreatorTab                                     # noqa: E402
+print("-- the Creator page's report --")
+from app.pages.creator import CreatorPage                                     # noqa: E402
 
-creator = CreatorTab(Settings({}))
+creator = CreatorPage(Settings({}), installed)
 creator._target = str(dest)
 creator._job = services.begin("creator", "Building 3 wallpapers", activity="build")
 creator._on_finished([{"name": "a", "status": "ok", "preview": "preview.gif"},

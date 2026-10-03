@@ -31,6 +31,7 @@ optionally a thumb or a glyph before the text. The model's `cell()` returns a
 string, a `Cell` (text in another tone) or a `ChipCell` for each one; or a cell
 that acts: a `ButtonCell` (a text button), a `ButtonsCell` (glyph buttons side by
 side, a row's actions), a `BusyCell` or a `DiscCell`.
+`TagsCell`, `CheckCell` and `ProgressCell` describe Creator rows.
 
 `ListRow` is the same row for list views (the author list, recent activity):
 a dataclass of what a row says, `paint_list_row` to draw it in any state, and
@@ -302,6 +303,31 @@ class ChipCell:
 
 
 @dataclass(frozen=True)
+class TagsCell:
+    """Chosen tag pills. A batch-following row uses tone="text.lo"."""
+    tags: tuple[str, ...]
+    tone: str = "text.body"
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "tags", tuple(self.tags))
+
+
+@dataclass(frozen=True)
+class CheckCell:
+    """A row selection checkbox, painted by the delegate; the page handles clicks."""
+    checked: bool
+    enabled: bool = True
+
+
+@dataclass(frozen=True)
+class ProgressCell:
+    """A flat per-item bar; busy means work with no measurable percentage."""
+    fraction: float | None = None
+    tone: str = "accent"
+    busy: bool = False
+
+
+@dataclass(frozen=True)
 class ButtonCell:
     """A button drawn in the cell, `variant` at rest and `hot` on the row under
     the pointer (the gallery's Subscribe turns Accent there). A click on it is
@@ -397,10 +423,96 @@ def _text_of(value) -> str:
         return value.label
     if isinstance(value, ButtonsCell):
         return " · ".join(b.tip for b in value.buttons if b is not None)
+    if isinstance(value, TagsCell):
+        return ", ".join(value.tags)
+    if isinstance(value, CheckCell):
+        return "Selected" if value.checked else "Not selected"
+    if isinstance(value, ProgressCell):
+        return "working" if value.busy else f"{round((value.fraction or 0) * 100)}%"
     return str(value)
 
 
 _discs: dict[tuple, QPixmap] = {}
+_tag_tiles: OrderedDict[tuple, QPixmap] = OrderedDict()
+_checks: dict[tuple, QPixmap] = {}
+
+
+def tags_pixmap(tags: Sequence[str], tone: str, width: float, dpr: float) -> QPixmap:
+    """Pills fitted to one cell, with +N for those left over, cached for scrolling."""
+    width = max(1, math.floor(width))
+    key = (tuple(tags), tone, width, round(dpr, 3))
+    found = _tag_tiles.get(key)
+    if found is not None:
+        _tag_tiles.move_to_end(key)
+        return found
+    font = theme.font("type.caption")
+    metrics = QFontMetricsF(font)
+    pad = theme.TAG_PILL_PAD[1]
+    gap = theme.TAG_PILL_GAP
+    pills: list[tuple[str, float]] = []
+    used = 0.0
+    for i, tag in enumerate(tags):
+        pill_width = metrics.horizontalAdvance(tag) + 2 * pad
+        remaining = len(tags) - i - 1
+        reserve = metrics.horizontalAdvance(f"+{remaining}") + 2 * pad + gap if remaining else 0
+        if used + pill_width + reserve > width:
+            more = f"+{len(tags) - i}"
+            pill_width = min(metrics.horizontalAdvance(more) + 2 * pad, width - used)
+            pills.append((more, pill_width))
+            used += pill_width
+            break
+        pills.append((tag, pill_width))
+        used += pill_width + (gap if remaining else 0)
+    height = theme.CHIP_HEIGHT
+    pixmap = QPixmap(max(1, math.ceil(used * dpr)), math.ceil(height * dpr))
+    pixmap.setDevicePixelRatio(dpr)
+    pixmap.fill(Qt.transparent)
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.Antialiasing)
+    painter.setFont(font)
+    x = 0.0
+    for text, pill_width in pills:
+        rect = QRectF(x, 0, pill_width, height)
+        path = QPainterPath()
+        path.addRoundedRect(rect, theme.R_SM, theme.R_SM)
+        painter.fillPath(path, theme.color("surface.raised"))
+        painter.setPen(theme.color(tone))
+        text_width = max(0, pill_width - 2 * pad)
+        shown = metrics.elidedText(text, Qt.ElideRight, text_width)
+        painter.drawText(rect, Qt.AlignCenter, shown)
+        x += pill_width + gap
+    painter.end()
+    _tag_tiles[key] = pixmap
+    if len(_tag_tiles) > RowDelegate.ELIDED_LIMIT:
+        _tag_tiles.popitem(last=False)
+    return pixmap
+
+
+def check_pixmap(checked: bool, enabled: bool, dpr: float) -> QPixmap:
+    """A table's selection box, shared by all rows in the same state and scale."""
+    key = (checked, enabled, round(dpr, 3))
+    found = _checks.get(key)
+    if found is not None:
+        return found
+    side = theme.CHECK_BOX
+    pixmap = QPixmap(math.ceil(side * dpr), math.ceil(side * dpr))
+    pixmap.setDevicePixelRatio(dpr)
+    pixmap.fill(Qt.transparent)
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.Antialiasing)
+    if not enabled:
+        painter.setOpacity(theme.DISABLED_FIELD_OPACITY)
+    box = QRectF(0.5, 0.5, side - 1, side - 1)
+    painter.setPen(QPen(theme.color("accent" if checked else "border.strong"), 1))
+    painter.setBrush(theme.color("accent" if checked else "surface.well"))
+    painter.drawRoundedRect(box, theme.R_SM, theme.R_SM)
+    if checked:
+        tick = theme.POPUP_CHECK
+        painter.drawPixmap(QPointF((side - tick) / 2, (side - tick) / 2),
+                           icons.pixmap("check", "text.onAccent", tick, dpr))
+    painter.end()
+    _checks[key] = pixmap
+    return pixmap
 
 
 def disc_pixmap(icon: str, tone: str, size: int, dpr: float) -> QPixmap:
@@ -491,7 +603,7 @@ class TableModel(QAbstractTableModel):
     # -- what subclasses say
 
     def cell(self, item, column: int):
-        """A cell's content: a str, a Cell, a ChipCell or None."""
+        """A cell's content: text, a cell dataclass or None."""
         return item[column]
 
     def sort_key(self, item, column: int):
@@ -876,6 +988,32 @@ class RowDelegate(QStyledItemDelegate):
         if right <= x:
             return
         align = ALIGNMENTS[column.align]
+        if isinstance(value, ProgressCell):
+            bar = QRectF(x, middle - theme.TABLE_PROGRESS_HEIGHT / 2,
+                         right - x, theme.TABLE_PROGRESS_HEIGHT)
+            painter.setPen(Qt.NoPen)
+            painter.setBrush(self.colour("surface.well"))
+            painter.drawRoundedRect(bar, theme.TABLE_PROGRESS_HEIGHT / 2, theme.TABLE_PROGRESS_HEIGHT / 2)
+            if value.busy or value.fraction:
+                fill = QRectF(bar)
+                if value.busy:
+                    travel = animations.loop("spin").phase() if self._table.spins(self._row) else 0
+                    fill.setWidth(bar.width() * theme.TABLE_PROGRESS_SWEEP)
+                    fill.moveLeft(x + (bar.width() - fill.width()) * travel)
+                else:
+                    fill.setWidth(bar.width() * max(0, min(1, value.fraction)))
+                painter.setBrush(self.colour(value.tone))
+                painter.drawRoundedRect(fill, theme.TABLE_PROGRESS_HEIGHT / 2, theme.TABLE_PROGRESS_HEIGHT / 2)
+            return
+        if isinstance(value, (TagsCell, CheckCell)):
+            tile = (tags_pixmap(value.tags, value.tone, right - x, self._dpr)
+                    if isinstance(value, TagsCell)
+                    else check_pixmap(value.checked, value.enabled, self._dpr))
+            size = tile.deviceIndependentSize()
+            cell_left = (right - size.width() if align == Qt.AlignRight
+                         else (x + right - size.width()) / 2 if align == Qt.AlignHCenter else x)
+            painter.drawPixmap(QPointF(cell_left, middle - size.height() / 2), tile)
+            return
         if isinstance(value, ChipCell):
             key = (value.variant, value.text)
             size = self._chips.get(key)
