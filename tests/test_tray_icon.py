@@ -554,9 +554,12 @@ try:
 finally:
     (tray_mod.TrackerFeed, tray_mod.WallpaperTimer, tray_mod.QSystemTrayIcon) = real[:3]
 tray.clock_timer.stop()
-tray.taskbar._read = lambda: 0
 shell = tray.icon
 check("it starts as unknown, in the display name", len(shell.icons) == 1 and shell.tip == "Toolkit")
+# The real switch is whatever this machine says (a CI runner may well be light):
+# the rest of this section starts from a dark taskbar of its own.
+tray.taskbar._read = lambda: 0
+tray.taskbar.refresh()
 
 lead = progress()
 tray.feed.results = [lead]
