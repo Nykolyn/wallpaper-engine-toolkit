@@ -88,8 +88,9 @@ class StatusBinding(QObject):
     - Something running: its tool, what it is doing, its bar and count, and
       "Show", which goes to its page.
     - Nothing running: "Nothing running · last run finished 13:58".
-    - The last job ended with problems or failed: said in warn or danger, with
-      a link to its page, until that page has been looked at.
+    - The last job ended: said as it ended until its page has been looked at
+      since — cleanly in ok ("Run 39 finished cleanly · …"), with problems in
+      warn and failed in danger, those two with a link to the page.
     """
 
     def __init__(self, line: StatusLine, jobs, show, *, now=datetime.now,
@@ -104,10 +105,15 @@ class StatusBinding(QObject):
         self.update()
 
     def acknowledge(self, page: str) -> None:
-        """The user is on `page`: what ended badly there has been seen."""
+        """The user is on `page`: how the work there ended has been seen."""
         last = self.jobs.last_finished()
-        if last is not None and last.page == page and last.result in ("problems", "failed"):
-            self._seen.add(last.number)
+        if last is not None and last.page == page and last.result in ("clean", "problems", "failed"):
+            self.seen(last.number)
+
+    def seen(self, number: int) -> None:
+        """Job `number`'s end has been seen: the line goes back to idle."""
+        if number not in self._seen:
+            self._seen.add(number)
             self.update()
 
     def update(self, *_args) -> None:
@@ -134,6 +140,9 @@ class StatusBinding(QObject):
             return
         if last.result == "failed" and last.number not in self._seen:
             self.line.set_error(f"{last.title} failed · {last.summary}", "Show", go)
+            return
+        if last.result == "clean" and last.number not in self._seen:
+            self.line.set_ok(f"{last.title} finished cleanly · {last.summary}")
             return
         self.line.set_idle(f"Nothing running · {self._ended(last)}")
 
@@ -243,6 +252,8 @@ class MainWindow(QMainWindow):
         for number, key in enumerate(PAGE_ORDER, start=1):
             shortcut = QShortcut(QKeySequence(f"Ctrl+{number}"), self)
             shortcut.activated.connect(lambda k=key: self.show_page(k))
+        find = QShortcut(QKeySequence.Find, self)
+        find.activated.connect(self.focus_filter)
 
         self.show_page(page_for(initial) or DEFAULT_PAGE, animate=False)
         self.resize(self.opening_size())
@@ -287,6 +298,7 @@ class MainWindow(QMainWindow):
             self.header.set_subtitle(page.subtitle())
             self.header.set_actions(page.header_actions())
             self.sidebar.set_current(page.key)
+            self._order_tabs(page)
 
         if animate and before is not None:
             self.fade.switch(change)
@@ -297,6 +309,37 @@ class MainWindow(QMainWindow):
         page.on_shown()
         self._acknowledge(key)
         return True
+
+    def focus_filter(self) -> bool:
+        """Ctrl+F: to the shown page's filter, its words selected to type over.
+        False when the page has none on screen."""
+        page = self._shown
+        field = page.filter_field() if page is not None else None
+        if field is None or not field.isVisible() or not field.isEnabled():
+            return False
+        field.setFocus(Qt.ShortcutFocusReason)
+        if hasattr(field, "selectAll"):
+            field.selectAll()
+        return True
+
+    def focusNextPrevChild(self, next: bool) -> bool:     # noqa: N802 - Qt's name
+        # Every Tab comes up to the window. Widgets a page makes later (a
+        # monitor's card) join the end of the chain; put them in their place
+        # first. 0.9 ms for the window's ~1 100 widgets, measured.
+        if self._shown is not None:
+            self._order_tabs(self._shown)
+        return super().focusNextPrevChild(next)
+
+    def _order_tabs(self, page: Page) -> None:
+        """Tab goes as the frame reads: down the sidebar, the page's header
+        actions, the page, then the status line's link. Left alone, the order
+        is the one the widgets were made in, which put each page between two
+        sidebar items and the header's buttons last."""
+        chain: list[QWidget] = [self.sidebar.item(key) for key in self.sidebar.keys()]
+        chain += [w for w in page.header_actions() if w.focusPolicy() & Qt.TabFocus]
+        chain += kit_base.tab_stops(page)
+        chain.append(self.status.link())
+        kit_base.chain_tabs(chain)
 
     def _acknowledge(self, key: str) -> None:
         binding = getattr(self, "status_binding", None)
@@ -317,10 +360,6 @@ class MainWindow(QMainWindow):
                 next_in_loop(self.services.snapshot[PLAYLIST].value))
 
     # -- asked from outside: the tray, a second launch
-
-    def show_tab(self, name: str) -> bool:
-        """What `--tab` and the old "show <tab>" message ask for."""
-        return self.show_page(name)
 
     def bring_forward(self, page: str = "") -> None:
         """Answer a click on the tray icon, or a second launch of the program."""
@@ -418,6 +457,8 @@ class MainWindow(QMainWindow):
                 job.finish(spec["result"], spec.get("summary", ""))
                 if "ended" in spec:
                     job.ended = _fixture_time(spec["ended"])
+                if spec.get("seen"):
+                    self.status_binding.seen(job.number)
         playlist = fixture.get("playlist")
         if playlist is not None:
             from .services.snapshot import PlaylistProgress

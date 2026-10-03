@@ -75,11 +75,11 @@ TOKENS: dict[str, str] = {
     # borders
     "border.hairline": "rgba(255,255,255,.10)",
     "border.control": "rgba(255,255,255,.14)",
+    "border.faint": "rgba(255,255,255,.055)",   # between a checklist's rows
     "border.strong": "rgba(255,255,255,.22)",
     "border.focus": "#6FA5FF",
     "focus.ring": "rgba(76,141,255,.45)",
     "sheen": "rgba(255,255,255,.12)",           # inset top light
-    "sheen.hi": "rgba(255,255,255,.14)",
 
     # text
     "text.hi": "#F0F3F8",                       # titles, numerals
@@ -97,6 +97,7 @@ TOKENS: dict[str, str] = {
     "accent.soft": "rgba(76,141,255,.16)",
     "ok": "#3DD68C",
     "ok.soft": "rgba(61,214,140,.15)",
+    "ok.band": "rgba(61,214,140,.10)",          # a checklist group that is safe
     "warn": "#F5A524",
     "warn.soft": "rgba(245,165,36,.16)",
     "danger": "#FF6B6B",                        # text and icons on dark
@@ -737,6 +738,11 @@ THUMB: dict[str, tuple[int, int, int]] = {
     "grid": (160, 90, 6),    # 16:9 in a grid; the width follows the cell
 }
 THUMB_GAP = 9            # a thumb to the text beside it
+# A table's stretched thumb column too narrow to leave its words this much (about a
+# dozen characters) draws the next thumb down. Measured: at 1 200 px the Tracker's
+# playlist had 114 px for a 120 px thumb, and no title at all.
+THUMB_NARROWER = {"row": "md"}
+TABLE_WORDS_MIN = 80
 
 PROGRESS_HEIGHTS = (3, 4, 5, 6, 8)
 PROGRESS_CAPTION_GAP = 5
@@ -847,7 +853,9 @@ LIVE_DOT = 7             # the pulsing dot of a job that runs (log header, statu
 
 LOG_HEAD_PAD = (9, 13)   # the header row: vertical, horizontal
 LOG_ROW_PAD = 13         # a console line's sides
-LOG_COLUMN_GAP = 12      # time · kind · message
+LOG_COLUMN_GAP = 10      # time · kind · message
+LOG_COLUMNS = (62, 52)   # time and kind, at the least (ds-12's grid)
+LOG_CONSOLE_PAD = 6      # above the first line and below the last
 LOG_BODY = 232           # the console's height, expanded
 LOG_CAP = 5_000          # lines a LogPanel keeps; the file keeps the rest
 LOG_BADGE_PAD = (2, 7)   # the problem count on a collapsed panel
@@ -855,39 +863,45 @@ EXCERPT_PAD = (10, 12)   # a ConsoleExcerpt's well: vertical, horizontal
 EXCERPT_LINE = 18        # one of its lines (10.5 px mono at 1.7)
 EXCERPT_RADIUS = 8
 
-TOAST_WIDTH = 344
-TOAST_PAD = (11, 12)
+TOAST_WIDTH = 430        # ds-12's least width
+TOAST_PAD = (10, 12)
+TOAST_RADIUS = 9
+TOAST_EDGE = 3           # the left edge in the toast's hue
 TOAST_ICON = 15
-TOAST_GAP = 10           # icon, text, link and close, side by side
+TOAST_GAP = 11           # icon, text, link and close, side by side
 TOAST_STACK_GAP = 8      # one toast to the next
 TOAST_MARGIN = 16        # the stack to the page's bottom-right corner
 TOAST_RISE = 8           # how far a toast rises while it fades in
 TOAST_TIMEOUT = 6000     # ms before a toast that is not danger goes by itself
 TOAST_LIMIT = 4          # shown at once; the oldest that may go makes room
 
-STATUS_HEIGHT = 34
+STATUS_HEIGHT = 34 + 1   # and the divider over it (see TITLE_BAR_HEIGHT)
 STATUS_PAD = 14          # the line's sides
 STATUS_GAP = 10
 STATUS_BAR = 150         # a running job's bar, 4 px tall
-STATUS_ICON = 13         # the warn and error glyphs
 
 DIALOG_WIDTH = 440       # a confirmation or a form
 DIALOG_WIDE = 540        # a confirmation with a checklist
-DIALOG_PAD = (18, 20)    # vertical, horizontal
+DIALOG_PAD = (20, 22)    # above the head, and the sides (ds-12, frames 08, 09, 16)
 DIALOG_GAP = 14          # between the head, the body's parts and the footer
-DIALOG_TILE = 34         # the icon tile beside the title
-DIALOG_TILE_RADIUS = 9
-DIALOG_ICON = 17
-DIALOG_HEAD_GAP = 13     # the tile to the words
-DIALOG_FOOTER_PAD = (12, 20)
-DIALOG_STEP = 18         # a numbered step's disc
-DIALOG_STEP_GAP = 10     # the disc to its text
+DIALOG_TILE = 30         # the icon tile beside the title
+DIALOG_TILE_RADIUS = 8
+DIALOG_ICON = 16
+DIALOG_HEAD_GAP = 11     # the tile to the words
+DIALOG_FOOTER_PAD = (14, 18)    # above the buttons, below them
+DIALOG_WELL_RADIUS = 8   # the steps' well, the checklist's box
+DIALOG_WELL_PAD = (11, 13)      # the steps' well: vertical, horizontal
+DIALOG_STEP_GAP = 7      # one step to the next
+DIALOG_STEP_NUMBER = 12  # a step's number, and 9 px to its words
+DIALOG_STEP_NUMBER_GAP = 9
 DIALOG_ROW_GAP = 12      # a form's labelled rows
 DIALOG_SCREEN_MARGIN = 24  # the panel to the window's edge, at the least
-CHECK_ROW_PAD = (5, 10)  # a checklist row: vertical, horizontal
+CHECK_ROW_PAD = (7, 12)  # a checklist row: vertical, horizontal
+CHECK_HEAD_PAD = (8, 12)  # a group's band
 CHECK_ROW_GAP = 10
+CHECK_LINE_GAP = 2       # a row's name to its reason
 CHECK_SIZE_WIDTH = 64    # the right-aligned size column
-CHECK_LIMIT = 5          # rows a group shows before "N more like these"
+CHECK_LIMIT = 3          # rows a group shows before "N more like these" (frame 09)
 CHECKLIST_MAX = 300      # the checklist's height before it scrolls
 CONFIRM_LINES = 14       # lines a confirmation lists before "… and N more"
 CONFIRM_LINES_PAD = (8, 11)  # their well: vertical, horizontal
@@ -897,7 +911,11 @@ CONFIRM_LINES_PAD = (8, 11)  # their well: vertical, horizontal
 WINDOW_SIZE = (1280, 860)     # at first start
 WINDOW_MIN = (1040, 720)
 
-TITLE_BAR_HEIGHT = 32
+# The design sizes the frame's bands by their content (CSS content-box): each
+# divider and edge is 1 px more than the size it names, and the sidebar's sides
+# are outside its 246. Measured on frame 01: the sidebar's edge at x 266, the
+# header's divider at y 85.
+TITLE_BAR_HEIGHT = 32 + 1     # the buttons' 32 and the divider under them
 TITLE_BAR_PAD = (11, 4)       # before the mark, after the buttons
 TITLE_BAR_GAP = 8             # the mark to the name
 TITLE_MARK = 16
@@ -905,8 +923,9 @@ CAPTION_BUTTON = (42, 32)     # minimise, maximise, close
 CAPTION_GLYPH = 10
 RESIZE_BORDER = 6             # how close to the edge the pointer resizes the window
 
-SIDEBAR_WIDTH = 246
 SIDEBAR_PAD = (12, 10)        # vertical, horizontal
+SIDEBAR_ITEMS = 246           # the items' width
+SIDEBAR_WIDTH = SIDEBAR_ITEMS + 2 * SIDEBAR_PAD[1] + 1    # and the edge
 RAIL_WIDTH = 56               # the sidebar as icons only
 RAIL_BELOW = 1200             # a window narrower than this shows the rail
 NAV_PAD = (8, 9)              # an item: vertical, horizontal
@@ -927,7 +946,7 @@ NEXT_GAP = 5                  # its overline to its sentence
 RAIL_ITEM = 36                # an item in the rail, square
 RAIL_DOT = 6                  # what stands for a badge or a bar in the rail
 
-HEADER_HEIGHT = 52
+HEADER_HEIGHT = 52 + 1        # and its divider
 HEADER_PAD = 16
 HEADER_GAP = 12               # the title, the subtitle and the actions
 HEADER_ACTION_GAP = 8
@@ -968,6 +987,9 @@ TRACKER_COLUMNS = {"number": 32, "author": 88, "type": 48, "shown": 64, "state":
 
 # -- Creator (reading, scanned, building, done)
 
+COPIER_PLACES_GAP = 18        # the empty state's known places, side by side
+COPIER_PLACE_ICON = 13
+
 CREATOR_SIDE = 330
 CREATOR_COLUMNS = (18, None, 110, 86, 58, 70)
 CREATOR_RESULT_COLUMNS = (None, 110, 84)
@@ -984,7 +1006,6 @@ TABLE_PROGRESS_SWEEP = .35
 ROTATOR_SIDE = 330            # the left column: the next run, the run under way, its result
 ROTATOR_PANEL_GAP = 11        # a left panel's parts
 ROTATOR_FIELDS_GAP = 7        # FOLDERS: its overline and the two fields
-ROTATOR_TOGGLE_GAP = 9        # the toggle and the facts under it
 RUN_PANEL_GAP = 12            # the run and result panels' parts
 RUN_HEAD_GAP = 9              # the pulse or the disc to the panel's title
 RUN_FIGURE_GAP = 14           # the ring to the count beside it
@@ -997,8 +1018,11 @@ ROTATOR_FILTER = 184          # the filter over the tables (as the Tracker's)
 # fits on one line, and "3 Jul 2025" too); the folder's takes the rest
 ROTATOR_COLUMNS = {"author": 80, "type": 44, "size": 56, "used": 70}
 # the history's (RUN · STARTED · TOOK · MOVED · RETURNED · DUPES); RESULT takes the rest
-HISTORY_COLUMNS = {"run": 44, "started": 128, "took": 74, "moved": 70, "returned": 74,
-                   "dupes": 64, "log": 28}
+# The history's fixed columns, as wide as their longest value or title: STARTED
+# "26 Sep 2025 09:02", the counts five digits under RETURNED's title. RESULT takes
+# the rest, and needs ~60 px for "2 problems" (it had 55 at 1 280 px with these wider).
+HISTORY_COLUMNS = {"run": 44, "started": 104, "took": 64, "moved": 56, "returned": 60,
+                   "dupes": 48, "log": 28}
 RUN_LOG_WIDTH = 760           # a run's log read back, in its dialog
 DUPLICATES_WIDTH = 640        # the Duplicates dialog
 DUPLICATES_TABLE = 300        # its table's height
@@ -1026,7 +1050,6 @@ REVIEW_GALLERY_HEAD_PAD = (11, 14)  # an author's name and what is new, over the
 REVIEW_BAR_PAD = (9, 14)      # the gallery's bottom bar
 REVIEW_LIST_BODY_PAD = (13, 14)  # round the gallery's list view
 REVIEW_DONE_NAME = 18         # characters of an author's name in "Done with … →"
-REVIEW_FILTER_WIDTH = 0       # the author filter takes the panel's width
 REVIEW_SETTLE_MS = 220        # the arrow keys open an author once the selection rests
 REVIEW_WATCH_MS = 4000        # a look for wallpapers subscribed elsewhere
 REVIEW_RENDER_MS = 80         # a scan's events, drawn together

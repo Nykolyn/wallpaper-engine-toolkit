@@ -10,6 +10,10 @@ the playlist run down, review what is new — with a sidebar that says what each
 is doing, a status line for whatever is running, and one Settings page for
 what is set once.
 
+![The Overview, in made-up data: the reserve, the rotation, the playlist and
+what is new; the loop's three tools with a run under way; recent activity; the
+monitors and the newest log lines](docs/images/overview.png)
+
 | Page | What it does |
 |---|---|
 | **[Rotator](docs/rotator.md)** | Moves folders between a reserve and `myprojects`, with duplicate handling, protected folders and a dead-folder check — and rebuilds Wallpaper Engine's playlist from the new set. |

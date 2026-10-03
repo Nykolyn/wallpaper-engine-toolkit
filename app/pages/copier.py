@@ -21,7 +21,7 @@ from ..engines import copier as engine
 from ..services import Run
 from ..settings import DEFAULT_COPIER_COUNT, DEFAULT_COPIER_DEST
 from ..ui.kit import (
-    AccentButton, ButtonsCell, Callout, CardTitle, Cell, CellButton, Checkbox,
+    AccentButton, ButtonsCell, Callout, CardTitle, Cell, CellButton, Checkbox, Elided, Glyph,
     ChipCell, Column, ConfirmDialog, EmptyState, FormDialog, GhostButton,
     GlassPanel, IconButton, LogPanel, MetricStrip, NavState, PathField, ProgressBar,
     ProgressCell, ProgressRing, SecondaryButton, SpinCell, Table, TableBar,
@@ -211,10 +211,26 @@ class CopierPage(Page):
         destination.clicked.connect(lambda: self.navigate.emit("settings"))
         for button in (choose, paste, destination):
             self.empty.add_action(button)
-        self.known = label("", "type.monoSm", "lo")
-        self.known.setWordWrap(True)
-        self.known.setAlignment(Qt.AlignCenter)
-        self.empty.add_content(self.known)
+        places = QWidget()
+        row = QHBoxLayout(places)
+        row.setContentsMargins(0, theme.SP_4, 0, 0)
+        row.setSpacing(theme.COPIER_PLACES_GAP)
+        row.addStretch(1)
+        self.known: dict[str, Elided] = {}
+        for name in ("Reserve", "myprojects"):
+            place = QHBoxLayout()
+            place.setSpacing(theme.SP_6)
+            place.addWidget(Glyph("folder", "text.lo", theme.COPIER_PLACE_ICON), 0, Qt.AlignVCenter)
+            words = QVBoxLayout()
+            words.setSpacing(0)
+            words.addWidget(label(name, "type.caption", "mid"))
+            self.known[name] = Elided("", "type.monoXs", "lo", mode=Qt.ElideLeft)
+            self.known[name].setMaximumWidth(theme.DROP_BODY_WIDTH // 2 - theme.COPIER_PLACES_GAP)
+            words.addWidget(self.known[name])
+            place.addLayout(words)
+            row.addLayout(place)
+        row.addStretch(1)
+        self.empty.add_below(places)
         empty_layout.addWidget(self.empty)
         column.addWidget(self.empty_panel, 1)
 
@@ -708,9 +724,8 @@ class CopierPage(Page):
                                     + self.table.horizontalHeader().sizeHint().height() + theme.SP_4)
         self.table.horizontalHeader().viewport().update()
         self.table.viewport().update()
-        reserve = getattr(self.config, "source", "") or "Not set"
-        current = getattr(self.config, "destination", "") or "Not set"
-        self.known.setText(f"Reserve: {reserve}\nmyprojects: {current}")
+        self.known["Reserve"].set_text(getattr(self.config, "source", "") or "Not set")
+        self.known["myprojects"].set_text(getattr(self.config, "destination", "") or "Not set")
 
     def _log(self, text):
         if self._job:

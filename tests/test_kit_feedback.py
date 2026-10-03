@@ -124,7 +124,10 @@ for n in range(5003):
 check("past the cap the oldest lines go, and the newest stay",
       len(model) == 5000 and model.rowCount() == 5000
       and model.line(0).message == "line 3" and model.line(4999).message == "line 5002")
-check("each line past the cap took one off the front", removed == [(0, 0)] * 3)
+check("each line past the cap took the oldest, the last row", removed == [(4999, 4999)] * 3)
+check("the rows read newest first, the lines as written oldest first",
+      model.index(0, 0).data(Qt.DisplayRole).endswith("line 5002")
+      and model.row_line(0).message == "line 5002" and model.lines()[0].message == "line 3")
 check("the problems counted leave with their lines", model.problem_count() == 0
       and model.error_count() == 0)
 batch = LogModel(cap=10)
@@ -147,11 +150,16 @@ problems = ProblemsFilter()
 problems.setSourceModel(mixed)
 check("the filter passes everything until asked", problems.rowCount() == 7)
 problems.set_problems_only(True)
-check("Problems keeps the warn and err lines only",
+check("Problems keeps the warn and err lines only, newest first as the console reads",
       [problems.index(r, 0).data(Qt.DisplayRole).split()[-1] for r in range(problems.rowCount())]
-      == ["skip", "fail", "dupe"] and mixed.problem_count() == 3 and mixed.error_count() == 1)
+      == ["dupe", "fail", "skip"] and mixed.problem_count() == 3 and mixed.error_count() == 1)
 mixed.append(None, "error", "late")
-check("and follows new lines as they come", problems.rowCount() == 4)
+check("and follows new lines as they come, at the top",
+      problems.rowCount() == 4 and problems.index(0, 0).data(Qt.DisplayRole).endswith("late"))
+problems.set_problems_only(False)
+check("the model itself stays as the lines were written, oldest first",
+      [line.message for line in mixed.lines()][:2] == ["start", "moved"]
+      and problems.index(0, 0).data(Qt.DisplayRole).endswith("late"))
 
 # ---- the log panel ------------------------------------------------------------------------
 
@@ -170,26 +178,25 @@ for n in range(300):
     panel.append(None, "moved" if n % 10 else "skip", f"1234{n:06d} → myprojects")
 wait(40)
 bar = panel.view.verticalScrollBar()
-check("the console sits at the newest line while lines arrive",
-      bar.maximum() > 0 and bar.value() == bar.maximum() and panel.view.following())
-bar.setValue(bar.maximum() // 3)                   # the reader scrolls up
-reading = bar.value()
-first_row = panel.view.indexAt(QPoint(4, 4)).data(Qt.DisplayRole)
+check("the console shows the newest line at the top while lines arrive",
+      bar.maximum() > 0 and bar.value() == 0 and panel.view.following()
+      and panel.view.indexAt(QPoint(4, 4)).data(Qt.DisplayRole).endswith("1234000299 → myprojects"))
+bar.setValue(bar.maximum() // 3)                   # the reader scrolls down
 wait(20)
+first_row = panel.view.indexAt(QPoint(4, 4)).data(Qt.DisplayRole)
+reading = bar.value()
 for n in range(40):
     panel.append(None, "moved", f"new {n}")
 wait(40)
-check("scrolled up, it stops following: new lines do not move what is being read",
-      not panel.view.following() and bar.value() == reading
+check("scrolled down, it stops following: new lines above do not move what is being read",
+      not panel.view.following() and bar.value() == reading + 40 * panel.view.sizeHintForRow(0)
       and panel.view.indexAt(QPoint(4, 4)).data(Qt.DisplayRole) == first_row)
-bar.setValue(bar.maximum())
+bar.setValue(0)
 for n in range(5):
     panel.append(None, "moved", f"after {n}")
 wait(40)
-check("back at the bottom, it follows again", panel.view.following()
-      and bar.value() == bar.maximum()
-      and panel.view.indexAt(QPoint(4, panel.view.viewport().height() - 4)).data(Qt.DisplayRole)
-      .endswith("after 4"))
+check("back at the top, it follows again", panel.view.following() and bar.value() == 0
+      and panel.view.indexAt(QPoint(4, 4)).data(Qt.DisplayRole).endswith("after 4"))
 
 panel.set_file("rotator/2026-09-28.log", writing=False)
 check("a file only read back is named without 'writing to'",
@@ -250,8 +257,8 @@ filtered = panel.view.model()
 selection.select(filtered.index(5, 0), selection.SelectionFlag.Select)
 selection.select(filtered.index(2, 0), selection.SelectionFlag.Select)
 copied = panel.copy()
-check("with a selection, just those lines, oldest first",
-      copied.splitlines() == [panel.shown_lines()[2].text(), panel.shown_lines()[5].text()])
+check("with a selection, just those lines, oldest first (as the file reads)",
+      copied.splitlines() == [panel.shown_lines()[5].text(), panel.shown_lines()[2].text()])
 panel.view.clearSelection()
 QTest.keyClick(panel.view, Qt.Key_C, Qt.ControlModifier)
 check("Ctrl+C in the console copies too", QApplication.clipboard().text().count("\n") == 344)
@@ -271,19 +278,25 @@ wait(animations.SLOW // 3)
 middle = (panel.expansion(), panel.chevron_angle(), panel.height())
 wait(animations.SLOW + 80)
 check("closing moves the height and the chevron together over motion.slow",
-      0 < middle[0] < 1 and 0 < middle[1] < 180 and middle[2] < opened_height
-      and panel.expansion() == 0 and panel.chevron_angle() == 0)
-check("closed, it is the header alone, with the problems in a badge",
-      not panel._body.isVisible() and panel.badge_text() == "30 problems"
-      and panel._badge.tone() == "warn")
+      0 < middle[0] < 1 and -90 < middle[1] < 0 and middle[2] < opened_height
+      and panel.expansion() == 0 and panel.chevron_angle() == -90)
+check("closed, it is the header alone, with the problems in a badge (said in words)",
+      not panel._body.isVisible() and panel.badge_text() == "30"
+      and panel._badge.accessibleName() == "30 problems" and panel._badge.tone() == "warn")
+check("closed, the newest line stands in the header, and the file, switch and copy go",
+      panel.latest_text() == panel.model().line(len(panel.model()) - 1).text()
+      and not panel._file.isVisibleTo(panel) and not panel._switch.isVisibleTo(panel)
+      and not panel._copy.isVisibleTo(panel))
 panel.append(None, "error", "access denied")
-check("an error among them turns the badge to danger",
-      panel.badge_text() == "31 problems" and panel._badge.tone() == "danger")
+check("an error among them turns the badge to danger, and the newest line follows",
+      panel.badge_text() == "31" and panel._badge.tone() == "danger"
+      and panel.latest_text().endswith("error  access denied"))
 panel.set_expanded(True)
 wait(animations.SLOW + 80)
-check("open again: body back, chevron up, no badge",
-      panel.expansion() == 1 and panel.chevron_angle() == 180 and panel.badge_text() == ""
-      and panel.height() == opened_height)
+check("open again: body back, chevron down, no badge, the file in the header again",
+      panel.expansion() == 1 and panel.chevron_angle() == 0 and panel.badge_text() == ""
+      and panel.latest_text() == "" and panel.file_text() == "writing to rotator.log"
+      and panel._file.isVisibleTo(panel) and panel.height() == opened_height)
 animations.ENABLED = False
 panel.set_expanded(False)
 check("with Windows' animations off it closes at once", panel.expansion() == 0)
@@ -320,16 +333,21 @@ check("idle: words and a still dot, nothing else",
       status.state() == "idle" and not status._dot.live() and not status.bar().isVisible()
       and status.count_text() == "" and status.link_text() == ""
       and status._text.tone() == "mid")
+check("idle's dot is grey", status._dot.colour() == "text.lo")
+status.set_ok("Run 39 finished cleanly · 1 000 swapped")
+check("ok: a still green dot, the words, no link",
+      status.state() == "ok" and status._dot.colour() == "ok" and not status._dot.live()
+      and status._dot.isVisible() and status.link_text() == "" and status._text.tone() == "body")
 acted: list[str] = []
 status.set_warn("Finished with 2 problems", "Open log", lambda: acted.append("warn"))
-check("warn: the warn glyph and a link that does something about it",
-      status.state() == "warn" and status._glyph.isVisible() and status._glyph._colour == "warn"
-      and status.link_text() == "Open log" and not status._dot.isVisible())
+check("warn: an amber dot (as ds-12 draws it) and a link that does something about it",
+      status.state() == "warn" and status._dot.isVisible() and status._dot.colour() == "warn"
+      and status.link_text() == "Open log")
 status._link.click()
 status.set_error("The rotation stopped", "Open log", lambda: acted.append("error"))
 status._link.click()
-check("error: the glyph in danger, and the link calls its own callback",
-      status.state() == "error" and status._glyph._colour == "danger" and acted == ["warn", "error"])
+check("error: the dot in danger, and the link calls its own callback",
+      status.state() == "error" and status._dot.colour() == "danger" and acted == ["warn", "error"])
 status.set_error("The rotation stopped")
 check("a state with no action shows no link", status.link_text() == "")
 long_words = "Rotating · moving 1 000 folders from W:\\wallpaper_reserve into myprojects " * 3
@@ -463,9 +481,9 @@ check("a group's header says what it holds, in overline",
 check("the footer counts what is ticked", dialog.summary_text() == "9 selected · 0 B")
 check("and the Danger button says the same number", dialog.confirm_button().text()
       == "Delete 9 permanently")
-check("a long group shows five rows and folds the rest",
-      dialog.built_rows(0) == 5 and dialog.more_text(0) == "4 more like these"
-      and dialog.built_rows(1) == 5 and dialog.more_text(1) == "3 more like these"
+check("a long group shows three rows (frame 09) and folds the rest",
+      dialog.built_rows(0) == 3 and dialog.more_text(0) == "6 more like these"
+      and dialog.built_rows(1) == 3 and dialog.more_text(1) == "5 more like these"
       and dialog.row_checkbox(0, 7) is None)
 dialog.row_checkbox(0, 2).click()
 check("clearing one row leaves its group partly ticked",
@@ -640,7 +658,9 @@ check("filling, the panel takes the column's height", filled.fills()
       and filled.height() == column_host.height() - 48)   # the host's margins are 24
 check("collapsed, the console stays open with the newest line in view, and the badge",
       not filled.expanded() and filled.view.isVisibleTo(column_host)
-      and filled.view.following() and filled.badge_text() == "1 problem")
+      and filled.view.following() and filled.badge_text() == "1"
+      and filled.view.indexAt(QPoint(4, 4)).data(Qt.DisplayRole).endswith("last")
+      and filled.chevron_angle() == 0 and filled.latest_text() == "")
 check("but not the switch, the copy button or the footer",
       not filled._switch.isVisibleTo(column_host) and not filled._copy.isVisibleTo(column_host)
       and not filled.footer_shown())
@@ -654,7 +674,8 @@ filled.set_fill(False)
 filled.set_expanded(False)
 wait(animations.SLOW + 80)
 check("not filling, collapsed is the header alone again",
-      not filled._body.isVisibleTo(column_host) and filled.badge_text() == "1 problem")
+      not filled._body.isVisibleTo(column_host) and filled.badge_text() == "1"
+      and filled.latest_text().endswith("last"))
 column_host.close()
 
 window.close()

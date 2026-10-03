@@ -348,11 +348,11 @@ check("every activity names a tool the journal knows",
       and all(tool in activity.TOOLS for tool, _ in activity.EVENTS.values()))
 APP = Path(__file__).resolve().parent.parent / "app"
 source = "\n".join(p.read_text(encoding="utf-8") for p in
-                   [*(APP / "ui").glob("*_tab.py"), *(APP / "pages").glob("*.py")])
+                   (APP / "pages").glob("*.py"))
 used = set(re.findall(r'activity="(\w+)"', source))
 used |= set(re.findall(r'_start_job\(f?"[^"]*",\s*"(\w+)"[,)]', source))
 used |= set(re.findall(r'job=\(f?"[^"]*",\s*"(\w+)"\)', source))
-check("the tabs and pages start every activity documented, and no other",
+check("the pages start every activity documented, and no other",
       used == set(activity.ACTIVITIES))
 notes = set(re.findall(r'\.note\("([\w.]+)"', source))
 check("every note a tab or page writes is documented",

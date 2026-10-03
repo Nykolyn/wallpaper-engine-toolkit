@@ -19,7 +19,7 @@ from ..settings import DEFAULT_CREATOR_MODE, DEFAULT_CREATOR_TARGET
 from ..services import Run
 from ..ui.kit import (
     AccentButton, ActivityLine, BusyCell, Callout, CardTitle, Cell, CheckCell, Chip,
-    ChipCell, Column, ConfirmDialog, EmptyState, GhostButton, GlassPanel, IconButton,
+    ChipCell, Column, ConfirmDialog, EmptyState, GhostButton, GlassPanel, IconButton, IconDisc,
     LiveDot, LogPanel, MetricStrip, NavState, Overline, PathField, ProgressBar,
     ProgressRing, SecondaryButton, SegmentedControl, SkeletonRows, Table, TableBar,
     TableFooter, TableModel, TagSelect, TagsCell, format as fmt, label,
@@ -153,6 +153,11 @@ class ResultModel(TableModel):
     def cell(self, item, column):
         status = item.get("status", "queued")
         if column == 0:
+            if self.omitted:
+                # what was left out, as frame 21 lists it: the glyph in the row's hue
+                return Cell(item["name"], strong=True, icon="warn",
+                            icon_tone="danger" if status == "failed" else "warn",
+                            sub=item.get("reason") or status)
             return Cell(item["name"], strong=True,
                         sub=item.get("reason") or item.get("phase") or item.get("folder") or "waiting",
                         sub_tone="warn" if status == "skipped" else "danger" if status == "failed" else None)
@@ -169,6 +174,8 @@ class ResultModel(TableModel):
         return item.get("preview_path")
 
     def row_tone(self, item):
+        if self.omitted:
+            return "danger" if item.get("status") == "failed" else None
         return "accent" if item.get("status") == "working" else None
 
 
@@ -358,8 +365,13 @@ class CreatorPage(Page):
         self.side_layout.addWidget(self.run_facts, 1)
 
         self.result_panel, result = panel(tone="ok")
-        self.result_title = CardTitle("Wallpapers created")
-        result.addWidget(self.result_title)
+        head = QHBoxLayout()
+        head.setSpacing(theme.RUN_HEAD_GAP)
+        self.result_disc = IconDisc("check", "ok")
+        self.result_title = label("Wallpapers created", "type.h3", "hi")
+        head.addWidget(self.result_disc, 0, Qt.AlignVCenter)
+        head.addWidget(self.result_title, 1)
+        result.addLayout(head)
         self.result_sentence = words("")
         result.addWidget(self.result_sentence)
         self.result_metrics = MetricStrip([(0, "created"), (0, "skipped", "warn"), (0, "failed", "danger")])
@@ -378,6 +390,7 @@ class CreatorPage(Page):
         self.omissions_panel, omitted = panel()
         omitted.addWidget(Overline("WHAT WAS LEFT OUT"))
         self.omissions = Table()
+        self.omissions.setAccessibleName("What was left out")
         self.omissions_model = ResultModel(self, omitted=True)
         # The narrow panel shows reasons under the filename, and needs no second column.
         self.omissions_model.columns = self.omissions_model.columns[:1]
@@ -423,6 +436,7 @@ class CreatorPage(Page):
         self.header_bar.set_state("indeterminate")
         table_layout.addWidget(self.header_bar)
         self.table = Table()
+        self.table.setAccessibleName("The videos in the source folder")
         self.source_model = SourceModel(self)
         self.table.setModel(self.source_model)
         self.table.setSelectionMode(QAbstractItemView.NoSelection)
@@ -452,6 +466,7 @@ class CreatorPage(Page):
         run_list, run_list_layout = panel()
         run_list_layout.addWidget(CardTitle("Building", "Each file is verified before its source can be removed"))
         self.run_table = Table()
+        self.run_table.setAccessibleName("Building")
         self.run_model = ResultModel(self)
         self.run_table.setModel(self.run_model)
         run_list_layout.addWidget(self.run_table, 1)
@@ -472,6 +487,7 @@ class CreatorPage(Page):
         done_bar.add_stretch()
         done_layout.addWidget(done_bar)
         self.done_table = Table()
+        self.done_table.setAccessibleName("Created just now")
         self.done_model = ResultModel(self)
         self.done_model.columns = (Column("WALLPAPER", thumb="row", sortable=False),
                                    Column("STATE", theme.CREATOR_RESULT_COLUMNS[1], sortable=False))
@@ -844,11 +860,13 @@ class CreatorPage(Page):
                               f"bytes={written} · {skipped} skipped · {failed} failed · in {self._target}",
                               chip="Failed" if failed else None)
             self._job = None
-        self.result_title.set_title(summary)
+        self.result_title.setText(summary)
         self.result_sentence.setText(f"Took {fmt.duration(self._elapsed)} · {fmt.size(written)} written. "
                                     + ("Stopped; files not built remain in the source." if self._cancelled
                                        else "Wallpaper Engine will show them after the next playlist rebuild."))
-        self.result_panel.set_tone("warn" if failed or self._cancelled else "ok")
+        tone = "warn" if failed or self._cancelled else "ok"
+        self.result_panel.set_tone(tone)
+        self.result_disc.set("warn" if tone == "warn" else "check", tone)
         for index, value in enumerate((created, skipped, failed)):
             self.result_metrics.set_value(index, value)
         self.done_chip.set_text(f"{created} done")
@@ -1002,7 +1020,7 @@ class CreatorPage(Page):
             self._elapsed = spec["elapsed"]
             self.report = spec["report"]
             created = sum(e["status"] == "ok" for e in self.report)
-            self.result_title.set_title(f"{created} wallpapers created")
+            self.result_title.setText(f"{created} wallpapers created")
             self.result_sentence.setText(f"Took {fmt.duration(self._elapsed)} · {fmt.size(spec['written'])} written. "
                                         "Wallpaper Engine will show them after the next playlist rebuild.")
             for i, status in enumerate(("ok", "skipped", "failed")):

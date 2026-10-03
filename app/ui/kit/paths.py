@@ -148,6 +148,7 @@ class PathField(Interactive, Caster, QWidget):
         self._edit = QLineEdit(self)
         self._edit.setFrame(False)
         self._edit.setPlaceholderText(placeholder)
+        self._edit.setAccessibleName(placeholder or f"A {kind}")
         self._edit.setFont(theme.font("type.monoSm"))
         self._edit.editingFinished.connect(self._typed)
         self._edit.installEventFilter(self)

@@ -1,5 +1,5 @@
 {
-  "//": "Made-up states of the frame for tools/ui_snapshot.py: jobs in the JobCenter, the leading monitor's count, the sidebar items, the line under 'Next in the loop'. Nothing here is anyone's data. An 'ended' of HH:MM means today at that time.",
+  "//": "Made-up states of the frame for tools/ui_snapshot.py: jobs in the JobCenter, the leading monitor's count, the sidebar items, the line under 'Next in the loop'. Nothing here is anyone's data. An 'ended' of HH:MM means today at that time; 'seen' means its page was looked at since (the status line is back to idle).",
   "empty": {
     "nav": {
       "creator": {"kind": "status", "text": "idle"},
@@ -10,7 +10,8 @@
   "idle": {
     "jobs": [
       {"tool": "rotator", "title": "Run 38", "phase": "finishing", "done": 1000, "total": 1000,
-       "result": "clean", "summary": "Moved 1000, returned 998", "ended": "13:38"}
+       "result": "clean", "summary": "Moved 1000, returned 998", "ended": "13:38",
+       "seen": true}
     ],
     "playlist": {"monitor": "Monitor1", "seen": 4, "total": 201, "remaining": 197, "percent": 2,
                  "started": "2026-09-19 13:41", "finish_estimate": "21 Sep 09:10", "live": true},
@@ -21,12 +22,13 @@
       "creator": {"kind": "status", "text": "idle"},
       "copier": {"kind": "status", "text": "idle"}
     },
-    "next": "197 left on Monitor1 — rotate again ≈21 Sep"
+    "next": "197 left on Monitor1 — rotate again ≈21\u00a0Sep"
   },
   "we-off": {
     "jobs": [
       {"tool": "rotator", "title": "Run 38", "phase": "finishing", "done": 1000, "total": 1000,
-       "result": "clean", "summary": "Moved 1000, returned 998", "ended": "13:38"}
+       "result": "clean", "summary": "Moved 1000, returned 998", "ended": "13:38",
+       "seen": true}
     ],
     "playlist": {"monitor": "Monitor1", "seen": 4, "total": 201, "remaining": 197, "percent": 2,
                  "started": "2026-09-19 13:41", "finish_estimate": "21 Sep 09:10", "live": false,
@@ -38,7 +40,7 @@
       "creator": {"kind": "status", "text": "idle"},
       "copier": {"kind": "status", "text": "idle"}
     },
-    "next": "197 left on Monitor1 — rotate again ≈21 Sep"
+    "next": "197 left on Monitor1 — rotate again ≈21\u00a0Sep"
   },
   "running": {
     "jobs": [
@@ -52,7 +54,7 @@
       "creator": {"kind": "status", "text": "idle"},
       "copier": {"kind": "status", "text": "idle"}
     },
-    "next": "197 left on Monitor1 — rotate again ≈21 Sep"
+    "next": "197 left on Monitor1 — rotate again ≈21\u00a0Sep"
   },
   "clean": {
     "jobs": [
@@ -66,7 +68,7 @@
       "creator": {"kind": "status", "text": "idle"},
       "copier": {"kind": "status", "text": "idle"}
     },
-    "next": "1 000 left on Monitor1"
+    "next": "1\u00a0000 left on Monitor1"
   },
   "problems": {
     "jobs": [
@@ -80,7 +82,7 @@
       "creator": {"kind": "status", "text": "idle"},
       "copier": {"kind": "status", "text": "idle"}
     },
-    "next": "197 left on Monitor1 — rotate again ≈21 Sep"
+    "next": "197 left on Monitor1 — rotate again ≈21\u00a0Sep"
   },
   "scanning": {
     "jobs": [
@@ -94,7 +96,7 @@
       "creator": {"kind": "status", "text": "idle"},
       "copier": {"kind": "status", "text": "idle"}
     },
-    "next": "197 left on Monitor1 — rotate again ≈21 Sep"
+    "next": "197 left on Monitor1 — rotate again ≈21\u00a0Sep"
   },
   "building": {
     "jobs": [
@@ -108,7 +110,7 @@
       "creator": {"kind": "status", "text": "working"},
       "copier": {"kind": "status", "text": "idle"}
     },
-    "next": "197 left on Monitor1 — rotate again ≈21 Sep"
+    "next": "197 left on Monitor1 — rotate again ≈21\u00a0Sep"
   },
   "copying": {
     "jobs": [
@@ -122,7 +124,7 @@
       "creator": {"kind": "status", "text": "idle"},
       "copier": {"kind": "status", "text": "working"}
     },
-    "next": "197 left on Monitor1 — rotate again ≈21 Sep"
+    "next": "197 left on Monitor1 — rotate again ≈21\u00a0Sep"
   },
   "failed": {
     "jobs": [
@@ -136,6 +138,6 @@
       "creator": {"kind": "status", "text": "idle"},
       "copier": {"kind": "status", "text": "idle"}
     },
-    "next": "197 left on Monitor1 — rotate again ≈21 Sep"
+    "next": "197 left on Monitor1 — rotate again ≈21\u00a0Sep"
   }
 }

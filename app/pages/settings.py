@@ -117,6 +117,7 @@ class SettingsPage(Page):
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QScrollArea.NoFrame)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll.setFocusPolicy(Qt.NoFocus)       # its fields are Tab's stops, not it
         body = QWidget()
         grid = QGridLayout(body)
         pad_v, pad_h = theme.BODY_PAD

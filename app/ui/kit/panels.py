@@ -578,6 +578,12 @@ class EmptyState(QWidget):
         self._column.insertWidget(self._column.indexOf(self._actions_row), widget)
         return widget
 
+    def add_below(self, widget: QWidget) -> QWidget:
+        """Something under the actions and above the meta line: the places a
+        drop can go (the Copier's)."""
+        self._column.insertWidget(self._column.indexOf(self._meta_row), widget)
+        return widget
+
     # -- drops
 
     @staticmethod

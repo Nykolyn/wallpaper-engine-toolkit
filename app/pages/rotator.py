@@ -339,10 +339,10 @@ def broken_groups(broken: list[BrokenFolder]) -> list[CheckGroup]:
     media = [b for b in broken if not b.safe_to_delete]
     groups = []
     if safe:
-        groups.append(CheckGroup("Safe to delete", rows(safe), tone="ok"))
+        groups.append(CheckGroup("Safe to delete", rows(safe), tone="ok", note="no media inside"))
     if media:
         groups.append(CheckGroup("Holds media", rows(media), tone="warn",
-                                 initially_checked=False))
+                                 initially_checked=False, note="check before deleting"))
     return groups
 
 
@@ -1803,6 +1803,9 @@ class RotatorPage(Page):
         r.next.clicked.connect(self.next_run_view)
         self.steps.rebuild.clicked.connect(self.rebuild_playlist)
 
+    def filter_field(self) -> QWidget | None:
+        return self.filter
+
     def _build_tables(self) -> GlassPanel:
         card = GlassPanel(padding="none")
         column = _column(card, 0)
@@ -1857,11 +1860,14 @@ class RotatorPage(Page):
         return card
 
     def make_header_actions(self) -> list[QWidget]:
-        duplicates = GhostButton("Duplicates", outlined=True)
+        # Parented from the start: shown with no parent, a button is a window of
+        # its own for a moment, and takes the window's focus (and kit buttons
+        # must have a parent, see STATUS step 11). The header takes them over.
+        duplicates = GhostButton("Duplicates", self, outlined=True)
         duplicates.clicked.connect(self.open_duplicates)
-        settings = GhostButton("Run settings", outlined=True)
+        settings = GhostButton("Run settings", self, outlined=True)
         settings.clicked.connect(lambda: self.navigate.emit("settings"))
-        history = GhostButton("Run history", outlined=True)
+        history = GhostButton("Run history", self, outlined=True)
         history.clicked.connect(lambda: self.show_view("history"))
         self._header = {"duplicates": duplicates, "settings": settings, "history": history}
         self._render_header()

@@ -2,6 +2,8 @@
 
 **How far Wallpaper Engine has got through the active playlist — `112/208`.**
 
+![The leading monitor in detail, the other as a summary, and the playlist (made-up data)](images/tracker.png)
+
 ## What it is for
 
 After a [rotation](rotator.md) you build a playlist and Wallpaper Engine walks

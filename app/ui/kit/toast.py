@@ -35,11 +35,12 @@ from .base import Glyph, alive, label
 from .buttons import IconButton, LinkButton
 
 # variant → (icon, icon colour, edge)
-TOAST_VARIANTS: dict[str, tuple[str, str, str]] = {
-    "ok": ("check", "ok", "ok.line"),
-    "info": ("info", "info", "info.line"),
-    "warn": ("warn", "warn", "warn.line"),
-    "danger": ("warn", "danger", "danger.line"),
+# variant → (its glyph, the glyph's and the left edge's hue)
+TOAST_VARIANTS: dict[str, tuple[str, str]] = {
+    "ok": ("check", "ok"),
+    "info": ("info", "info"),
+    "warn": ("warn", "warn"),
+    "danger": ("warn", "danger"),
 }
 
 _DEFAULT = object()
@@ -77,9 +78,9 @@ class Toast(QWidget):
 
         row = QHBoxLayout(self)
         vertical, horizontal = theme.TOAST_PAD
-        row.setContentsMargins(horizontal, vertical, horizontal - theme.SP_4, vertical)
+        row.setContentsMargins(theme.TOAST_EDGE + horizontal, vertical, horizontal - theme.SP_4, vertical)
         row.setSpacing(theme.TOAST_GAP)
-        icon, colour, _ = TOAST_VARIANTS[variant]
+        icon, colour = TOAST_VARIANTS[variant]
         self._glyph = Glyph(icon, colour, theme.TOAST_ICON)
         row.addWidget(self._glyph, 0, Qt.AlignTop)
         self._text = label(text, "type.bodySm", "body")
@@ -228,13 +229,20 @@ class Toast(QWidget):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
         box = QRectF(self.rect())
+        radius = theme.TOAST_RADIUS
         path = QPainterPath()
-        path.addRoundedRect(box, theme.R_LG, theme.R_LG)
+        path.addRoundedRect(box, radius, radius)
         painter.fillPath(path, theme.color("surface.overlay"))
-        theme.paint_sheen(painter, box, theme.R_LG, "elev.3")
-        painter.setPen(QPen(theme.color(TOAST_VARIANTS[self._variant][2]), 1))
+        theme.paint_sheen(painter, box, radius, "elev.3")
+        painter.setPen(QPen(theme.color("border.control"), 1))
         painter.setBrush(Qt.NoBrush)
-        painter.drawRoundedRect(box.adjusted(0.5, 0.5, -0.5, -0.5), theme.R_LG - 0.5, theme.R_LG - 0.5)
+        painter.drawRoundedRect(box.adjusted(0.5, 0.5, -0.5, -0.5), radius - 0.5, radius - 0.5)
+        # ds-12's border-left: the hue down the left side, inside the rounding
+        painter.save()
+        painter.setClipPath(path)
+        painter.fillRect(QRectF(0, 0, theme.TOAST_EDGE, box.height()),
+                         theme.color(TOAST_VARIANTS[self._variant][1]))
+        painter.restore()
         base.paint(painter, self, event.rect())
 
 
@@ -345,4 +353,4 @@ class ToastHost(QWidget):
                 continue
             painter.setOpacity(toast.appearance())
             box = QRectF(toast.geometry().translated(-self.pos()))
-            theme.paint_shadow(painter, box, "elev.3", theme.R_LG)
+            theme.paint_shadow(painter, box, "elev.3", theme.TOAST_RADIUS)

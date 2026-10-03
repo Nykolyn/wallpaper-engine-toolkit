@@ -3,6 +3,8 @@
 **An author's new wallpapers, on the [Review](review.md) page: a grid of
 cards, or a list.**
 
+![The gallery as a list (made-up data); the grid is on the Review page](images/gallery.png)
+
 ## What it is for
 
 Everything one author has published since your last visit that you are not

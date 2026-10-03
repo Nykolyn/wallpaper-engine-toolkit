@@ -2,6 +2,8 @@
 
 **What is set once, in one place: the last entry in the sidebar, or Ctrl+7.**
 
+![The Settings page (made-up folders on a drive X:)](images/settings.png)
+
 Folders, Wallpaper Engine's settings file, counting in the background and the
 Steam key used to be spread over the tools that use them. They are set here
 now, and the pages show them small — a folder with a ✓ once it has been found,

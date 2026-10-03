@@ -66,6 +66,10 @@ class Page(QWidget):
         """Override: the widgets for the header's right, in order."""
         return []
 
+    def filter_field(self) -> QWidget | None:
+        """Override: the text field Ctrl+F goes to, when the page has one."""
+        return None
+
     # -- the sidebar
 
     def nav_state(self) -> NavState:
@@ -118,6 +122,7 @@ class SideScroll(QScrollArea):
         self.setWidgetResizable(True)
         self.setFrameShape(QScrollArea.NoFrame)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.setFocusPolicy(Qt.NoFocus)     # a stop for Tab with nothing to do; its controls are
         self.setWidget(column)
         column.setFixedWidth(width)
         self.verticalScrollBar().rangeChanged.connect(self._fit)

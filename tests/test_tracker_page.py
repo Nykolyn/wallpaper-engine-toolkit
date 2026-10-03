@@ -1152,14 +1152,14 @@ window.move(300, 200)
 window.show()
 app.processEvents()
 tracker_in_window = window.pages["tracker"]
-copier_tab = window.pages["copier"]
+copier_page = window.pages["copier"]
 sent_folder = str(MYP / "w_copy")
 sent_row = PlaylistRow(entry(MYP / "w_copy"), "queue", 1, folder=sent_folder,
                        title="Harbour Lights")
 check("the Copier takes a folder from the Tracker (build_pages wires it: whatever replaces "
       "the Copier tab must take these too)",
       tracker_in_window.send_to_copier(sent_row)
-      and copier_tab.folders() == [(os.path.normpath(sent_folder), str(DEFAULT_COPIER_COUNT))])
+      and copier_page.folders() == [(os.path.normpath(sent_folder), str(DEFAULT_COPIER_COUNT))])
 check("for the default copies, and the Tracker stays on screen",
       window.current_page() == "tracker"
       and tracker_in_window.messages[-1] == ("ok", f"“Harbour Lights” is on the Copier's list, "
@@ -1168,16 +1168,16 @@ toast = window.toasts.toasts()[-1]
 check("its toast offers Show", toast.action_text() == "Show" and toast.variant() == "ok")
 tracker_in_window.send_to_copier(sent_row)
 check("sent again, it is not listed twice, and the toast says it is there already",
-      len(copier_tab.folders()) == 1
+      len(copier_page.folders()) == 1
       and tracker_in_window.messages[-1] == ("info", "“Harbour Lights” is on the Copier's list "
                                                      "already."))
 window.toasts.toasts()[-1]._act()
 app.processEvents()
 check("Show opens the Copier", window.current_page() == "copier")
 check("the Copier's add_folders: one of each, its count, how many it added",
-      copier_tab.add_folders([sent_folder + os.sep, str(MYP / "w_two"), str(MYP / "w_two")],
+      copier_page.add_folders([sent_folder + os.sep, str(MYP / "w_two"), str(MYP / "w_two")],
                              count=5) == 1
-      and copier_tab.folders()[-1] == (os.path.normpath(str(MYP / "w_two")), "5"))
+      and copier_page.folders()[-1] == (os.path.normpath(str(MYP / "w_two")), "5"))
 window.close()
 
 host.close()

@@ -376,8 +376,11 @@ shared by two views:
   remember with no copy kept.
 - `tests/perf_gallery.py` (not a test: run it by hand) measures a page of
   thirty made-up animated previews with threads busy in Python, before and
-  after a change; [Gallery → A card is a few copies](gallery.md#a-card-is-a-few-copies)
-  has the numbers.
+  after a change, and with `--items 1200` a whole review's gallery turned page
+  by page; [Gallery → A card is a few copies](gallery.md#a-card-is-a-few-copies)
+  has the numbers. `tests/perf_pages.py` does the same for the other long
+  lists — the reserve's 33 000 folders, a 1 400-row playlist, 450 authors and
+  a log at its cap while a job streams — see [Performance](#performance).
 
 **Window requests** (`window_instance`): a second launch or the tray sends one
 line — `show <page>`, which every version understands, or the command form
@@ -396,7 +399,7 @@ in any case; anything else opens Overview.
 `app/services/` is what the status line, the sidebar and Overview read, and
 what every page reports its work to. The main window makes one `Services`
 (with its own `TrackerFeed`, which it also hands the Tracker page) and
-installs it; `services.current()` is that one, or None for a tab built on its
+installs it; `services.current()` is that one, or None for a page built on its
 own, as the tests build them.
 
 **A page's work** goes through `begin(tool, title, page=None, activity=None,
@@ -575,7 +578,8 @@ for %f in (tests\test_*.py) do .venv\Scripts\python.exe %f
 | `test_theme.py` | every token parses, text stays legible on glass, fonts, shadows, the stylesheet fills in and ticks its check boxes |
 | `test_icons.py` | every icon draws, in the colour and at the size asked; unknown names raise |
 | `test_kit_controls.py` | every kit control in every state; the fourteen chips, the Pagination rule, the Toggle with motion off, Dropdown rows that cannot be chosen, a DangerButton that never takes Enter, the ring for the keyboard only |
-| `test_kit_feedback.py` | the log's 5 000-line ring and its Problems filter; the console following the newest line until you scroll up; the panel closing over `motion.slow`; toasts stacking, going after 6 s and danger staying; the status line's four states and a count that never elides; a destructive dialog defaulting to Cancel, its group boxes, summary and Danger text following the ticks, Esc cancelling; a form's Save waiting for valid fields |
+| `test_kit_feedback.py` | the log's 5 000-line ring, newest first, and its Problems filter; the console following the newest line until you scroll down; the panel closing over `motion.slow`, the newest line in its header; toasts stacking, going after 6 s and danger staying; the status line's five states and a count that never elides; a destructive dialog defaulting to Cancel, its group boxes, summary and Danger text following the ticks, Esc cancelling; a form's Save waiting for valid fields |
+| `test_keyboard.py` | every page in every made-up state: Tab down the sidebar, the header, the page in reading order and the status line, never stuck in a table; Ctrl+number and Ctrl+F; focus rings for the keyboard only; a name on every IconButton, chip, nav item and list; no text under 10 px or dimmer than `text.lo`; spinners at rest with motion off; nothing on the wallpaper disk from the GUI thread (`gui_guard.py`) |
 | `test_kit_data.py` | the formats; a PathField checked on a worker; a per-clip TagSelect's three states; MonitorView to card; TableModel groups, sorting and zebra; 33 000 rows built under 100 ms and only visible rows painted; a ButtonsCell's slots, clicks, marks, tool tips and double-click; local previews cached by path and time; no file-system call on the GUI thread |
 | `test_animations.py` | motion, by sampling real widgets over real time; the curve, the loops, reduced motion |
 | `test_steam_api.py` | the Web API client and its cache |
@@ -588,11 +592,34 @@ for %f in (tests\test_*.py) do .venv\Scripts\python.exe %f
 | `test_window_instance.py` | one window, raised from the tray, in a process of its own; the plain request and the command form on the socket |
 | `test_shell.py` | pages in the loop's order, the sidebar and Ctrl+number; `--tab` names; the window command parser; the rail below 1 200 px; the status line bound to the JobCenter (Show, problems until seen); the cross-fade, and none with motion off; the Settings page writing `config.json` and `suite.json`, read-only while the Rotator works; the window and the tray reading each other's `suite.json`; the title bar's hit testing; `ui_snapshot` at a size and scale |
 | `test_tracker_page.py` | the tracker's Progress as a monitor card in every state (paused, Wallpaper Engine stopped, restarted, finished); the countdown's words (`≈`, paused, any moment); the pace and the finish sentence; the notes the count rests on; the playlist's groups, order, `~` times, filter and authors; titles and authors read from project.json, the Steam cache and the authors database (never written); the countdown as a reader of the tray's file; every fixture; no file read on the GUI thread; which rows offer Send to Copier and Mark [protected], the question's words, the rename on a worker against folders made here, a failed rename (name taken, gone, in use, denied) changing nothing, the row after it; Send to Copier through `build_pages` into the Copier's list with the default count, once, and the toast's Show |
-| `test_services.py` | which running job leads; rate and time left only once measured; the journal's append, tail and rotation past a damaged line and an unknown field; log files by tool, day and run, their tail and the 30-day sweep; the snapshot read on a worker, never the GUI thread, keeping its age and its last value; each tab's work reaching all three |
+| `test_services.py` | which running job leads; rate and time left only once measured; the journal's append, tail and rotation past a damaged line and an unknown field; log files by tool, day and run, their tail and the 30-day sweep; the snapshot read on a worker, never the GUI thread, keeping its age and its last value; each page's work reaching all three |
 | `test_external.py` | a child cannot load a DLL from the bundle, through the DLL directory or PATH; a quoted URL survives cmd.exe; nothing in `app/` starts a program another way |
 
 Most need **PySide6** (they build real widgets); none need Wallpaper Engine,
 windows on screen, or a network.
+
+### Performance
+
+`tests/perf_gallery.py` and `tests/perf_pages.py` are measurements, not tests:
+run by hand before and after a change to a long list, with their numbers in
+the pull request (`--root <checkout>` measures the code before it). Each
+spins Python threads beside the list with the switch interval the app sets
+(0.5 ms), because PySide gives the GIL up on every Qt call: under contention a
+paint costs about as many waits as it makes Qt calls. Measured for 3.12.0,
+offscreen at 1 280 × 860, two busy threads:
+
+| List | Build | Scroll step (repaint) p50 / p95 |
+|---|---|---|
+| Reserve, 33 421 folders | 13 ms; filter 24 ms, sort 17 ms | 7.6 / 12.5 ms |
+| Tracker playlist, 1 400 rows | under 1 ms | 72 / 84 ms (2.9 uncontended) |
+| Review's authors, 450 | 1.4 ms | 74 / 80 ms (2.1 uncontended) |
+| Gallery, 1 200 wallpapers in 40 pages | 24 ms; a page turned in 2.3 ms | 12.9 / 15.7 ms a frame, eight previews playing |
+| Log at its 5 000-line cap, 200 lines a second | 10 ms to fill | 9.9 / 13.1 ms a repaint; 1.7 ms a line |
+
+The playlist and the author list paint each row afresh, about forty Qt calls a
+row; under contention that is the cost. Drawing whole rows into tiles, as the
+gallery and the console do, is the way down
+([#36](https://github.com/Nykolyn/wallpaper-engine-toolkit/issues/36)).
 
 ### Opt-in live checks
 
@@ -610,10 +637,48 @@ installed.
 
 ## Look and feel
 
-The app is being rebuilt to a design made in Claude Design: dark "frosted
-glass", translucent panels over a radial gradient. Everything visual comes from
+The window is built to a design made in Claude Design: dark "frosted glass",
+translucent panels over a radial gradient. Everything visual comes from
 `app/theme.py` and `app/animations.py`; nothing else names a colour, a size or
 a duration.
+
+### Working from the design
+
+The design is a specification, not code: HTML pages drawn by the designer,
+rebuilt here in Qt. It was handed over as those pages rendered 1:1 to pictures
+(twenty-five frames of the window, the design system's twelve sections, the
+tray, the motion specimens, the branding), with condensed outlines of each and
+an implementation plan. That handoff stays on the maintainer's machine: its
+pictures carry the designer's sample names, which never go into this public
+repository.
+
+What the repository keeps is how to compare against it:
+
+- `tools/ui_snapshot.py` draws any page in any made-up state at any size —
+  [Snapshots](#snapshots);
+- `tools/kit_preview.py --grab <section>` draws the kit section by section, as
+  the design system lays it out — [The kit preview](#the-kit-preview);
+- `tools/tray_preview.py` draws the tray's icon, menu and balloons.
+
+A change to a page is drawn with the first and set beside the design's frame
+at 1 280 × 860; then at 1 040 × 720 (the rail), 2 560 × 1 440 and 150 %.
+Pixels are not the aim (fonts rasterise differently), structure, spacing,
+colour and states are. Two things to know when measuring:
+
+- **The design's CSS sizes boxes by their content.** Nothing in it sets
+  `box-sizing`, so a box's border and padding are outside the width or height
+  it names: the sidebar's `width: 246px` with 10 px sides and a 1 px edge is
+  267 px on screen, the header's `height: 52px` and its divider 53. The theme's
+  metrics say which they hold (`SIDEBAR_ITEMS` and `SIDEBAR_WIDTH`).
+- **Qt rounds a font to whole pixels.** The design's 11.5 and 12.5 px text
+  renders at 12 and 13 (Qt rounds the pixel size of a point size it is given),
+  so a line of it is about 4 % wider than the design's, and a sentence the
+  design fits on one line can take two. Layouts leave room for it; words that
+  must stay together (`≈21 Sep`) are joined with no-break spaces.
+
+Where the app differs from the design on purpose — the engine's real step
+order, a number it cannot measure left out, a choice the maintainer made — the
+pull request that built the page says so and why.
 
 ### Tokens
 
@@ -664,7 +729,7 @@ inside the box.
 ### The stylesheet
 
 Qt draws the standard controls — buttons, inputs, spin and combo boxes, check
-boxes, lists and headers, scroll bars, menus, tool tips, the old tab strip —
+boxes, lists and headers, scroll bars, menus, tool tips —
 from one stylesheet, generated from a template with `$(token)` placeholders.
 `theme.unresolved(qss)` lists any left unfilled, and the test fails on them: Qt
 silently drops a rule it cannot read.
@@ -738,10 +803,8 @@ the loops stand on their resting frame.
 
 ### The kit
 
-`app/ui/kit/` holds the components the redesigned pages are built from. Each
-class is named as in the design, and each has all of the design's states.
-The pages move onto them one step at a time: the frame, Settings,
-Overview, the Tracker, the Rotator and Review are built from it.
+`app/ui/kit/` holds the components every page is built from. Each class is
+named as in the design, and each has all of the design's states.
 
 | Module | Classes |
 |---|---|
@@ -750,7 +813,7 @@ Overview, the Tracker, the Rotator and Review are built from it.
 | `selection.py` | `Checkbox`, `Toggle` (`knob_position`), `SegmentedControl` (two or three segments, `changed`), `Pagination` (`page_changed`), `page_numbers(pages, current)` |
 | `chips.py` | `Chip(variant, text=None)` in exactly fourteen variants; `chip_pixmap` and `chip_size` for delegates |
 | `panels.py` | `GlassPanel` (`tone=`, `padding=`), `Overline`, `Rule` (a hairline between two parts of a panel), `IconDisc` (a glyph in a tinted circle before a panel's title: a clean run's tick), `CardTitle`, `Callout` (`tone=`, `title=`, `add_action`), `MetricStrip`, `EmptyState` (`width=`, `add_content` for a console excerpt or numbers between the words and the actions), `StepList`, `ActivityLine`, `Spinner` |
-| `base.py` | the state model and the surfaces, below; `label(text, type, tone)`, `Glyph`, `Elided` (one line cut with an ellipsis, whole in its tool tip) and `LiveDot` (the pulse of a running job) |
+| `base.py` | the state model and the surfaces, below; `label(text, type, tone)`, `Glyph`, `Elided` (one line cut with an ellipsis, whole in its tool tip) and `LiveDot` (the pulse of a running job); `tab_stops(root)` and `chain_tabs(widgets)` for the Tab order (see [Keyboard](#keyboard-and-accessibility)) |
 | `format.py` | how every number is written: `count` (`33 421`), `size` (`1.1 GB`), `duration` (`4 min 12 s`), `left` (`≈6 min left`), `approx` / `reconstructed` (`≈`, `~`), `clock` (`13:47`, or `13:47:02` for a log line), `date_table`, `date_activity`, `date_long`, `day`, `ratio` (`4 / 201`, `4/201`, `412 of 1 000`), `percent`. Pages never format numbers themselves. |
 | `paths.py` | `PathField`: empty (type, paste or Browse…), compact (path elided from the left, ✓, a folder button), invalid ("folder not found"), disabled; a drop target. `path_changed` for the user's choice, `validity_changed` when a worker has checked the folder. `kind="file"` (with `file_filter=`) holds one file instead: Wallpaper Engine's `config.json`. |
 | `tags.py` | `TagSelect` (pills, `3 / 25`, a popup of the Creator's `WE_TAGS` in four columns); `per_file=True` adds the clip's three states — `value()` None follows the batch, a list is its own, `[]` is none. `TagPopup` is the open state. |
@@ -758,10 +821,10 @@ Overview, the Tracker, the Rotator and Review are built from it.
 | `cards.py` | `StatCard` (default, hover when `clickable` — an empty one too, `set_loading`, empty, `set_empty(why, link=True)` for a reason written as a link, tone `lo` for the last known), `MonitorCard` (compact or `detail=True`; a playlist shown to its end closes the ring in ok, turns the count green with a flash and gives the card an ok edge) and `MonitorView`, the plain values a page fills it from (`remaining_approx` for `≈`; `timer` "paused" or "stopped" says so in REMAINING without changing the badge), `ToolTile` (a tool of the loop on the Overview: status line and tone, thin bar, mono meta; `set_active` accents the one whose job runs, with a pulsing dot; `clicked` on a click, Enter or Space) |
 | `tables.py` | `Table`, `TableModel`, `Column`, `Cell` (`sub=` a second, quieter line), `ChipCell`, `ButtonCell` (a button drawn in the row, Accent on the row under the pointer; `Table.button_clicked(row, column)`), `ButtonsCell` of `CellButton`s (glyph buttons side by side, as small IconButtons: quiet in text.lo until the row is hovered, an empty slot keeps the rest in line, `mark=True` a glyph that says something and takes no click, `enabled=False` faded; each shows its `tip`; `Table.action_clicked(row, column, key)`; `buttons_width(n)` for the column), `BusyCell` (a ring and its words; `Table.set_spinning(items)` turns it), `DiscCell` (a glyph on a disc), `Group`, `RowDelegate`, `TableHeader`, `TableBar`, `TableSummary`, `TableFooter`; `disc_pixmap`, `paint_spinner` (the kit `Spinner`'s ring, for delegates); `ListRow` (`title_note`, `tick`, `dimmed`, `meta_tone`, `thumb_size`, `chips_inline`), `paint_list_row`, `RowList`; `SkeletonRows` (placeholder rows, shimmering or still); `Thumb` and `paint_thumb` |
 | `thumbs.py` | `ThumbLoader`: Steam previews for the gallery (`request`), and a wallpaper folder's own preview (`request_local`), read on a worker and kept in `data/thumbs/local/` |
-| `log.py` | `LogPanel` (a job's log as a card: `append(time, kind, message)`, All / Problems, copy, live dot, "writing to rotator.log" — or a file only read back, `set_file(name, writing=False)` — closes to its header with a problem badge; `fill=True` takes its layout's height and keeps the console open while collapsed, the Overview's glance), `LogModel` (the last 5 000 lines in a ring), `ProblemsFilter`, `LogView`, `ConsoleExcerpt` (a few lines quoted in a console well) |
-| `toast.py` | `Toast` (ok, info, warn, danger; an action link; close) and `ToastHost` (stacks a page's toasts bottom-right, at most four) |
-| `statusline.py` | `StatusLine`: `set_running(text, done, total, count_text, on_show)`, `set_idle(text)`, `set_warn(text, action, callback)`, `set_error(...)` |
-| `dialogs.py` | `ConfirmDialog` (neutral or destructive; numbered `steps`; a checklist of `CheckGroup`s of `CheckRow`s; `lines` of a plan, the first 14 and "… and N more"; a `note` Callout; `safe_default` for Cancel first; a summary; returns a `ConfirmResult`), `FormDialog` (labelled rows, Save once valid; `add_widget`, `add_action`), and their chrome, `OverlayDialog` |
+| `log.py` | `LogPanel` (a job's log as a card, newest line first: `append(time, kind, message)`, All / Problems, copy, live dot, "writing to rotator.log" — or a file only read back, `set_file(name, writing=False)` — closes to its header, which then shows the newest line and a problem count; `fill=True` takes its layout's height and keeps the console open while collapsed, the Overview's glance), `LogModel` (the last 5 000 lines in a ring, its rows newest first; `lines()` oldest first), `ProblemsFilter`, `LogView`, `ConsoleExcerpt` (a few lines quoted in a console well) |
+| `toast.py` | `Toast` (ok, info, warn, danger: a neutral card with its hue down the left edge; an action link; close) and `ToastHost` (stacks a page's toasts bottom-right, at most four) |
+| `statusline.py` | `StatusLine`: `set_running(text, done, total, count_text, on_show)`, `set_idle(text)`, `set_ok(text)`, `set_warn(text, action, callback)`, `set_error(...)`; `link()` |
+| `dialogs.py` | `ConfirmDialog` (neutral or destructive; numbered `steps` in a well; a checklist of `CheckGroup`s of `CheckRow`s, each group a tinted band with an optional `note`; `lines` of a plan, the first 14 and "… and N more"; a `note` Callout; `safe_default` for Cancel first; a summary; returns a `ConfirmResult`), `FormDialog` (labelled rows, Save once valid; `add_widget`, `add_action`), and their chrome, `OverlayDialog` |
 | `shell.py` | the frame: `TitleBar` (the mark, the name, `CaptionButton`s), `Sidebar` (`add_section`, `add_item`, `set_current`, `set_state`, `set_rail`, `page_requested`), `NavSection`, `NavItem`, `NavState`, `NextInLoop`, `PageHeader` (`set_title`, `set_subtitle`, `set_actions`), `BrandMark` — see [The frame and its pages](#the-frame-and-its-pages) |
 
 **States.** Every interactive control follows the design's five: default,
@@ -793,8 +856,9 @@ it sorts by (`sort_key`), where a row's preview is (`thumb_source`),
 whether it is dimmed (`row_dimmed`) and whether it is marked in a hue
 (`row_tone`: its soft ground and an edge down the left, as a selected row is
 in accent — the Rotator's history marks the run just finished). A `Cell`'s
-`icon` draws a glyph before its words in its tone (the lock on a
-`[protected]` folder). `Table.refresh_columns()` lays the header out again
+`icon` draws a glyph before its words in its tone, or in `icon_tone` (the
+lock on a `[protected]` folder; the warning before a file the Creator left
+out). `Table.refresh_columns()` lays the header out again
 when a model's column widths change. `set_rows(items, groups=[Group(...)],
 group_of=fn)` puts header rows over runs of items ("ALREADY SHOWN THIS CYCLE ·
 4 of 201"); sorting stays inside each group, a filter is `set_filter(fn)`, and
@@ -811,6 +875,15 @@ thread busy in Python can make every one of them wait. Measured on a
 repaints the two rows it moved between; a click on a sortable column's title
 sorts, keeping the selection.
 
+A stretched column with a thumb steps down to the next thumb (`row`'s 120 × 68
+to `md`'s 64 × 36) while it would leave its words less than
+`TABLE_WORDS_MIN` (80 px, about a dozen characters): at 1 200 px the Tracker's
+playlist had 114 px for a 120 px picture and no title at all. The room is
+counted as if the scroll bar were there, so the shorter rows taking the bar
+away cannot make the rows tall again. Pictures are still loaded at the
+column's own size. Tab leaves a table (`setTabKeyNavigation(False)`); the
+arrows move inside it.
+
 **Thumbnails.** A table asks its `ThumbLoader` for the previews of the rows
 on screen once scrolling has settled for 90 ms, and drops whatever it had
 queued for rows scrolled past. The loader lists the wallpaper folder on a
@@ -824,21 +897,28 @@ file-system call from the GUI thread fail while a table of thumbs is shown.
 **The log.** A `LogPanel` is fed a line at a time, `append(time, kind,
 message)` (`time` a datetime, a timestamp, text, or None for now), or
 `extend(lines)` for many at once, which the view hears as one insert. Its
-`LogModel` keeps the last 5 000 lines in a ring: past the cap the oldest line
-leaves the front and nothing behind it moves. Kinds take the console's
-colours: moved, returned, deleted and done ok, skip, dupe and stop warn, fail
-and error err, step, start and info mid; any other kind (`step 2`) is written
-as it is, in mid. The console
-follows the newest line while it is at the bottom and stops the moment you
-scroll up, keeping the lines you read where they are even as the oldest leave
-the ring; back at the bottom it follows again. The kind column is as wide as the
-widest kind a job writes, `returned` and `step 2` included. `copy()` (the button, or
-Ctrl+C) takes the selected lines, or every line shown. Measured offscreen:
-30 000 lines appended one by one past the cap, about 80 µs each; 5 000 at
-once, 21 ms; a repaint of the console, 3.7 ms. `set_expanded(False)` closes
-it to its header over `motion.slow`, chevron and height together, where a
-badge counts the problems (danger once an error is among them). "Open log
-folder" is a callback (`on_open_folder`) until the LogStore of step 05.
+`LogModel` keeps the last 5 000 lines in a ring, and its rows are newest first,
+as the design's console reads: a new line comes in at row 0 and, past the cap,
+the oldest leaves the last row; `line(i)` and `lines()` still read them as they
+were written. Kinds take the console's colours: moved, returned, deleted and
+done ok, skip, dupe and stop warn, fail and error err, step, start and info
+mid; any other kind (`step 2`) is written as it is, in mid. The console keeps
+the newest line in view while it is at the top and stops the moment you scroll
+down, keeping the lines you read where they are as new ones arrive above;
+back at the top it follows again. Its grid is the design's (time 62 px, kind
+52, then the message), wider only if a font needs it. `copy()` (the button, or
+Ctrl+C) takes the selected lines, or every line shown, oldest first as the
+file has them. `set_expanded(False)` closes it to its header over
+`motion.slow`, chevron (› closed, ∨ open) and height together; the closed
+header shows the newest line and a badge counting the problems (danger once an
+error is among them). "Open log folder" is the `on_open_folder` callback.
+
+A line never changes, so the console draws each once into a tile and copies it
+after, and fetches a whole line in one `data()` call: a row costs its ground
+and one copy. With a job streaming 200 lines a second and two threads busy in
+Python (`tests/perf_pages.py`), the console's repaint went from 27 ms to 10, and
+a line from 3.0 ms to 1.7 (the first newest-first version sorted in a proxy,
+whose Python `lessThan` ran about thirteen times a line).
 
 **Toasts.** `ToastHost(content)` covers the widget whose bottom-right corner
 the toasts stack in — the window's content, not a page that scrolls — and
@@ -849,8 +929,12 @@ a fifth makes the oldest that may go leave. In the app only; a hidden window
 leaves it to the tray.
 
 **The status line.** `StatusLine` has a plain API; the window binds it to the
-JobCenter (`StatusBinding`). The bar, count and link follow its words; the
-words elide and the count never does.
+JobCenter (`StatusBinding`). Five states, each led by a dot in its hue: running
+(the dot pulses; a bar, a count, **Show**), idle, ok (a job that just ended
+well: "Run 39 finished cleanly · …"), warn and error. The binding says how the
+last job ended until its page has been looked at since, then goes back to
+"Nothing running · last run finished 13:58". The bar, count and link follow its
+words; the words elide and the count never does.
 
 **Dialogs.** Both draw a `scrim` over the window they belong to and a
 frameless panel on `surface.overlay` at elev.3, with no motion. `ask()` runs
@@ -875,19 +959,21 @@ if result:                                         # ConfirmResult: True when co
 - `destructive=True`: a DangerButton, the warn tile, and Cancel as the
   default button and first focus, so Enter cancels. Esc cancels either kind.
 - `steps=["Close Wallpaper Engine", ("Move 1 000 new folders in", "caption"), ...]`:
-  the numbered list of what will happen.
+  the numbered list of what will happen, in a well.
 - `groups=[CheckGroup(title, rows, tone=, initially_checked=, noun=, plural=,
-  limit=5)]`: a checklist. The header row's tri-state box ticks or clears the
-  whole group, rows not yet shown included; its title reads "SAFE TO DELETE —
-  9 FOLDERS · 0 B". Past `limit` rows the rest fold under "N more like these".
-  A size not measured (`None`) turns totals into "at least …".
+  limit=3, note=)]`: a checklist. Each group's header is a band tinted by its
+  tone, with `note` at its right ("no media inside"); its tri-state box ticks
+  or clears the whole group, rows not yet shown included; its title reads
+  "SAFE TO DELETE — 9 FOLDERS · 0 B". A row is its name in mono over the reason
+  it is listed. Past `limit` rows the rest fold under "N more like these". A
+  size not measured (`None`) turns totals into "at least …".
 - `summary(rows) -> str` writes the footer from the ticked rows;
   `confirm_text` is words or `fn(rows) -> str`, and with a checklist the
   button is off while nothing is ticked.
 
 ```python
 form = FormDialog("Review settings", window)
-form.add_row("Scan", every, note="The next scan is due Saturday.")
+form.add_row("Review source", source, note="The Wallpaper Engine folder a scan reads.")
 form.add_row("Steam Web API key", TextInput(), required=True,
              check=lambda f: None if len(f.text()) == 32 else "a key is 32 characters")
 form.set_check(lambda form: None)                  # the form as a whole, if need be
@@ -899,6 +985,33 @@ A check returns None when the field is right, a message when it is not
 (shown once the field has been touched; a TextInput shows it as its error),
 or False for "not yet" without one. Save stays off until every row and the
 form's own check pass.
+
+### Keyboard and accessibility
+
+- **Tab** goes as the frame reads: down the sidebar, the page header's
+  buttons, the page in the order its layouts set it out (a column top to
+  bottom, a row left to right), then the status line's link.
+  `MainWindow._order_tabs` sets it on every page change and again on every Tab
+  (a page's widgets made later, a monitor's card, join the chain at its end);
+  it costs about 2 ms. A dialog does the same over its own panel, so its body
+  comes before its buttons. Scroll areas are not stops; tables are left by Tab.
+- **Shortcuts**: Ctrl+1 … Ctrl+7 go to the pages in the sidebar's order;
+  Ctrl+F puts the cursor in the page's filter with its words selected
+  (`Page.filter_field()`: the Tracker's, the Rotator's and Review's authors);
+  Ctrl+V on the Copier pastes paths; Enter confirms a dialog and Esc cancels
+  it, except a destructive one, where Cancel has the focus and Enter.
+- **Focus rings** show when the keyboard brought focus there, never after a
+  click; fields you type into show theirs whenever they have focus.
+- **Names**: every control a screen reader can land on says what it is: an
+  IconButton by its required tool tip, a chip by its words, a nav item by its
+  page, a table or list by what it lists.
+- **Text** is 10 px at the least, and no text is dimmer than `text.lo` on
+  glass (5.3:1). The status hues are the design's; the darkest, danger, reads
+  at 4.96:1, above WCAG AA's 4.5.
+
+`tests/test_keyboard.py` walks every page in every made-up state and checks
+all of it, with `tests/gui_guard.py` recording any file call the GUI thread
+makes for a path on the wallpaper disk.
 
 ### The kit preview
 
@@ -959,7 +1072,16 @@ A page state that opens a dialog (the Rotator's `confirm` and `broken`, Review's
 `settings` and `authors`) keeps it
 as `page.fixture_dialog`; the tool draws its grab over the window's, scrim and
 all. Folders in fixtures are on a drive `X:` the tool reports as present. `--scale
-1.5` is the user's 150 %; the PNG is then 1.5 × the size.
+1.5` is the user's 150 %; the PNG is then 1.5 × the size. `--reduced-motion`
+draws it as Windows does with its animations off: every loop at rest, a
+spinner beside the word "working".
+
+Offscreen, Qt's screen is 800 × 800 unless told otherwise, and a popup that
+does not fit under its field opens above it; the tool gives Qt a screen
+larger than any window it draws (a config file named relative to its scratch
+folder, as the platform's options split on `:`). A fixture's popup or dialog
+is placed again once the page has settled, where it would open on the page as
+it stands.
 
 ## Conventions
 

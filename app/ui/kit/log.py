@@ -12,18 +12,21 @@ in three columns — time · kind · message — in `type.mono`.
   returned, deleted and done are ok, skip, dupe and stop warn, fail and error
   err, step, start and info mid. Any other kind is shown as it is written, in
   mid; "step 2" is a step's.
+- LogModel's rows are newest first, as the design's console reads; `line(i)`
+  and `lines()` stay in the order the lines were written, oldest first.
 - ProblemsFilter is the "Problems" half of the All / Problems switch: the
   warn and err lines only, over the same model.
-- LogView follows the newest line while you are at the bottom, and stops
-  following the moment you scroll up to read — lines keep arriving below and
-  what you are reading stays where it is, even as the oldest lines leave the
-  ring. Scroll back to the bottom and it follows again.
-- LogPanel is the card: a header ("Log", the live dot while the job runs,
-  "writing to rotator.log", All / Problems, copy, and the chevron), the
-  console, and a footer saying how the log folder is kept, with "Open log
-  folder". Collapsed, it is the header alone, with the count of problems in
-  a badge. The body's height and the chevron move together over
-  motion.slow; with Windows' animations off they jump.
+- LogView shows the newest line at the top and keeps it there while you are
+  at the top. Scroll down to read and it stops following: lines keep arriving
+  above and what you are reading stays where it is, even as the oldest lines
+  leave the ring. Scroll back to the top and it follows again.
+- LogPanel is the card: a header (the chevron, "Log", the live dot while the
+  job runs, All / Problems, and at the right "writing to rotator.log" and
+  copy), the console, and a footer saying how the log folder is kept, with
+  "Open log folder". Collapsed, it is the header alone: the newest line in
+  it, and the count of problems in a badge. The body's height and the
+  chevron (› closed, ∨ open) move together over motion.slow; with Windows'
+  animations off they jump.
 - `fill=True` is the Overview's glance at a log: the panel takes the height
   its layout gives it, and collapsed it keeps the console open under the
   header, showing the newest lines, with the badge but without the switch,
@@ -32,6 +35,7 @@ in three columns — time · kind · message — in `type.mono`.
 """
 from __future__ import annotations
 
+from collections import OrderedDict
 from datetime import date, datetime
 from typing import Callable, Iterable, NamedTuple
 
@@ -39,7 +43,7 @@ from PySide6.QtCore import (
     QAbstractListModel, QModelIndex, QRectF, QSize, QSortFilterProxyModel, Qt, QTimer,
     QVariantAnimation, Signal,
 )
-from PySide6.QtGui import QFontMetricsF, QKeySequence, QPainter, QPainterPath, QPen
+from PySide6.QtGui import QFontMetricsF, QKeySequence, QPainter, QPainterPath, QPen, QPixmap
 from PySide6.QtWidgets import (
     QAbstractItemView, QApplication, QHBoxLayout, QListView, QSizePolicy, QStyle,
     QStyledItemDelegate, QVBoxLayout, QWidget,
@@ -76,6 +80,7 @@ TIME_ROLE = Qt.UserRole + 80
 KIND_ROLE = Qt.UserRole + 81
 MESSAGE_ROLE = Qt.UserRole + 82
 TONE_ROLE = Qt.UserRole + 83
+LINE_ROLE = Qt.UserRole + 84            # the whole LogLine, for painting it in one call
 
 FOOTER_NOTE = "newest first · kept for 30 days"
 # Qt's QWIDGETSIZE_MAX, which PySide does not export: no maximum height.
@@ -114,11 +119,13 @@ class LogLine(NamedTuple):
 # ---- the model --------------------------------------------------------------------
 
 class LogModel(QAbstractListModel):
-    """The last `cap` lines of a log, oldest first, in a ring.
+    """The last `cap` lines of a log, in a ring.
 
-    A list whose front is popped moves every line behind it; the ring moves
-    none. `problems_changed(count)` follows the warn and err lines as they
-    arrive and as they leave off the front.
+    Its rows are newest first, the console's order: a new line comes in at
+    row 0 and the oldest leaves the last row. `line(i)` and `lines()` read
+    them as they were written, oldest first. A list whose front is popped
+    moves every line behind it; the ring moves none. `problems_changed(count)`
+    follows the warn and err lines as they arrive and as they leave.
     """
 
     problems_changed = Signal(int)
@@ -145,10 +152,15 @@ class LogModel(QAbstractListModel):
     def __len__(self) -> int:
         return self._size
 
-    def line(self, row: int) -> LogLine:
-        if not 0 <= row < self._size:
-            raise IndexError(f"no line {row}; there are {self._size}")
-        return self._ring[(self._start + row) % self._cap]
+    def line(self, i: int) -> LogLine:
+        """The i-th line as written: 0 is the oldest kept."""
+        if not 0 <= i < self._size:
+            raise IndexError(f"no line {i}; there are {self._size}")
+        return self._ring[(self._start + i) % self._cap]
+
+    def row_line(self, row: int) -> LogLine:
+        """The line at a row: row 0 is the newest."""
+        return self.line(self._size - 1 - row)
 
     def lines(self) -> list[LogLine]:
         return [self.line(row) for row in range(self._size)]
@@ -163,7 +175,7 @@ class LogModel(QAbstractListModel):
     def data(self, index: QModelIndex, role: int = Qt.DisplayRole):
         if not index.isValid() or not 0 <= index.row() < self._size:
             return None
-        line = self.line(index.row())
+        line = self.row_line(index.row())
         if role == Qt.DisplayRole:
             return line.text()
         if role == Qt.ToolTipRole:
@@ -176,6 +188,8 @@ class LogModel(QAbstractListModel):
             return line.message
         if role == TONE_ROLE:
             return line.tone
+        if role == LINE_ROLE:
+            return line
         return None
 
     # -- writing
@@ -211,10 +225,10 @@ class LogModel(QAbstractListModel):
     def _take(self, made: list[LogLine]) -> None:
         before = self._problems
         made = made[-self._cap:]
-        # the ones that must leave to make room, off the front
+        # the ones that must leave to make room: the oldest, the last rows
         leaving = max(0, self._size + len(made) - self._cap)
         if leaving:
-            self.beginRemoveRows(QModelIndex(), 0, leaving - 1)
+            self.beginRemoveRows(QModelIndex(), self._size - leaving, self._size - 1)
             for i in range(leaving):
                 slot = (self._start + i) % self._cap
                 self._count(self._ring[slot], -1)
@@ -222,8 +236,8 @@ class LogModel(QAbstractListModel):
             self._start = (self._start + leaving) % self._cap
             self._size -= leaving
             self.endRemoveRows()
-        first = self._size
-        self.beginInsertRows(QModelIndex(), first, first + len(made) - 1)
+        # the new ones come in at the top, the newest first
+        self.beginInsertRows(QModelIndex(), 0, len(made) - 1)
         for line in made:
             self._ring[(self._start + self._size) % self._cap] = line
             self._size += 1
@@ -271,58 +285,82 @@ class _Columns:
     def __init__(self):
         self.font = theme.font("type.mono")
         self.metrics = QFontMetricsF(self.font)
-        self.time = self.metrics.horizontalAdvance("00:00:00")
+        # the design's grid, wider only if this font's words need it
+        self.time = max(theme.LOG_COLUMNS[0], self.metrics.horizontalAdvance("00:00:00"))
         widest = max(self.metrics.horizontalAdvance(kind) for kind in KIND_WIDEST)
-        self.kind = widest
+        self.kind = max(theme.LOG_COLUMNS[1], widest)
         self.row = round(theme.line_height("type.mono"))
 
 
 class _LineDelegate(QStyledItemDelegate):
-    """A console line: its ground (zebra, selection), then the three columns."""
+    """A console line: its ground (zebra, selection), then the three columns.
+
+    A line never changes, so its words are drawn once into a tile and copied
+    after: a row costs its ground and one copy. Measured with a job streaming
+    and two busy threads (tests/perf_pages.py): the console's repaint went
+    from ~27 ms to the few ms it costs uncontended, because every Qt call
+    gives the GIL up and the drawn words were a dozen calls a row."""
+
+    TILES = 400                     # a few screens of lines
 
     def __init__(self, view: LogView):
         super().__init__(view)
         self._view = view
         self.columns = _Columns()
+        self._tiles: OrderedDict[tuple, QPixmap] = OrderedDict()
 
     def sizeHint(self, option, index) -> QSize:     # noqa: N802 - Qt's name
         return QSize(200, self.columns.row)
 
     def paint(self, painter: QPainter, option, index: QModelIndex) -> None:
-        c = self.columns
-        rect = QRectF(option.rect)
+        rect = option.rect
         if option.state & QStyle.State_Selected:
             painter.fillRect(rect, theme.color("console.selection"))
         elif index.row() % 2:
             painter.fillRect(rect, theme.color("console.rowAlt"))
-        painter.save()
+        line = index.data(LINE_ROLE)
+        if line is not None:
+            painter.drawPixmap(rect.topLeft(), self._tile(line, rect.width(), rect.height()))
+
+    def _tile(self, line: LogLine, width: int, height: int) -> QPixmap:
+        dpr = self._view.devicePixelRatioF()
+        key = (line, width, height, dpr)
+        tile = self._tiles.get(key)
+        if tile is not None:
+            self._tiles.move_to_end(key)
+            return tile
+        tile = QPixmap(max(1, round(width * dpr)), max(1, round(height * dpr)))
+        tile.setDevicePixelRatio(dpr)
+        tile.fill(Qt.transparent)
+        painter = QPainter(tile)
+        c = self.columns
         painter.setFont(c.font)
-        x = rect.left() + theme.LOG_ROW_PAD
-        right = rect.right() - theme.LOG_ROW_PAD
-        tone = index.data(TONE_ROLE) or "mid"
+        x = float(theme.LOG_ROW_PAD)
+        right = width - theme.LOG_ROW_PAD
         painter.setPen(theme.color("console.dim"))
-        painter.drawText(QRectF(x, rect.top(), c.time, rect.height()),
-                         Qt.AlignLeft | Qt.AlignVCenter, index.data(TIME_ROLE) or "")
+        painter.drawText(QRectF(x, 0, c.time, height), Qt.AlignLeft | Qt.AlignVCenter, line.time)
         x += c.time + theme.LOG_COLUMN_GAP
-        kind = c.metrics.elidedText(index.data(KIND_ROLE) or "", Qt.ElideRight, c.kind)
-        painter.setPen(theme.color(TONE_COLOURS[tone]))
-        painter.drawText(QRectF(x, rect.top(), c.kind, rect.height()),
-                         Qt.AlignLeft | Qt.AlignVCenter, kind)
+        painter.setPen(theme.color(TONE_COLOURS[line.tone]))
+        painter.drawText(QRectF(x, 0, c.kind, height), Qt.AlignLeft | Qt.AlignVCenter,
+                         c.metrics.elidedText(line.kind, Qt.ElideRight, c.kind))
         x += c.kind + theme.LOG_COLUMN_GAP
         # one line per event: a message that spans lines is drawn on one, and
         # its tool tip holds it as it was written
-        message = " ".join((index.data(MESSAGE_ROLE) or "").split())
-        width = max(0.0, right - x)
+        message = " ".join(line.message.split())
+        room = max(0.0, right - x)
         painter.setPen(theme.color("console.text"))
-        painter.drawText(QRectF(x, rect.top(), width, rect.height()),
-                         Qt.AlignLeft | Qt.AlignVCenter,
-                         c.metrics.elidedText(message, Qt.ElideRight, width))
-        painter.restore()
+        painter.drawText(QRectF(x, 0, room, height), Qt.AlignLeft | Qt.AlignVCenter,
+                         c.metrics.elidedText(message, Qt.ElideRight, room))
+        painter.end()
+        self._tiles[key] = tile
+        while len(self._tiles) > self.TILES:
+            self._tiles.popitem(last=False)
+        return tile
 
 
 class LogView(QListView):
-    """The console's lines. It follows the newest one while you are at the
-    bottom; scrolled up, it stays on what you are reading."""
+    """The console's lines, newest first. It keeps the newest in view while you
+    are at the top; scrolled down, it stays on what you are reading."""
 
     copy_requested = Signal()
 
@@ -350,32 +388,32 @@ class LogView(QListView):
     def setModel(self, model) -> None:          # noqa: N802 - Qt's name
         old = self.model()
         if old is not None:
-            old.rowsAboutToBeRemoved.disconnect(self._leaving)
-            old.rowsRemoved.disconnect(self._left)
+            old.rowsAboutToBeInserted.disconnect(self._arriving)
+            old.rowsInserted.disconnect(self._arrived)
         super().setModel(model)
         if model is not None:
-            model.rowsAboutToBeRemoved.connect(self._leaving)
-            model.rowsRemoved.connect(self._left)
+            model.rowsAboutToBeInserted.connect(self._arriving)
+            model.rowsInserted.connect(self._arrived)
 
     # -- following the newest line
 
     def following(self) -> bool:
-        """True while the view sits at the bottom and moves with new lines."""
+        """True while the view sits at the top, where the newest line comes in."""
         return self._follow
 
-    def scroll_to_end(self) -> None:
+    def scroll_to_newest(self) -> None:
         self._follow = True
         bar = self.verticalScrollBar()
-        bar.setValue(bar.maximum())
+        bar.setValue(bar.minimum())
 
     def _scrolled(self, value: int) -> None:
         # Whatever moved the bar — a wheel, a drag, a key, the range closing
-        # in — the view follows exactly when it ends up at the bottom.
-        self._follow = value >= self.verticalScrollBar().maximum()
+        # in — the view follows exactly when it ends up at the top.
+        self._follow = value <= self.verticalScrollBar().minimum()
 
-    def _range(self, _low: int, high: int) -> None:
+    def _range(self, low: int, _high: int) -> None:
         if self._follow:
-            self.verticalScrollBar().setValue(high)
+            self.verticalScrollBar().setValue(low)
 
     def refilter(self, change: Callable[[], None]) -> None:
         """Run a change of filter. The rows it takes away are not lines
@@ -387,16 +425,20 @@ class LogView(QListView):
             self._refiltering = False
             self._shift = 0
 
-    def _leaving(self, parent, first: int, last: int) -> None:
-        # Lines leaving the front of the ring move everything below them up;
-        # a reader who scrolled up keeps the lines they were reading.
+    def _arriving(self, parent, first: int, last: int) -> None:
+        # New lines come in at the top and move everything under them down; a
+        # reader who scrolled down keeps the lines they were reading. (The
+        # oldest leave at the bottom, which moves nothing above them.)
         if not self._follow and first == 0 and not self._refiltering:
             self._shift += (last - first + 1) * self._delegate.columns.row
 
-    def _left(self, *_args) -> None:
+    def _arrived(self, *_args) -> None:
         if self._shift:
+            # The bar's range takes the new lines in at the next layout; take
+            # it now, or the move down would be cut short at the old maximum.
+            self.executeDelayedItemsLayout()
             bar = self.verticalScrollBar()
-            bar.setValue(max(0, bar.value() - self._shift))
+            bar.setValue(min(bar.maximum(), bar.value() + self._shift))
             self._shift = 0
             self._follow = False
 
@@ -432,7 +474,8 @@ class _Console(QWidget):
     def __init__(self, view: LogView, parent: QWidget | None = None):
         super().__init__(parent)
         column = QVBoxLayout(self)
-        column.setContentsMargins(0, 1, 0, 0)
+        pad = theme.LOG_CONSOLE_PAD
+        column.setContentsMargins(0, 1 + pad, 0, pad)
         column.addWidget(view)
 
     def paintEvent(self, event) -> None:        # noqa: N802 - Qt's name
@@ -457,9 +500,9 @@ class _Badge(QWidget):
         return self._tone
 
     def set_count(self, problems: int, errors: int) -> None:
-        self._text = fmt.counted(problems, "problem")
+        self._text = fmt.count(problems)
         self._tone = "danger" if errors else "warn"
-        self.setAccessibleName(self._text)
+        self.setAccessibleName(fmt.counted(problems, "problem"))
         metrics = QFontMetricsF(theme.font("type.monoSm"))
         vertical, horizontal = theme.LOG_BADGE_PAD
         self.setFixedSize(round(metrics.horizontalAdvance(self._text) + 2 * horizontal + 0.5),
@@ -483,12 +526,13 @@ class _Badge(QWidget):
 
 
 class _Chevron(IconButton):
-    """The chevron that opens and closes the panel: down while closed, and
-    turning to point up as the body opens."""
+    """The chevron that opens and closes the panel: pointing right while
+    closed, and turning down as the body opens."""
 
     def __init__(self, parent: QWidget | None = None):
-        super().__init__("chevD", "Show the log", parent)
-        self.angle = 0.0
+        # the design's 13 px glyph, in the small button's 22 px box
+        super().__init__("chevD", "Show the log", parent, size="sm")
+        self.angle = -90.0
 
     def paintEvent(self, event) -> None:        # noqa: N802 - Qt's name
         follow(self)
@@ -622,27 +666,31 @@ class LogPanel(GlassPanel):
         self._head.clicked.connect(self.toggle)
         row = QHBoxLayout(self._head)
         vertical, horizontal = theme.LOG_HEAD_PAD
-        row.setContentsMargins(horizontal, vertical, horizontal - theme.SP_4, vertical)
+        # the chevron's and the copy button's own padding stands in for the sides'
+        row.setContentsMargins(horizontal - theme.SP_4, vertical, horizontal - theme.SP_4, vertical)
         row.setSpacing(theme.SP_10)
         self._title = label(title, "type.h3", "hi")
         self._dot = LiveDot("accent", live=False)
         self._dot.hide()
-        self._file = Elided("", "type.monoSm", "lo")
+        # closed, the newest line stands in the header; open, the file it goes to
+        self._latest = Elided("", "type.monoSm", "lo")
+        self._file = Elided("", "type.monoSm", "lo", align=Qt.AlignRight)
         self._badge = _Badge()
         self._badge.hide()
         self._switch = SegmentedControl(("All", "Problems"))
         self._switch.changed.connect(lambda i: self.set_problems_only(i == 1))
-        self._copy = IconButton("clipboard", "Copy the selected lines, or all of them")
+        self._copy = IconButton("copier", "Copy the selected lines, or all of them")
         self._copy.clicked.connect(self.copy)
         self._chevron = _Chevron()
         self._chevron.clicked.connect(self.toggle)
+        row.addWidget(self._chevron)
         row.addWidget(self._title)
         row.addWidget(self._dot)
+        row.addWidget(self._switch)
+        row.addWidget(self._latest, 1)
         row.addWidget(self._file, 1)
         row.addWidget(self._badge)
-        row.addWidget(self._switch)
         row.addWidget(self._copy)
-        row.addWidget(self._chevron)
         column.addWidget(self._head)
 
         self._body = QWidget()
@@ -667,10 +715,12 @@ class LogPanel(GlassPanel):
         self._animation.valueChanged.connect(self._step)
         self._animation.finished.connect(self._settled)
         self._model.problems_changed.connect(self._problems)
+        self._model.rowsInserted.connect(self._newest)
+        self._model.modelReset.connect(self._newest)
         self._copied = QTimer(self)
         self._copied.setSingleShot(True)
         self._copied.setInterval(animations.FLASH)
-        self._copied.timeout.connect(lambda: self._copy.set_icon("clipboard"))
+        self._copied.timeout.connect(lambda: self._copy.set_icon("copier"))
 
         self.set_file(file)
         self.set_open_folder(on_open_folder)
@@ -698,8 +748,9 @@ class LogPanel(GlassPanel):
         return self._model.problem_count()
 
     def shown_lines(self) -> list[LogLine]:
-        """The lines the console shows now: all of them, or the problems."""
-        return [self._model.line(self._filter.mapToSource(self._filter.index(r, 0)).row())
+        """The lines the console shows now, newest first: all of them, or the
+        problems."""
+        return [self._model.row_line(self._filter.mapToSource(self._filter.index(r, 0)).row())
                 for r in range(self._filter.rowCount())]
 
     def problems_only(self) -> bool:
@@ -711,16 +762,17 @@ class LogPanel(GlassPanel):
             self._switch.set_current_index(int(bool(on)))
         self.view.set_empty_text("No warnings or errors" if on else "Nothing written yet")
         if self.view.following():
-            self.view.scroll_to_end()
+            self.view.scroll_to_newest()
 
     def copy(self) -> str:
         """Put the selected lines on the clipboard, oldest first — or every
         line shown when none is selected. Returns what was copied."""
-        rows = sorted(index.row() for index in self.view.selectionModel().selectedRows())
+        rows = [index.row() for index in self.view.selectionModel().selectedRows()]
         if not rows:
             rows = range(self._filter.rowCount())
-        lines = [self._model.line(self._filter.mapToSource(self._filter.index(r, 0)).row())
-                 for r in rows]
+        # the console reads newest first; a copy reads as the file does
+        lines = [self._model.row_line(r) for r in sorted(
+            (self._filter.mapToSource(self._filter.index(r, 0)).row() for r in rows), reverse=True)]
         text = "\n".join(line.text() for line in lines)
         QApplication.clipboard().setText(text)
         if lines:
@@ -771,9 +823,26 @@ class LogPanel(GlassPanel):
         if self._on_open is not None:
             self._on_open()
 
+    def latest_text(self) -> str:
+        """The newest line as a closed header shows it, "" when it shows none."""
+        return self._latest.text() if self._latest.isVisibleTo(self) else ""
+
+    def _newest(self, *_args) -> None:
+        self._latest.set_text(self._model.row_line(0).text() if len(self._model) else "")
+
     def _problems(self, _count: int = 0) -> None:
         self._badge.set_count(self._model.problem_count(), self._model.error_count())
         self._badge.setVisible(not self._expanded and self._model.problem_count() > 0)
+
+    def _header(self) -> None:
+        """What the header holds, open and closed: the switch and copy open;
+        closed, the newest line where the file was (the Overview's panel, whose
+        console stays open, keeps naming its file)."""
+        self._switch.setVisible(self._expanded)
+        self._copy.setVisible(self._expanded)
+        closed_line = not self._expanded and not self._fill
+        self._latest.setVisible(closed_line)
+        self._file.setVisible(not closed_line)
 
     # -- open and closed
 
@@ -796,8 +865,7 @@ class LogPanel(GlassPanel):
             return
         self._expanded = on
         self._chevron.setToolTip("Hide the log" if on else "Show the log")
-        self._switch.setVisible(on)
-        self._copy.setVisible(on)
+        self._header()
         self._body.show()
         self._problems()
         self._animation.stop()
@@ -856,12 +924,12 @@ class LogPanel(GlassPanel):
             self._footer.setVisible(True)
             self._body.setFixedHeight(round(self.body_height() * t))
             self._console.setFixedHeight(self._console_height)
-        self._chevron.angle = 180.0 * t
+        # The Overview's console stays open, so its chevron stays down.
+        self._chevron.angle = 0.0 if self._fill else -90.0 * (1.0 - t)
         self._chevron.update()
 
     def _settled(self) -> None:
         self._body.setVisible(self._t > 0 or self._fill)
-        self._switch.setVisible(self._expanded)
-        self._copy.setVisible(self._expanded)
+        self._header()
         self._chevron.setToolTip("Hide the log" if self._expanded else "Show the log")
         self._problems()

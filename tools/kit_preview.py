@@ -131,7 +131,8 @@ COLOR_GROUPS = (
     ("Text", ("text.",)),
     ("Accent & status", ("accent", "ok", "warn", "danger", "info")),
     ("Console", ("console.",)),
-    ("Tray and kind", ("tray.", "kind.")),
+    ("Brand, thumbs and the gallery's cards", ("brand.", "thumb.", "gallery.")),
+    ("Tray", ("tray.",)),
 )
 
 
@@ -1950,15 +1951,15 @@ def review_form(parent=None, *, embedded: bool = False):
     from app.ui.kit import Dropdown, FormDialog, SpinBox, TextInput, Toggle
 
     form = FormDialog("Review settings", parent, icon="review", embedded=embedded,
-                      body="How often the Review asks Steam what your authors published.")
-    every = Dropdown()
-    for option in ("Every week", "Every two weeks", "Every month"):
-        every.add_item(option)
-    form.add_row("Scan", every, note="The next scan is due Saturday 26 September.")
+                      body="What a scan reads, and the Steam key Review asks Steam with.")
+    source = Dropdown()
+    for option, count in (("new", 3366), ("all", 12547), ("filter", 836)):
+        source.add_item(option, count=count)
+    form.add_row("Review source", source, note="The Wallpaper Engine folder a scan reads the authors from.")
     form.add_row("New items per author, at most", SpinBox(minimum=1, maximum=500, value=40))
     key = TextInput("", placeholder="32 characters from steamcommunity.com/dev/apikey")
     form.add_row("Steam Web API key", key,
-                 note="Kept in data\\secrets.bin, encrypted for this Windows account.",
+                 note="Kept encrypted for this Windows account.",
                  check=lambda f: (None if len(f.text().strip()) in (0, 32)
                                   else "a key is 32 characters"))
     form.add_row("After a scan", Toggle("Open the Review when it finds new items", checked=True))
@@ -2048,23 +2049,26 @@ def feedback_section() -> Section:
     fire.addStretch()
     section.body.addLayout(fire)
 
-    section.body.addWidget(overline("StatusLine — running · idle · warn · error, then one cycling"))
+    section.body.addWidget(overline("StatusLine — running · idle · ok · warn · error, then one cycling"))
     lines = GlassPanel(padding="none")
     column = QVBoxLayout(lines)
     column.setContentsMargins(0, 0, 0, 0)
     column.setSpacing(0)
-    running, idle, warn, error, cycling = (StatusLine() for _ in range(5))
-    running.set_running("Rotating · moving folders into myprojects", 412, 1000, on_show=lambda: None)
-    idle.set_idle("Idle · next rotation Saturday 26 September, 09:00")
-    warn.set_warn("Run 38 finished with 2 problems", "Open log", lambda: None)
+    running, idle, ok, warn, error, cycling = (StatusLine() for _ in range(6))
+    running.set_running("Rotator · step 3 of 4 — moving 1 000 folders into myprojects", 412, 1000,
+                        on_show=lambda: None)
+    idle.set_idle("Nothing running · last run finished 13:52")
+    ok.set_ok("Run 39 finished cleanly · Moved 1000, returned 998")
+    warn.set_warn("Run 38 finished with problems · 2 folders could not be moved", "See problems",
+                  lambda: None)
     error.set_error("The rotation stopped: access denied writing to myprojects", "Open log",
                     lambda: None)
-    for line in (running, idle, warn, error, cycling):
+    for line in (running, idle, ok, warn, error, cycling):
         column.addWidget(line)
     section.body.addWidget(lines)
     states = [lambda n: cycling.set_running("Copying · harbour_dusk.mp4", n, 41,
                                             on_show=lambda: None),
-              lambda n: cycling.set_idle("Idle · 41 copied at 13:58"),
+              lambda n: cycling.set_ok("Copying 41 folders finished cleanly · 123 of 123 copies made"),
               lambda n: cycling.set_warn("Copied with 3 skipped", "Show", lambda: None),
               lambda n: cycling.set_error("Copier stopped: the destination is full", "Open log",
                                           lambda: None)]
@@ -2161,7 +2165,7 @@ def shell_section() -> Section:
         if rail:
             widget.set_rail(True)
         else:
-            widget.setFixedWidth(theme.SIDEBAR_WIDTH - 2 * theme.SIDEBAR_PAD[1])
+            widget.setFixedWidth(theme.SIDEBAR_ITEMS)
         if how == "selected":
             widget.set_selected(True)
         elif how:
@@ -2256,7 +2260,7 @@ class SampleWindow(QWidget):
         page.addStretch()
         column.addLayout(page, 1)
         status = StatusLine()
-        status.set_idle("Idle · next rotation Saturday 26 September, 09:00")
+        status.set_idle("Nothing running · last run finished 13:52")
         column.addWidget(status)
 
     def paintEvent(self, event) -> None:        # noqa: N802 - Qt's name

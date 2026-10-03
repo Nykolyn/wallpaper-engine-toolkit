@@ -18,9 +18,18 @@ the Rotator's progress while it runs (`41%`) or `ready · run 39` when it is
 not, the leading monitor's count (`4/201`), `idle` or `working` — and under it
 **Next in the loop** says what comes next (`197 left on Monitor1 — rotate
 again ≈21 Sep`). The status line says what is running from any page, with
-**Show** to go to it, and says so when something ended with problems. Below
-1 200 px wide the sidebar folds into a rail of icons; their names are in the
-tool tips.
+**Show** to go to it, and how the last job ended — cleanly in green, with
+problems in amber — until you have looked at its page. Below 1 200 px wide the
+sidebar folds into a rail of icons; their names are in the tool tips.
+
+![The Overview](images/overview.png)
+
+By keyboard: **Tab** goes down the sidebar, then the page's buttons and the
+page itself in reading order, then the status line; **Ctrl+F** jumps to the
+page's filter (Tracker, Rotator, Review); **Enter** answers a question and
+**Esc** cancels it — except one that deletes, where Enter cancels too. With
+Windows' animation effects off, nothing in the window moves: spinners stand
+still beside the word "working".
 
 ## The pages
 
