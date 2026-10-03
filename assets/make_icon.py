@@ -1,113 +1,139 @@
-"""Draw the application icon.
+"""Draw the application icon: the Branding page's mark.
 
 Kept as a script rather than a checked-in binary alone, so the mark can be
 retuned without a paint program:
 
     .venv\\Scripts\\python.exe assets\\make_icon.py
 
-Writes assets/icon.ico (the sizes Windows asks for) and assets/icon.png.
+Writes assets/icon.ico (every size Windows asks for), assets/icon.png (1024 px)
+and assets/icon_preview.png (a contact sheet of the real sizes, to check the
+small ones by eye).
 
-The mark is a stack of wallpapers seen slightly from the side: two cards behind,
-one bright card in front. It has to survive 16x16 in a taskbar, so it is three
-shapes and one gradient — no arrows, no text, nothing that turns to mush.
+The mark is the design's (`Branding`): two overlapping rounded rectangles, a
+grey outline behind and an accent fill in front of it, on a dark rounded tile
+that fades from `#34425F` to `#151A24`. It is drawn here with QPainter from the
+same numbers as the title bar's `BrandMark` (`app/ui/kit/shell.py`), on the
+design's 64-unit grid, and *each size is drawn on its own* rather than the big
+one shrunk: at 16 px the outline is one pixel wide and a shrunk 1024 would
+blur it. The tile's faint inner edge is only drawn from 64 px up, as in the
+design, where the small sizes leave it out.
+
+The colours come from `app/theme.py`, so the icon cannot drift from the app.
+There is no PIL and no SVG library in it; the .ico is written by hand (a
+header, a directory, and one PNG per size, which Windows has read since Vista).
 """
 from __future__ import annotations
 
+import os
+import struct
+import sys
 from pathlib import Path
 
-from PIL import Image, ImageDraw
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+os.environ.setdefault("QT_QPA_FONTDIR", r"C:\Windows\Fonts")
 
 OUT = Path(__file__).resolve().parent
-SIZE = 1024                      # drawn big, downsampled for every real size
-SS = 2                           # extra supersampling on top of that
+sys.path.insert(0, str(OUT.parent))
 
-# Matches app/theme.py's accent.
-ACCENT_TOP = (108, 156, 255)
-ACCENT_BOTTOM = (86, 92, 255)
-CARD_BACK_1 = (58, 66, 92)
-CARD_BACK_2 = (78, 89, 124)
-SHEEN = (255, 255, 255)
+from PySide6.QtCore import QBuffer, QByteArray, QIODevice, QRectF, Qt    # noqa: E402
+from PySide6.QtGui import (                                              # noqa: E402
+    QBrush, QColor, QGuiApplication, QImage, QPainter, QPen)
 
+from app import theme                                                    # noqa: E402
 
-def _gradient(size: int, top: tuple, bottom: tuple) -> Image.Image:
-    grad = Image.new("RGB", (1, size))
-    for y in range(size):
-        t = y / max(size - 1, 1)
-        grad.putpixel((0, y), tuple(
-            round(a + (b - a) * t) for a, b in zip(top, bottom)))
-    return grad.resize((size, size))
+MASTER = 1024
+# 20 and 40 are the 125 % and 250 % taskbar sizes.
+ICO_SIZES = (16, 20, 24, 32, 40, 48, 64, 128, 256)
+SHEET_SIZES = (16, 24, 32, 48, 64, 128, 256)
+EDGE_FROM = 64                   # the tile's inner edge appears from this size
 
-
-def _rounded_mask(size: int, box: tuple[float, float, float, float],
-                  radius: float) -> Image.Image:
-    mask = Image.new("L", (size, size), 0)
-    ImageDraw.Draw(mask).rounded_rectangle(box, radius=radius, fill=255)
-    return mask
+# On the design's 64-unit grid (x, y, width, height, radius[, stroke]).
+TILE = (2, 2, 60, 60, 14)
+EDGE = (2.5, 2.5, 59, 59, 13.5, 1)
+OUTLINE = (13, 15, 25, 20, 4, 4)
+FILL = (24, 27, 27, 22, 4, 3)
 
 
-def draw(size: int) -> Image.Image:
-    canvas = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-    unit = size / 100.0
+def draw(size: int) -> QImage:
+    """The mark at one size, `size` × `size` pixels with a clear background."""
+    image = QImage(size, size, QImage.Format_ARGB32)
+    image.fill(Qt.transparent)
+    painter = QPainter(image)
+    painter.setRenderHint(QPainter.Antialiasing)
+    k = size / 64
 
-    # Two slivers peeking out behind, each narrower and dimmer than the one in
-    # front of it — that is what reads as "a pile of wallpapers". They stay thin
-    # so the picture itself keeps almost the whole square at 16x16.
-    for (x0, y0, x1, y1), colour, alpha in (
-            ((23, 2, 77, 24), CARD_BACK_1, 200),      # narrowest, furthest back
-            ((13, 9, 87, 30), CARD_BACK_2, 235)):
-        box = (x0 * unit, y0 * unit, x1 * unit, y1 * unit)
-        layer = Image.new("RGBA", (size, size), colour + (alpha,))
-        canvas = Image.alpha_composite(
-            canvas, Image.composite(
-                layer, Image.new("RGBA", (size, size), (0, 0, 0, 0)),
-                _rounded_mask(size, box, 6 * unit)))
+    def box(spec) -> QRectF:
+        x, y, w, h = spec[:4]
+        return QRectF(x * k, y * k, w * k, h * k)
 
-    # The front card carries the colour.
-    front = (4 * unit, 16 * unit, 96 * unit, 96 * unit)
-    gradient = _gradient(size, ACCENT_TOP, ACCENT_BOTTOM).convert("RGBA")
-    canvas = Image.alpha_composite(
-        canvas, Image.composite(
-            gradient, Image.new("RGBA", (size, size), (0, 0, 0, 0)),
-            _rounded_mask(size, front, 13 * unit)))
+    tile = box(TILE)
+    painter.setPen(Qt.NoPen)
+    painter.setBrush(QBrush(theme.gradient("brand.tile", tile)))
+    painter.drawRoundedRect(tile, TILE[4] * k, TILE[4] * k)
+    if size >= EDGE_FROM:
+        painter.setBrush(Qt.NoBrush)
+        painter.setPen(QPen(theme.color("sheen"), EDGE[5] * k))
+        painter.drawRoundedRect(box(EDGE), EDGE[4] * k, EDGE[4] * k)
+    painter.setBrush(Qt.NoBrush)
+    painter.setPen(QPen(theme.color("text.lo"), OUTLINE[5] * k))
+    painter.drawRoundedRect(box(OUTLINE), OUTLINE[4] * k, OUTLINE[4] * k)
+    painter.setBrush(theme.color("accent"))
+    painter.setPen(QPen(theme.color("brand.edge"), FILL[5] * k))
+    painter.drawRoundedRect(box(FILL), FILL[4] * k, FILL[4] * k)
+    painter.end()
+    return image
 
-    # A diagonal sheen, clipped to the front card: enough to read as a picture
-    # rather than a plain tile, and it survives being shrunk.
-    sheen = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-    ImageDraw.Draw(sheen).polygon(
-        [(4 * unit, 82 * unit), (42 * unit, 40 * unit),
-         (66 * unit, 64 * unit), (96 * unit, 34 * unit),
-         (96 * unit, 96 * unit), (4 * unit, 96 * unit)],
-        fill=SHEEN + (58,))
-    canvas = Image.alpha_composite(
-        canvas, Image.composite(
-            sheen, Image.new("RGBA", (size, size), (0, 0, 0, 0)),
-            _rounded_mask(size, front, 13 * unit)))
 
-    # One bright dot, the "sun" every wallpaper seems to have.
-    dot = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-    ImageDraw.Draw(dot).ellipse(
-        (66 * unit, 26 * unit, 84 * unit, 44 * unit), fill=SHEEN + (240,))
-    canvas = Image.alpha_composite(
-        canvas, Image.composite(
-            dot, Image.new("RGBA", (size, size), (0, 0, 0, 0)),
-            _rounded_mask(size, front, 13 * unit)))
-    return canvas
+def png_bytes(image: QImage) -> bytes:
+    data = QByteArray()
+    buffer = QBuffer(data)
+    buffer.open(QIODevice.WriteOnly)
+    image.save(buffer, "PNG")
+    buffer.close()
+    return bytes(data)
+
+
+def ico_bytes(sizes=ICO_SIZES) -> bytes:
+    """A multi-size .ico: ICONDIR, one ICONDIRENTRY per size, then the PNGs."""
+    pictures = [(size, png_bytes(draw(size))) for size in sizes]
+    header = struct.pack("<HHH", 0, 1, len(pictures))
+    offset = len(header) + 16 * len(pictures)
+    directory, body = b"", b""
+    for size, data in pictures:
+        side = 0 if size >= 256 else size           # 0 means 256
+        directory += struct.pack("<BBBBHHII", side, side, 0, 0, 1, 32, len(data), offset)
+        body += data
+        offset += len(data)
+    return header + directory + body
+
+
+def read_ico_sizes(data: bytes) -> list[int]:
+    """The sizes an .ico holds, to check what was written."""
+    reserved, kind, count = struct.unpack_from("<HHH", data, 0)
+    if (reserved, kind) != (0, 1):
+        raise ValueError("not an icon file")
+    return [struct.unpack_from("<BB", data, 6 + 16 * n)[0] or 256 for n in range(count)]
+
+
+def sheet() -> QImage:
+    ground = QColor("#16181D")
+    width = sum(SHEET_SIZES) + 20 * (len(SHEET_SIZES) + 1)
+    image = QImage(width, 280, QImage.Format_ARGB32)
+    image.fill(ground)
+    painter = QPainter(image)
+    x = 20
+    for size in SHEET_SIZES:
+        painter.drawImage(x, 140 - size // 2, draw(size))
+        x += size + 20
+    painter.end()
+    return image
 
 
 def main() -> None:
-    master = draw(SIZE * SS).resize((SIZE, SIZE), Image.LANCZOS)
-    master.save(OUT / "icon.png")
-    master.save(OUT / "icon.ico",
-                sizes=[(s, s) for s in (16, 24, 32, 48, 64, 128, 256)])
-
-    # A contact sheet of the real sizes, to check the small ones by eye.
-    sizes = (16, 24, 32, 48, 64, 128, 256)
-    sheet = Image.new("RGBA", (sum(sizes) + 20 * len(sizes), 280), (22, 24, 29, 255))
-    x = 10
-    for s in sizes:
-        sheet.alpha_composite(master.resize((s, s), Image.LANCZOS), (x, 140 - s // 2))
-        x += s + 20
-    sheet.save(OUT / "icon_preview.png")
+    QGuiApplication.instance() or QGuiApplication(sys.argv[:1])
+    draw(MASTER).save(str(OUT / "icon.png"))
+    (OUT / "icon.ico").write_bytes(ico_bytes())
+    sheet().save(str(OUT / "icon_preview.png"))
     print(f"wrote {OUT / 'icon.ico'}, {OUT / 'icon.png'}, {OUT / 'icon_preview.png'}")
 
 

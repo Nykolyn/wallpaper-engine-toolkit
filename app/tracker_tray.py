@@ -2,14 +2,22 @@
 
 The playlist advances whether or not the toolkit window is open, so the count is
 only trustworthy if something keeps polling. This is that something: a tray
-icon drawn as a progress ring, a tooltip with the per-monitor `seen/total`, and
-a balloon the moment a playlist has been shown end to end — which is the cue to
-run the next rotation. Clicking the icon opens the toolkit window on its Tracker
-tab — as a program of its own, so the tray keeps counting whatever the window
-does, and when it is closed.
+icon drawn as a ring (`tray_icon`), a tooltip with the per-monitor count, a menu
+that says in words what the ring says (`tray_menu`, `tray_words`), and a balloon
+the moment a playlist has been shown end to end — which is the cue to run the
+next rotation. Clicking the icon opens the toolkit window on its Tracker page —
+as a program of its own, so the tray keeps counting whatever the window does,
+and when it is closed.
 
 Started with ``WallpaperEngineToolkit.exe --tracker`` (or ``run_tracker.cmd``), and by
 Windows itself when autostart is on.
+
+**Kept light.** This process starts from a logon task at below-normal CPU and
+low disk priority, and lives all day. It draws no stylesheet, imports none of
+the kit, and its GUI thread never touches the wallpaper disks: the menu reads
+two small files in the data folder when it opens, and nothing it does waits on
+``schtasks`` (the old menu asked it for the autostart switch every time it was
+rebuilt, and the hang log caught that taking 29 seconds).
 """
 from __future__ import annotations
 
@@ -21,18 +29,20 @@ import traceback
 from ctypes import wintypes
 from datetime import datetime
 
-from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import (
-    QAction, QActionGroup, QColor, QFont, QIcon, QPainter, QPen, QPixmap)
-from PySide6.QtWidgets import QApplication, QMenu, QSystemTrayIcon
+from PySide6.QtCore import QTimer
+from PySide6.QtWidgets import QApplication, QSystemTrayIcon
 
-from . import autostart, theme, window_instance
+from . import theme, tray_words as words, window_instance
+from .branding import DISPLAY_NAME
 from .hang_watch import HangWatch
 from .engines.tracker import (
     FALLBACK_SECONDS, TIME_FMT, Progress, Tracker, app_data_dir, pick_primary)
 from .engines.wallpaper_timer import Countdown, WallpaperTimer
 from .settings import Settings
 from .tracker_feed import TRAY_MUTEX, TrackerFeed, heartbeat_setting
+from .tray_icon import (
+    FINISHED, RING_STEPS, RUNNING, TaskbarTheme, tray_icon, UNKNOWN)
+from .tray_menu import OPEN, QUIT, REVIEW, ROTATE, SETTINGS, TrayMenu, build_model
 
 
 # A windowed build has no console, so a start that goes wrong leaves no trace.
@@ -51,9 +61,14 @@ TRAY_POLL_SECONDS = 2
 CLOCK_TICK_MS = 1000
 # A restart found later than this (the tray was not running) is not news any more.
 RESTART_NOTICE_SECONDS = 15 * 60
-# The ring is redrawn in 2-degree steps: on a 10-minute delay that is a new icon
-# every few seconds rather than every second, which the eye cannot tell apart.
-RING_STEPS = 180
+# The ring is what ``tray_icon.RING_STEPS`` says: 2-degree steps. The design
+# (gate G5 B) would redraw the icon once a minute, on a playlist change; gate G5
+# A keeps the ring as the time left on the current wallpaper, which does move by
+# the second, so the redraws are instead made only when a step is crossed: on a
+# 10-minute delay that is a new icon every few seconds, never one a second.
+
+# What a balloon was about, for what a click on it should open.
+BALLOON_FINISHED, BALLOON_RESTARTED = "finished", "restarted"
 
 
 def log(message: str) -> None:
@@ -77,54 +92,6 @@ def _seconds_since(stamp: str) -> float:
         return float("inf")
 
 
-def _ring_colors() -> tuple[QColor, QColor, QColor]:
-    """Track, running fill and paused fill for the ring, from the theme."""
-    return (theme.composite("border.strong", "bg.solid"), theme.color("accent"),
-            theme.color("text.lo"))
-
-
-def tray_icon(number: int | None, ring: float | None, paused: bool = False,
-              finished: bool = False) -> QIcon:
-    """The tray icon: a ring filled to `ring` (0..1), and `number` in the middle.
-
-    What the two stand for is the caller's business — today the ring is the
-    time left on the wallpaper and the number is how much of the playlist has
-    been shown, and a display setting can swap either without touching this.
-    A ring of None draws the empty track only; `paused` greys the fill;
-    `finished` turns the number the "done" colour.
-    """
-    size = 64
-    pix = QPixmap(size, size)
-    pix.fill(Qt.transparent)
-
-    painter = QPainter(pix)
-    painter.setRenderHint(QPainter.Antialiasing)
-
-    margin, width = 6, 8
-    rect = pix.rect().adjusted(margin, margin, -margin, -margin)
-    track, running, stopped = _ring_colors()
-
-    painter.setPen(QPen(track, width, Qt.SolidLine, Qt.FlatCap))
-    painter.drawEllipse(rect)
-
-    if ring is not None and ring > 0:
-        painter.setPen(QPen(stopped if paused else running, width,
-                            Qt.SolidLine, Qt.RoundCap))
-        # Qt angles are 1/16th of a degree, counter-clockwise from 3 o'clock.
-        painter.drawArc(rect, 90 * 16, -int(360 * 16 * min(ring, 1.0)))
-
-    if number is not None:
-        font = QFont()
-        font.setPixelSize(26 if number < 100 else 22)
-        font.setBold(True)
-        painter.setFont(font)
-        painter.setPen(theme.color("ok" if finished else "text.body"))
-        painter.drawText(pix.rect(), Qt.AlignCenter, str(number))
-    painter.end()
-
-    return QIcon(pix)
-
-
 class TrackerTray:
     """Follows Wallpaper Engine in the background and renders the result into the tray."""
 
@@ -138,6 +105,7 @@ class TrackerTray:
         self._icon_key = None
         self._clock_failed = False
         self._following: bool | None = None
+        self._balloon: str | None = None
 
         # The count and the countdown read the same two files through one
         # watcher. The count does not wait on the countdown's tick, though: that
@@ -149,13 +117,22 @@ class TrackerTray:
         self.feed.config_changed.connect(self._build_clock)
         self._build_clock()
 
-        self.icon = QSystemTrayIcon(tray_icon(0, None))
-        self.icon.setToolTip("Toolkit")
-        self.icon.activated.connect(self._on_activated)
+        # Which colours the icon wears depends on the taskbar's, which Windows
+        # can change under a running tray (and does, at sunset, for some).
+        self.taskbar = TaskbarTheme()
+        self.taskbar.changed.connect(self._taskbar_changed)
+        self.taskbar.listen(app)
 
-        self.menu = QMenu()
-        # Rebuilt as it opens, so the countdown in it is never half a minute old.
+        self.icon = QSystemTrayIcon(tray_icon(UNKNOWN, light=self.taskbar.light))
+        self.icon.setToolTip(DISPLAY_NAME)
+        self.icon.activated.connect(self._on_activated)
+        self.icon.messageClicked.connect(self._on_message_clicked)
+
+        self.menu = TrayMenu()
+        # Built as it opens, so what it says is never half a minute old, and the
+        # two files it reads are read only when somebody looks.
         self.menu.aboutToShow.connect(self._rebuild_menu)
+        self.menu.chosen.connect(self._on_chosen)
         self.icon.setContextMenu(self.menu)
         self.icon.show()
 
@@ -172,9 +149,6 @@ class TrackerTray:
         self.clock.log = log            # whether Wallpaper Engine's own timer was found
 
     # ------------------------------------------------------------- polling
-    def refresh(self):
-        self.feed.refresh()
-
     def _on_update(self):
         self.results = self.feed.results
         if self.feed.following != self._following:
@@ -184,7 +158,7 @@ class TrackerTray:
                 f"tracker: no readable playliststate.bin — looking every "
                 f"{FALLBACK_SECONDS} s instead")
         self._announce_completions()
-        self._render()
+        self._render_icon()
 
     def _tick_clock(self):
         """Advance every monitor's countdown by a second and redraw if it shows."""
@@ -197,6 +171,11 @@ class TrackerTray:
                 self._clock_failed = True
                 log("countdown failed, ring disabled:\n" + traceback.format_exc())
             self.countdowns = {}
+        self.taskbar.poll()
+        self._render_icon()
+
+    def _taskbar_changed(self, _light: bool):
+        self._icon_key = None
         self._render_icon()
 
     def _announce_completions(self):
@@ -213,26 +192,28 @@ class TrackerTray:
                     # the news can come from, and it must come once.
                     if p.previous_id not in self.completed:
                         self.completed.add(p.previous_id)
-                        total = p.restarted_from.split("/")[-1]
-                        self.icon.showMessage(
-                            "Playlist finished",
-                            f"{p.monitor} · “{p.playlist}”: all {total} wallpapers shown, "
-                            f"and Wallpaper Engine has begun the next pass. Time to rotate.",
-                            QSystemTrayIcon.Information, 20000)
+                        self._say_finished(p.monitor, int(p.restarted_from.split("/")[-1]))
                     continue
-                self.icon.showMessage(
-                    "Playlist started over",
-                    f"Wallpaper Engine began “{p.playlist}” on {p.monitor} again. "
-                    f"The count starts over at {p.label} (it had reached {p.restarted_from}).",
-                    QSystemTrayIcon.Information, 20000)
+                self._say_restarted(p)
         for p in self.results:
             if p.total and p.seen >= p.total and p.cycle_id not in self.completed:
                 self.completed.add(p.cycle_id)
-                self.icon.showMessage(
-                    "Playlist finished",
-                    f"{p.monitor} · “{p.playlist}”: all {p.total} wallpapers shown "
-                    f"in {p.changes} changes. Time to rotate.",
-                    QSystemTrayIcon.Information, 20000)
+                self._say_finished(p.monitor, p.total)
+
+    def _say_finished(self, monitor: str, total: int):
+        title, body = words.finished_balloon(monitor, total, words.rotation_batch())
+        self._say(BALLOON_FINISHED, title, body, tray_icon(FINISHED, light=self.taskbar.light))
+
+    def _say_restarted(self, p: Progress):
+        title, body = words.restarted_balloon(p.monitor, p.seen, p.total)
+        share = p.seen / p.total if p.total else None
+        self._say(BALLOON_RESTARTED, title, body,
+                  tray_icon(RUNNING, share, p.percent, light=self.taskbar.light))
+
+    def _say(self, kind: str, title: str, body: str, icon):
+        """One of the two balloons; a click on it opens the page it is about."""
+        self._balloon = kind
+        self.icon.showMessage(title, body, icon, 20000)
 
     # ------------------------------------------------------------ rendering
     def _primary(self) -> Progress | None:
@@ -240,145 +221,95 @@ class TrackerTray:
         self.settings.reload_if_changed()
         return pick_primary(self.results, self.settings.get("tracker", "primary", None))
 
-    def _render(self):
-        self._render_icon()
-        if not self.menu.isVisible():
-            self._rebuild_menu()
+    def _reading(self) -> tuple[Progress | None, str, float | None, int | None]:
+        """The lead monitor, and what the icon shows of it: state, ring, number."""
+        primary = self._primary()
+        countdown = self.countdowns.get(primary.monitor) if primary else None
+        state, fraction = words.icon_state(primary, countdown)
+        return primary, state, fraction, (primary.percent if primary else None)
 
     def _render_icon(self):
         """The icon and its tooltip: cheap enough to run every tick."""
-        primary = self._primary()
-        if primary is None:
-            key = ("none", self.tracker.error)
-            if key != self._icon_key:
-                self._icon_key = key
-                self.icon.setIcon(tray_icon(0, None))
-                self.icon.setToolTip((self.tracker.error or "No playlist found")[:127])
-            return
-
-        countdown = self.countdowns.get(primary.monitor)
-        ring = countdown.fraction if countdown else None
-        paused = bool(countdown and countdown.paused)
-        finished = primary.seen >= primary.total
-        step = None if ring is None else round(ring * RING_STEPS)
+        primary, state, fraction, number = self._reading()
+        step = None if fraction is None else round(fraction * RING_STEPS)
+        light = self.taskbar.light
+        key = (state, step, number, light)
+        if key != self._icon_key:
+            self._icon_key = key
+            self.icon.setIcon(tray_icon(state, fraction, number, light=light))
         # Windows truncates a tray tooltip at 128 characters, so it gets one
         # short line per monitor and nothing else; the detail is in the menu
         # and in the window a click opens.
-        lines = []
-        for p in self.results:
-            mark = "▸" if p is primary else " "
-            left = "done" if not p.remaining else f"{p.remaining} left"
-            timing = self.countdowns.get(p.monitor)
-            when = f" · {timing.describe()}" if timing and timing.describe() else ""
-            lines.append(f"{mark} “{p.playlist}” {p.label} · {left}{when}")
-        tooltip = "\n".join(lines)[:127]
-
-        key = (primary.percent, finished, step, paused)
-        if key != self._icon_key:
-            self._icon_key = key
-            self.icon.setIcon(tray_icon(primary.percent, ring, paused, finished))
+        tooltip = words.tooltip(self.results, primary, self.countdowns,
+                                self.tracker.error or "")
         if tooltip != self.icon.toolTip():
             self.icon.setToolTip(tooltip)
 
     def _rebuild_menu(self):
-        self.menu.clear()
-
-        if self.tracker.error:
-            error = self.menu.addAction(self.tracker.error)
-            error.setEnabled(False)
-
-        for p in self.results:
-            entry = self.menu.addAction(
-                f"{p.monitor} “{p.playlist}” — {p.label}  ({p.percent}%)")
-            entry.setEnabled(False)
-            timing = self.countdowns.get(p.monitor)
-            if timing and timing.describe():
-                line = self.menu.addAction(f"      {timing.describe()}")
-                line.setEnabled(False)
-        if self.results:
-            self.menu.addSeparator()
-
-        self.menu.addAction("Open Toolkit", self.open_toolkit)
-        self.menu.addAction("Refresh now", self.refresh)
-
-        if len(self.results) > 1:
-            pick = self.menu.addMenu("Show on the icon")
-            group = QActionGroup(self.menu)
-            group.setExclusive(True)
-            primary = self._primary()
-            for p in self.results:
-                action = pick.addAction(f"{p.monitor} “{p.playlist}”")
-                action.setCheckable(True)
-                action.setChecked(p is primary)
-                action.triggered.connect(lambda _c=False, m=p.monitor: self._set_primary(m))
-                group.addAction(action)
-
-        if self.results:
-            reset = self.menu.addMenu("New cycle")
-            for p in self.results:
-                reset.addAction(f"{p.monitor} “{p.playlist}”",
-                                lambda _c=False, m=p.monitor: self._reset(m))
-
-        self.menu.addSeparator()
-        auto = QAction("Start with Windows", self.menu)
-        auto.setCheckable(True)
-        auto.setChecked(autostart.is_enabled())
-        auto.toggled.connect(self._toggle_autostart)
-        self.menu.addAction(auto)
-        self.menu.addSeparator()
-        self.menu.addAction("Quit", self.app.quit)
+        primary, state, fraction, number = self._reading()
+        line = words.header_line(state, primary, self.tracker.error or "")
+        self.menu.set_model(build_model(
+            state, fraction, number, line,
+            run_hint=words.run_hint(words.next_run_number()),
+            review_hint=words.review_hint(words.review_waiting())))
 
     # -------------------------------------------------------------- actions
-    def _toggle_autostart(self, on: bool):
-        try:
-            autostart.set_enabled(on)
-        except OSError as e:
-            self.icon.showMessage("Autostart", f"Could not change it: {e}",
-                                  QSystemTrayIcon.Warning, 10000)
-
-    def _set_primary(self, monitor: str):
-        self.settings.reload_if_changed()       # not to write back what the window changed
-        self.settings.set("tracker", "primary", monitor)
-        self.settings.save()
-        self._render()
-
-    def _reset(self, monitor: str):
-        self.tracker.reset(monitor)
-        self.refresh()
+    def _on_chosen(self, key: str):
+        if key == OPEN:
+            self.open_toolkit()
+        elif key == ROTATE:
+            # Only the question: the Rotator page checks the folders and asks
+            # "Start run N?", and nothing moves until it is answered yes.
+            self.open_toolkit("Rotator", window_instance.command("rotate", "confirm"))
+        elif key == REVIEW:
+            self.open_toolkit("Review")
+        elif key == SETTINGS:
+            self.open_toolkit("Settings")
+        elif key == QUIT:
+            self.app.quit()
 
     def _on_activated(self, reason):
         if reason in (QSystemTrayIcon.Trigger, QSystemTrayIcon.DoubleClick):
             self.open_toolkit()
 
-    def open_toolkit(self):
-        """Bring up the Toolkit window, on the Tracker page.
+    def _on_message_clicked(self):
+        """A click on a balloon: the Rotator after "Playlist finished" (the cue to
+        rotate), the Tracker after "Playlist started over"."""
+        if self._balloon == BALLOON_FINISHED:
+            self.open_toolkit("Rotator")
+        elif self._balloon == BALLOON_RESTARTED:
+            self.open_toolkit("Tracker")
 
-        The window is a program of its own (see `window_instance`), not
-        something built inside the tray: when it was, a window that froze took
-        the count down with it, as it did on 18 September. An open window is
-        asked to come forward; otherwise one is started.
+    def open_toolkit(self, page: str = "Tracker", command: str | None = None):
+        """Bring up the Toolkit window, on a page (the Tracker, by default), and
+        with a command for it to carry out (see `window_instance`).
+
+        The window is a program of its own, not something built inside the
+        tray: when it was, a window that froze took the count down with it, as
+        it did on 18 September. An open window is asked to come forward;
+        otherwise one is started.
         """
-        if window_instance.ask_to_show("Tracker", wait=0):
+        if window_instance.ask_to_show(page, wait=0, command=command):
             return
         if window_instance.already_running():
             # A window exists and its socket did not answer: it is still
             # starting — give it a moment — or it has stopped answering. A second
             # one would only stack up behind it, so say so instead.
-            if window_instance.ask_to_show("Tracker", wait=3):
+            if window_instance.ask_to_show(page, wait=3, command=command):
                 return
             log("the toolkit window did not answer a request to show itself")
             self.icon.showMessage(
-                "Toolkit",
-                "The Toolkit window is not answering yet. If it stays that way, "
+                DISPLAY_NAME,
+                f"The {DISPLAY_NAME} window is not answering yet. If it stays that way, "
                 "close it from Task Manager — the tracker keeps counting either way.",
                 QSystemTrayIcon.Warning, 10000)
             return
         try:
-            child = window_instance.launch("Tracker")
+            child = window_instance.launch(page, command)
             log(f"opened the toolkit window: pid {child.pid}")
         except OSError as err:
             log(f"could not open the toolkit window: {err}")
-            self.icon.showMessage("Toolkit",
+            self.icon.showMessage(DISPLAY_NAME,
                                   f"Could not open the window: {err}",
                                   QSystemTrayIcon.Warning, 10000)
 
@@ -432,7 +363,7 @@ def run_tray() -> int:
 
         app = QApplication(sys.argv)
         app.setApplicationName("Wallpaper Tracker")
-        theme.apply(app)
+        theme.apply(app, styled=False)
         app.setQuitOnLastWindowClosed(False)
 
         if not _wait_for_tray():

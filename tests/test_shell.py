@@ -222,9 +222,19 @@ except ValueError:
     check("a verb that is no verb is refused", True)
 w.handle_command("show", "copier")
 check("show:copier brings the window to Copier", w.current_page() == "copier" and w.isVisible())
-w.handle_command("rotate", "confirm")
+w.handle_command("frobnicate", "now")
 check("a verb this version does not know only brings the window forward",
       w.current_page() == "copier" and w.isVisible())
+started: list[bool] = []
+w.pages["rotator"].start_rotation = lambda: started.append(True)
+w.handle_command("rotate", "other")
+check("rotate with an argument it does not know starts nothing",
+      started == [] and w.current_page() == "copier")
+w.handle_command("rotate", "confirm")
+check("rotate:confirm shows the Rotator and asks its start question, once",
+      w.current_page() == "rotator" and started == [True])
+del w.pages["rotator"].start_rotation
+w.show_page("copier")
 
 print("-- the rail --")
 w.resize(1199, 800)

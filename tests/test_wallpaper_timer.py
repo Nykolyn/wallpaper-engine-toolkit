@@ -621,39 +621,7 @@ check("and read once it has settled", out["Monitor1"].exact and out["Monitor0"].
 check("after which no window on screen needs looking at at all", looks["screens"] == 1)
 
 
-# ---- The tray icon ---------------------------------------------------------------
-
-from PySide6.QtGui import QColor, QImage        # noqa: E402
-from PySide6.QtWidgets import QApplication      # noqa: E402
-
-app = QApplication.instance() or QApplication(sys.argv)
-from app import theme                          # noqa: E402
-from app.tracker_tray import tray_icon         # noqa: E402
-
-theme.apply(app)
-
-
-def pixels(icon) -> QImage:
-    return icon.pixmap(64, 64).toImage().convertToFormat(QImage.Format_ARGB32)
-
-
-def near(image: QImage, x: int, y: int, colour: str) -> bool:
-    want = theme.color(colour)
-    got = image.pixelColor(x, y)
-    return (abs(got.red() - want.red()) < 40 and abs(got.green() - want.green()) < 40
-            and abs(got.blue() - want.blue()) < 40 and got.alpha() > 200)
-
-
-full = pixels(tray_icon(42, 1.0))
-check("a full ring is drawn in the running colour at the top", near(full, 32, 6, "accent"))
-half = pixels(tray_icon(42, 0.5))
-check("half a ring covers the right side", near(half, 54, 32, "accent"))
-check("and leaves the left side as bare track", not near(half, 10, 32, "accent"))
-check("no ring at all when the time is unknown", not near(pixels(tray_icon(42, None)), 32, 6,
-                                                          "accent"))
-check("a paused ring is greyed rather than blue", near(pixels(tray_icon(42, 1.0, paused=True)),
-                                                       32, 6, "text.lo"))
-check("the icon still draws with nothing in the middle", not tray_icon(None, 0.3).isNull())
+# The ring the tray draws from these countdowns is tested in test_tray_icon.py.
 
 
 # ---- Live, opt-in ---------------------------------------------------------------

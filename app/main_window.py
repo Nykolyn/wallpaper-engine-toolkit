@@ -26,6 +26,7 @@ from PySide6.QtGui import QKeySequence, QPainter, QShortcut
 from PySide6.QtWidgets import QHBoxLayout, QMainWindow, QStackedWidget, QVBoxLayout, QWidget
 
 from . import animations, services, theme
+from .branding import DISPLAY_NAME
 from .pages.base import Page
 from .services.snapshot import PLAYLIST, parse_estimate
 from .settings import Settings
@@ -35,7 +36,6 @@ from .ui.kit import base as kit_base
 from .ui.kit import format as fmt
 from .window_frame import NativeFrame
 
-DISPLAY_NAME = "Toolkit"            # gate G10: the window, the tray, notifications
 # The pages, in the order of the loop; Ctrl+1 is the first.
 PAGE_ORDER = ("overview", "rotator", "tracker", "review", "creator", "copier", "settings")
 DEFAULT_PAGE = "overview"
@@ -332,8 +332,15 @@ class MainWindow(QMainWindow):
         self.activateWindow()
 
     def handle_command(self, verb: str, argument: str) -> None:
-        """A window command (see window_instance): `show:<page>` now. A command
-        this version does not know still brings the window forward."""
+        """A window command (see window_instance): `show:<page>`, and
+        `rotate:confirm`, the tray's "Rotate now…": the Rotator, and its start
+        question (the check of the folders, then "Start run N?"; nothing is
+        moved before that is answered). A command this version does not know
+        still brings the window forward."""
+        if (verb, argument) == ("rotate", "confirm"):
+            self.bring_forward("rotator")
+            self.pages["rotator"].start_rotation()
+            return
         self.bring_forward(argument if verb == "show" else "")
 
     # -- the frame's own behaviour

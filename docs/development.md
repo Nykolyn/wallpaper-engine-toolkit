@@ -17,6 +17,7 @@ app/
 ├── main_window.py        the frame: title bar, sidebar, page header, the pages, the status line
 ├── window_frame.py       the title bar's Windows side: hit testing, snap, DWM
 ├── window_instance.py    one window; the requests a second launch or the tray send it
+├── branding.py           the product's names: "Toolkit", "Toolkit for Wallpaper Engine"
 ├── selfcheck.py          what a build can import and reach (--selfcheck, Settings)
 ├── pages/                the window's pages, in the order of the loop:
 │   ├── base.py           Page, SideScroll (a page's 330 px left column)
@@ -34,6 +35,9 @@ app/
 ├── settings.py           data/suite.json
 ├── secrets.py            data/secrets.json, DPAPI-encrypted
 ├── tracker_tray.py       the tracker as a tray-only app (--tracker)
+├── tray_icon.py          the tray's ring: four states, drawn per size; the taskbar's colour
+├── tray_menu.py          the tray's menu: a QMenu that paints itself
+├── tray_words.py         the tray's tooltip, menu hints and balloon copy; three small readers
 ├── tracker_feed.py       one tracker, looked at when Wallpaper Engine writes
 ├── autostart.py          the logon task, and the rename migration
 ├── external.py           starting other programs without the toolkit's own DLLs
@@ -79,7 +83,17 @@ app/
 `tools/kit_preview.py` and `tools/ui_snapshot.py` sit outside the app: a
 window that draws the design system from the app's own code, and a picture of
 the real window in a made-up state (see [Look and feel](#look-and-feel) and
-[Snapshots](#snapshots)).
+[Snapshots](#snapshots)). `tools/tray_preview.py` draws the tray's icon, menu
+and balloon copy the same way (`--grab icons|menu|notes <png>`).
+
+**The tray process stays light.** It runs all day at below-normal CPU and low
+disk priority, so `tracker_tray`, `tray_icon`, `tray_menu` and `tray_words`
+import none of `app.ui`, `app.pages` or `app.main_window` (`run_app.py` imports
+the window only when it is going to open one), and `theme.apply(app,
+styled=False)` leaves the stylesheet out. The menu's four icons are embedded as
+SVG strings because importing `app.ui.kit.icons` would load the whole kit;
+`test_tray_icon.py` fails if one drifts from the kit's drawing, or if importing
+the tray pulls the window in.
 
 Copier's page owns CopySignals and a MeasureWorker. Creator's page owns a
 `ReadWorker` for source metadata and `BuildSignals` for its callback engine;
@@ -367,8 +381,12 @@ shared by two views:
 
 **Window requests** (`window_instance`): a second launch or the tray sends one
 line — `show <page>`, which every version understands, or the command form
-`<verb>:<argument>` (`show:rotator`; `rotate:confirm` is the tray's, to
-come). `WindowInstance.command_received(verb, argument)` hands each to
+`<verb>:<argument>` (`show:rotator`; `rotate:confirm` is the tray's "Rotate
+now…": the Rotator, and its start question). A command follows a `show <page>`
+line in one write, so a window from before the command existed still comes
+forward on the right page; a window that is not running yet is started with
+`--command <verb:argument>` and carries it out once it is up.
+`WindowInstance.command_received(verb, argument)` hands each to
 `MainWindow.handle_command`; a verb this version does not know still brings
 the window forward. `--tab <page>` takes the old tab names and the page keys,
 in any case; anything else opens Overview.
@@ -566,6 +584,7 @@ for %f in (tests\test_*.py) do .venv\Scripts\python.exe %f
 | `test_review_page.py` | every state's words (the subtitles, the empty and stopped states, the scan's figure, the rows, the plan and its keyless default, the finished state, the sidebar); the page end to end on a Steam of dictionaries: a scan, Done with, subscribing a page and noticing subscriptions made elsewhere, selecting and Subscribe selected, Grid / List remembered, Skip for now, Finish review writing the database, a keyless review warned about, Steam stopping and carrying on, a cancel, a restore during a scan; the review as a list and back; the author list's keys; Review settings and the authors dialog's restore; no file read in the constructor |
 | `test_gallery.py` | the marks, their chips and edges; the column count by width and the 16:9 crop; every card painted in every state; the clicks (subscribe, Ctrl, Shift, the check, Esc) and the selection across pages; the spinner repainting only itself; the list view's cells, its button and its selection; memory and animation bounds; one Steamworks queue for every subscription |
 | `test_hang_watch.py` | a stuck GUI thread leaves its stacks in the hang log |
+| `test_tray_icon.py` | the tray's ring: each state at each size, the arc by sampling pixels along the circle, the number from 24 px and the dot below, the light taskbar's colours and hearing Windows change them; the icon's state from the tracker's reading; the menu's words, tooltip and the two balloons' copy with a number known and not; once per cycle; the menu's rows, what each opens, and a click on a balloon; the readers leaving a damaged file alone; the tray importing no window code |
 | `test_window_instance.py` | one window, raised from the tray, in a process of its own; the plain request and the command form on the socket |
 | `test_shell.py` | pages in the loop's order, the sidebar and Ctrl+number; `--tab` names; the window command parser; the rail below 1 200 px; the status line bound to the JobCenter (Show, problems until seen); the cross-fade, and none with motion off; the Settings page writing `config.json` and `suite.json`, read-only while the Rotator works; the window and the tray reading each other's `suite.json`; the title bar's hit testing; `ui_snapshot` at a size and scale |
 | `test_tracker_page.py` | the tracker's Progress as a monitor card in every state (paused, Wallpaper Engine stopped, restarted, finished); the countdown's words (`≈`, paused, any moment); the pace and the finish sentence; the notes the count rests on; the playlist's groups, order, `~` times, filter and authors; titles and authors read from project.json, the Steam cache and the authors database (never written); the countdown as a reader of the tray's file; every fixture; no file read on the GUI thread; which rows offer Send to Copier and Mark [protected], the question's words, the rename on a worker against folders made here, a failed rename (name taken, gone, in use, denied) changing nothing, the row after it; Send to Copier through `build_pages` into the Copier's list with the default count, once, and the toast's Show |
