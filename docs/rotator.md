@@ -2,6 +2,8 @@
 
 **Moves wallpaper folders between a reserve and `myprojects`, both ways.**
 
+![A rotation under way: its steps on the left, its log on the right (made-up data)](images/rotator.png)
+
 ## What it is for
 
 Wallpaper Engine shows what is in `myprojects`. A library of thirty thousand

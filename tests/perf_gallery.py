@@ -4,7 +4,7 @@ Not a test (the runner takes `test_*.py` only): a measurement to run by hand
 before and after a change to `app/ui/gallery.py`, with its numbers in the
 pull request.
 
-    .venv\\Scripts\\python.exe tests\\perf_gallery.py [--busy 2] [--seconds 20] [--size 700x640]
+    .venv\\Scripts\\python.exe tests\\perf_gallery.py [--busy 2] [--seconds 20] [--size 700x640] [--items 1200]
 
 A page of thirty animated previews is made up here (Pillow draws them: 400 ×
 400, 24 frames at 25 a second, moving shapes over noise, so decoding costs
@@ -20,7 +20,9 @@ What it reports:
 - **frame time**: how long each repaint of the gallery's viewport took
   (p50 / p95 / worst) and how many there were;
 - how many previews played, and for how long the animation rested because
-  the window was behind.
+  the window was behind;
+- with `--items N` (a review's whole gallery, paged by 30): how long taking
+  all N and turning ten pages took. The thirty previews are page one's.
 
 It drives the view through what every version of it has had — `show_items`,
 `_image_arrived`, `_sync_players`, `_players`, `resting` — so the same file
@@ -46,6 +48,7 @@ def _args():
     parser.add_argument("--size", default="700x640")
     parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parent.parent)
     parser.add_argument("--switch", type=float, default=0.0005)
+    parser.add_argument("--items", type=int, default=30)
     return parser.parse_args()
 
 
@@ -110,16 +113,26 @@ def main() -> int:
     window.show()
 
     wallpapers = []
-    for i in range(30):
+    for i in range(max(30, args.items)):
         item = ItemDetails(id=str(9_000_000_100 + i), ok=True, creator="76561198000000001",
                            title=f"Made-up preview {i + 1}", created=1750000000 + i,
                            updated=1750000000 + i, preview="", kind="Scene",
                            file_size=(30 + i * 7) * 1024 ** 2)
         wallpapers.append(Wallpaper(item=item, owned_checked=True))
+    started = time.perf_counter()
     view.show_items(wallpapers)
     app.processEvents()
+    taking = time.perf_counter() - started
+    turns = []
+    for page in range(2, min(view.pages, 11) + 1):
+        started = time.perf_counter()
+        view.set_page(page)
+        app.processEvents()
+        turns.append(time.perf_counter() - started)
+    view.set_page(1)
+    app.processEvents()
     gifs = [make_gif(i) for i in range(30)]
-    for wallpaper, data in zip(wallpapers, gifs):
+    for wallpaper, data in zip(wallpapers[:30], gifs):
         frame = QImage.fromData(data)
         view._image_arrived(wallpaper.id, QByteArray(data), frame)
     deadline = time.monotonic() + 1.0
@@ -174,6 +187,10 @@ def main() -> int:
     print(f"root      {args.root}")
     print(f"viewport  {view.viewport().width()} x {view.viewport().height()}, "
           f"{args.busy} busy thread(s), switch interval {args.switch * 1000:g} ms")
+    if args.items > 30:
+        turned = sorted(t * 1000 for t in turns)
+        print(f"gallery   {args.items} wallpapers, {view.pages} pages: taken in {taking * 1000:.1f} ms; "
+              f"a page turned in {statistics.median(turned):.1f} ms (worst {turned[-1]:.1f})")
     print(f"players   {len(view._players)}")
     print(f"clock     {len(ticks)} of {expected} ticks, worst gap {worst * 1000:.0f} ms")
     print(f"paints    {len(ms)} in {args.seconds:g} s; p50 {statistics.median(ms) if ms else 0:.2f} ms, "

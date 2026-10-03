@@ -2305,6 +2305,9 @@ class ReviewPage(Page):
                 "done": (self.done.body(), self.done.meta(), self.done_foot.text.text()),
                 "keyless": not self.keyless.isHidden()}
 
+    def filter_field(self) -> QWidget | None:
+        return self.authors.filter
+
     def frame_fixture(self, state: str) -> dict | None:
         if state not in self.FIXTURES:
             return None

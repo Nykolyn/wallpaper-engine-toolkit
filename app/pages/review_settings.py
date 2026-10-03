@@ -547,6 +547,7 @@ class AuthorsDialog(OverlayDialog):
 
         self.model = BackupModel(self)
         self.table = Table()
+        self.table.setAccessibleName("Backups of the authors database")
         self.table.setModel(self.model)
         self.table.setSelectionMode(QAbstractItemView.SingleSelection)
         self.table.setAccessibleName("Backups")

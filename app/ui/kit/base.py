@@ -32,7 +32,9 @@ from PySide6.QtCore import (
     QEvent, QMargins, QObject, QPoint, QRect, QRectF, QSize, Qt, QVariantAnimation,
 )
 from PySide6.QtGui import QColor, QFontMetricsF, QPainter, QRegion
-from PySide6.QtWidgets import QAbstractScrollArea, QLabel, QSizePolicy, QWidget
+from PySide6.QtWidgets import (
+    QAbstractScrollArea, QAbstractSpinBox, QComboBox, QLabel, QLayout, QSizePolicy, QWidget,
+)
 
 from ... import animations, theme
 from . import icons
@@ -324,6 +326,49 @@ class _Filter(QObject):
             paint(painter, watched, event.rect())
             painter.end()
         return False
+
+
+def tab_stops(root: QWidget) -> list[QWidget]:
+    """`root`'s widgets that Tab stops at, in the order its layouts set them
+    out: down a column, along a row. Qt's own order is the order widgets were
+    made in, which puts a row built later (a checklist's, a monitor's card)
+    after everything else. Widgets in no layout follow their parent's laid-out
+    ones. A spin box's or a combo box's line edit is the box's, not a stop."""
+    stops: list[QWidget] = []
+    seen: set[int] = set()
+
+    def visit(widget: QWidget) -> None:
+        if id(widget) in seen or widget.isWindow():
+            return
+        seen.add(id(widget))
+        parent = widget.parentWidget()
+        if widget.focusPolicy() & Qt.TabFocus and not isinstance(parent, (QAbstractSpinBox, QComboBox)):
+            stops.append(widget)
+        inside(widget)
+
+    def walk(layout: QLayout) -> None:
+        for i in range(layout.count()):
+            item = layout.itemAt(i)
+            if item.widget() is not None:
+                visit(item.widget())
+            elif item.layout() is not None:
+                walk(item.layout())
+
+    def inside(widget: QWidget) -> None:
+        if widget.layout() is not None:
+            walk(widget.layout())
+        for child in widget.children():
+            if isinstance(child, QWidget):
+                visit(child)
+
+    inside(root)
+    return stops
+
+
+def chain_tabs(widgets: list[QWidget]) -> None:
+    """Make Tab go through `widgets` in this order."""
+    for first, second in zip(widgets, widgets[1:]):
+        QWidget.setTabOrder(first, second)
 
 
 def declare(widget: QWidget) -> None:

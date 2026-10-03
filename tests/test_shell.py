@@ -299,6 +299,18 @@ wait(50)
 when = fmt.date_activity(stopped.ended)
 check("a stopped run is quiet: when it was stopped",
       w.status.text() == f"Nothing running · last run was stopped {when}")
+w.show_page("overview")
+clean = jobs.start("rotator", "Run 5")
+clean.finish("clean", "Moved 1000, returned 1000")
+wait(50)
+check("a clean finish is said in ok, as frame 05 does, with no link",
+      w.status.state() == "ok" and w.status.link_text() == ""
+      and w.status.text() == "Run 5 finished cleanly · Moved 1000, returned 1000")
+w.show_page("tracker")
+check("another page looked at leaves it be", w.status.state() == "ok")
+w.show_page("rotator")
+check("its own page looked at, the line is quiet again",
+      w.status.state() == "idle" and w.status.text().startswith("Nothing running · last run finished"))
 
 print("-- the cross-fade --")
 w.show_page("overview")

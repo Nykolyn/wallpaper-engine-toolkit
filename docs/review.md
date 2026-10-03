@@ -2,6 +2,8 @@
 
 **The week's new wallpapers, grouped by who made them.**
 
+![The authors with new items, and one author's gallery (made-up data)](images/review.png)
+
 ## What it is for
 
 Every day some wallpapers get put into Wallpaper Engine's **`new`** folder. At

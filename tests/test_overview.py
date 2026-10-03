@@ -34,7 +34,7 @@ sys.path.insert(0, str(ROOT))
 # CI) cannot always print; a check must not fail for the way its name is shown.
 sys.stdout.reconfigure(errors="replace")
 
-from PySide6.QtCore import QObject, Qt, Signal                           # noqa: E402
+from PySide6.QtCore import QObject, QPoint, Qt, Signal                   # noqa: E402
 from PySide6.QtTest import QTest                                         # noqa: E402
 from PySide6.QtWidgets import QApplication, QVBoxLayout, QWidget         # noqa: E402
 
@@ -478,11 +478,12 @@ check("the log follows the run's own file: its lines, live, named by the tool",
       and page.log.toolTip().startswith("writing to rotator/"))
 check("collapsed, it fills its column and keeps the newest lines in view, with the problem badge",
       not page.log.expanded() and page.log.fills() and page.log.view.isVisibleTo(page)
-      and page.log.badge_text() == "1 problem" and not page.log.footer_shown())
+      and page.log.badge_text() == "1" and not page.log.footer_shown()
+      and page.log.view.indexAt(QPoint(4, 4)).data(Qt.DisplayRole).endswith("Glass Orchard — file in use"))
 run.log("dupe", "Paper Crane — already in the reserve")
 check("a line written later arrives within a second or so",
       wait_for(lambda: page.log.model().lines()[-1].message == "Paper Crane — already in the reserve",
-               2500) and page.log.badge_text() == "2 problems")
+               2500) and page.log.badge_text() == "2")
 page.log.toggle()
 check("opened, it shows the switch and the footer, in the same height",
       page.log.expanded() and page.log.footer_shown() and page.log.fills())

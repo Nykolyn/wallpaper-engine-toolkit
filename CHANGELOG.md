@@ -6,6 +6,111 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [3.12.0] - 2026-10-03
+
+**The redesign, whole.** Since 2.2.0 the window has been rebuilt, one page per
+release, to a design made in Claude Design. Five tools ported from three
+toolkits, each a stack of forms under a tab bar, are now one product organised
+around the loop they make — rotate, watch the playlist run down, review what is
+new — in a frame that never moves:
+
+- a sidebar that says what every page is doing without opening it, "Next in the
+  loop" under it, and a status line that says what is running from any page;
+- **Overview** (the loop at a glance) and **Settings** (everything set once),
+  both new; the **Rotator**, **Tracker**, **Review**, **Creator** and
+  **Copier** rebuilt with every state the design draws — empty, reading,
+  running, finished cleanly, finished with problems, failed — and a
+  confirmation that says what will happen before anything moves;
+- a kit of components drawn from one set of colour, type, space and motion
+  tokens, and services every page reports to: the jobs running, a journal of
+  what happened, a log file per tool and run, numbers read off the window's
+  thread;
+- engine work the pages needed: the Rotator's steps, stop, retry, playlist
+  rebuild and run facts; Review's scan as one flow and its gallery; the
+  Creator's threaded reading, and Move that never deletes a clip before its
+  wallpaper is verified; the Copier's queue with verified copies; the tray's
+  ring and menu.
+
+Nothing users rely on changed incompatibly: the data folder, its files, the
+settings, the program's name, its scheduled task and its command line are what
+3.11.0 had. This release is the polish pass over all of it.
+
+### Added
+
+- **Ctrl+F** puts the cursor in the page's filter — the Tracker's playlist, the
+  Rotator's tables, Review's authors — with its words selected to type over.
+- **The status line says when a job ended well**: "Run 39 finished cleanly ·
+  Moved 1000, returned 998", with a green dot, until its page has been looked
+  at, as a job with problems already did in amber.
+- The broken-folders check names each group's case beside it: *no media
+  inside*, *check before deleting*.
+- `tests/test_keyboard.py`: every page in every made-up state walked by
+  keyboard and checked for names, text sizes and contrast, with
+  `tests/gui_guard.py` recording any file call the window's thread makes on the
+  wallpaper disk. `tests/perf_pages.py` measures the long lists at real sizes
+  (the numbers are in [Development → Performance](docs/development.md#performance)),
+  and `tests/perf_gallery.py --items 1200` a whole review's gallery.
+- `tools/ui_snapshot.py --reduced-motion`; and the docs have a picture of every
+  page, taken from made-up data.
+
+### Changed
+
+- **The frame is the design's size.** The design's boxes are sized by their
+  content, so its borders and padding come on top of the sizes it names: the
+  sidebar is 267 px wide (it was 246, its items 20 px too narrow), and the
+  title bar, page header and status line each gained their 1 px divider.
+- **The log reads newest first**, as the design's console does: the newest line
+  at the top, followed while you are there; scroll down to read and the lines
+  you are on stay put as new ones arrive. Closed, its header shows the newest
+  line and a count of problems. The chevron, the All / Problems switch, the
+  file it writes to and the copy button are where the design puts them, and
+  its columns are the design's. Copying still gives the lines oldest first, as
+  the file has them.
+- The status line leads every state with a dot in its colour, as the design
+  does, rather than a warning glyph.
+- **Dialogs** are the design's: a smaller icon tile, the design's paddings, no
+  separate strip under the buttons, a run's steps listed in a well, the
+  checklist's groups as tinted bands with each row's reason under its name,
+  and three rows a group before "N more like these".
+- **Toasts** are a dark card with their colour down the left edge.
+- A table's thumbnail column narrower than its pictures need steps down to the
+  small thumbnail (64 × 36) so the titles still show: at 1 200 px wide the
+  Tracker's playlist had room for a picture and no title.
+- The Rotator's run history gives RESULT the room for "2 problems".
+- The Creator's finished panel carries its tick (or its warning), and *What was
+  left out* marks each file in its colour. The Copier's empty page lists the
+  known folders under its buttons.
+- **Tab** goes as the window reads: down the sidebar, the page's buttons, the
+  page from top to bottom and left to right, then the status line. Before, each
+  page's controls sat between two sidebar items. Scroll areas are no longer a
+  Tab stop of their own.
+
+### Fixed
+
+- **Opening the Rotator page took the keyboard focus away from the window.** Its
+  header buttons were shown before they had a parent, so each flashed as a
+  window of its own.
+- **Tab could not leave a table**: it moved from cell to cell instead.
+- The log's console repainted 3× slower while a job streamed and other threads
+  were busy: each line is now drawn once and copied (27 ms → 10 ms a repaint,
+  measured with two busy threads).
+- The Rotator's run history at 1 200 px cut its Log column off.
+- Screen readers found no name on a table's header, an empty path field's box
+  and the Creator's four tables.
+- `tools/kit_preview.py` stopped at its colour section since 3.2.0 (tokens the
+  later steps added had no group); `tools/ui_snapshot.py` drew popups above
+  their fields (its offscreen screen was smaller than the window) and before
+  the page had settled.
+
+### Removed
+
+- `MainWindow.show_tab`, which nothing called (`--tab` is unchanged), and theme
+  values nothing used: `sheen.hi`, `STATUS_ICON`, `ROTATOR_TOGGLE_GAP`,
+  `REVIEW_FILTER_WIDTH`.
+- The `qa/` pictures 3.9.0–3.11.0 kept of the Creator, the Copier and the tray:
+  they showed the pages before this release, and `docs/images/` now has a
+  picture of every page. The pull requests that added them still link them.
+
 ## [3.11.0] - 2026-10-03
 
 ### Added
@@ -1214,7 +1319,8 @@ restructured yet; the tabs keep their layout and take on the new look.
   was right for one library and wrong for every other. Nothing is tagged now
   unless you ask for it.
 
-[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.11.0...HEAD
+[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.12.0...HEAD
+[3.12.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.11.0...v3.12.0
 [3.11.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.10.0...v3.11.0
 [3.10.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.9.0...v3.10.0
 [3.9.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.8.0...v3.9.0

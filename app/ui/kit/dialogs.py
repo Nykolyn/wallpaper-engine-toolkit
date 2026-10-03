@@ -76,7 +76,7 @@ from dataclasses import dataclass
 from typing import Any, Callable, Sequence
 
 from PySide6.QtCore import QEvent, QMargins, QRect, QRectF, Qt, SignalInstance
-from PySide6.QtGui import QFontMetricsF, QPainter, QPainterPath, QPen
+from PySide6.QtGui import QPainter, QPainterPath, QPen, QRegion
 from PySide6.QtWidgets import (
     QComboBox, QDialog, QFrame, QHBoxLayout, QLineEdit, QScrollArea, QSizePolicy, QVBoxLayout,
     QWidget,
@@ -109,8 +109,9 @@ class CheckRow:
 @dataclass(frozen=True)
 class CheckGroup:
     """Rows listed for one reason, under a header that ticks them all.
-    `tone` colours the header ("ok", "warn", "danger", "info" or "neutral");
-    `noun` and `plural` name what the rows are in its count."""
+    `tone` tints the header's band and colours its `note` and the rows' reasons
+    ("ok", "warn", "danger", "info" or "neutral"); `noun` and `plural` name
+    what the rows are in its count."""
 
     title: str
     rows: Sequence[CheckRow] = ()
@@ -119,6 +120,7 @@ class CheckGroup:
     noun: str = "folder"
     plural: str | None = None
     limit: int = theme.CHECK_LIMIT
+    note: str = ""          # at the header's right, in its tone: "no media inside"
 
 
 @dataclass(frozen=True)
@@ -135,6 +137,9 @@ class ConfirmResult:
 
 # group tone → the header's label tone
 GROUP_TONES = {"neutral": "lo", "ok": "ok", "warn": "warn", "danger": "danger", "info": "info"}
+# group tone → its header's band
+GROUP_BANDS = {"neutral": "surface.subtle", "ok": "ok.band", "warn": "warn.soft",
+               "danger": "danger.soft", "info": "info.soft"}
 # tile tone → (ground, edge, icon colour)
 TILE_TONES: dict[str, tuple[str, str, str]] = {
     "neutral": ("surface.tile", "border.hairline", "text.mid"),
@@ -190,15 +195,16 @@ class _Panel(QFrame):
 
 
 class _Footer(QWidget):
-    """The strip along the panel's foot: a hairline, then the summary on the
-    left and the buttons on the right."""
+    """The panel's foot: the summary on the left and the buttons on the right,
+    on the panel's own ground (the design draws no strip or line here)."""
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
-        base.declare(self)              # the buttons' shadows and rings go over its ground
+        base.declare(self)              # the buttons' shadows and rings go over the panel
         self.row = QHBoxLayout(self)
-        vertical, horizontal = theme.DIALOG_FOOTER_PAD
-        self.row.setContentsMargins(horizontal, vertical, horizontal, vertical)
+        above, below = theme.DIALOG_FOOTER_PAD
+        side = theme.DIALOG_PAD[1]
+        self.row.setContentsMargins(side, above, side, below)
         self.row.setSpacing(theme.SP_8)
         self.summary = Elided("", "type.monoSm", "lo")
         self.summary.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Fixed)
@@ -212,15 +218,6 @@ class _Footer(QWidget):
 
     def paintEvent(self, event) -> None:        # noqa: N802 - Qt's name
         painter = QPainter(self)
-        painter.setRenderHint(QPainter.Antialiasing)
-        box = QRectF(self.rect())
-        radius = theme.R_XL - 1
-        path = QPainterPath()
-        path.addRoundedRect(box.adjusted(0, -radius, 0, 0), radius, radius)
-        clip = QPainterPath()
-        clip.addRect(box)
-        painter.fillPath(path.intersected(clip), theme.color("surface.footer"))
-        painter.fillRect(QRectF(0, 0, box.width(), 1), theme.color("border.hairline"))
         base.paint(painter, self, event.rect())
 
 
@@ -281,7 +278,7 @@ class OverlayDialog(Caster, QDialog):
         self._content = QWidget()
         self.body_column = QVBoxLayout(self._content)
         pad_v, pad_h = theme.DIALOG_PAD
-        self.body_column.setContentsMargins(pad_h, pad_v, pad_h, pad_v)
+        self.body_column.setContentsMargins(pad_h, pad_v, pad_h, 0)
         self.body_column.setSpacing(theme.DIALOG_GAP)
         outer.addWidget(self._content, 1)
         self.footer = _Footer()
@@ -304,7 +301,7 @@ class OverlayDialog(Caster, QDialog):
         words.setSpacing(theme.SP_6)
         self._title = label(title, "type.dialog", "hi")
         self._title.setWordWrap(True)
-        self._body = label(body, "type.body", "mid")
+        self._body = label(body, "type.bodySm", "mid")
         self._body.setWordWrap(True)
         self._body.setVisible(bool(body))
         words.addWidget(self._title)
@@ -367,10 +364,18 @@ class OverlayDialog(Caster, QDialog):
         parent = self.parentWidget()
         return parent.window() if parent is not None else None
 
+    def focusNextPrevChild(self, next: bool) -> bool:     # noqa: N802 - Qt's name
+        # rows built since it opened (a checklist's "N more") take their place
+        base.chain_tabs(base.tab_stops(self.panel))
+        return super().focusNextPrevChild(next)
+
     def setVisible(self, visible: bool) -> None:    # noqa: N802 - Qt's name
         if visible:
             # placed before it is mapped, so it never shows where Qt would have put it
             self.place()
+            # Tab goes down the dialog as it reads: its body, then the footer's
+            # buttons; the footer was made first
+            base.chain_tabs(base.tab_stops(self.panel))
             owner = None if self._embedded else self._owner_window()
             if owner is not None and self._owner is None:
                 owner.installEventFilter(self)
@@ -433,43 +438,40 @@ class OverlayDialog(Caster, QDialog):
 
 # ---- numbered steps (frame 08) ---------------------------------------------------------------
 
-class _Number(QWidget):
-    """A step's number in a disc."""
-
-    def __init__(self, n: int, parent: QWidget | None = None):
-        super().__init__(parent)
-        self.n = n
-        self.setFixedSize(theme.DIALOG_STEP, theme.DIALOG_STEP)
-
-    def paintEvent(self, event) -> None:        # noqa: N802 - Qt's name
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.Antialiasing)
-        box = QRectF(self.rect())
-        painter.setPen(QPen(theme.color("border.control"), 1))
-        painter.setBrush(theme.color("surface.raised"))
-        painter.drawEllipse(box.adjusted(0.5, 0.5, -0.5, -0.5))
-        painter.setFont(theme.font("type.monoXs"))
-        painter.setPen(theme.color("text.hi"))
-        painter.drawText(box, Qt.AlignCenter, str(self.n))
+def paint_well(painter: QPainter, widget: QWidget) -> None:
+    """A dialog's well: surface.well, a hairline, and the inset shade at its top."""
+    painter.setRenderHint(QPainter.Antialiasing)
+    box = QRectF(widget.rect()).adjusted(0.5, 0.5, -0.5, -0.5)
+    radius = theme.DIALOG_WELL_RADIUS
+    path = QPainterPath()
+    path.addRoundedRect(box, radius, radius)
+    painter.fillPath(path, theme.color("surface.well"))
+    theme.paint_shadow(painter, box, "elev.inset", radius)
+    painter.setPen(QPen(theme.color("border.hairline"), 1))
+    painter.setBrush(Qt.NoBrush)
+    painter.drawRoundedRect(box, radius, radius)
 
 
 class _Steps(QWidget):
-    """What a confirmed run will do, in order: 1, 2, 3…"""
+    """What a confirmed run will do, in order, in a well: 1, 2, 3…"""
 
     def __init__(self, steps, parent: QWidget | None = None):
         super().__init__(parent)
         column = QVBoxLayout(self)
-        column.setContentsMargins(0, 0, 0, 0)
-        column.setSpacing(theme.SP_8)
+        pad_v, pad_h = theme.DIALOG_WELL_PAD
+        column.setContentsMargins(pad_h, pad_v, pad_h, pad_v)
+        column.setSpacing(theme.DIALOG_STEP_GAP)
         self.titles: list[str] = []
         for n, step in enumerate(steps, start=1):
             title, caption = (step, "") if isinstance(step, str) else (step[0], step[1] if len(step) > 1 else "")
             row = QHBoxLayout()
-            row.setSpacing(theme.DIALOG_STEP_GAP)
-            row.addWidget(_Number(n), 0, Qt.AlignTop)
+            row.setSpacing(theme.DIALOG_STEP_NUMBER_GAP)
+            number = label(str(n), "type.monoXs", "lo")
+            number.setFixedWidth(theme.DIALOG_STEP_NUMBER)
+            row.addWidget(number, 0, Qt.AlignTop)
             words = QVBoxLayout()
             words.setSpacing(theme.SP_2)
-            name = label(title, "type.bodySm", "body")
+            name = label(title, "type.label", "body")
             name.setWordWrap(True)
             words.addWidget(name)
             if caption:
@@ -479,6 +481,9 @@ class _Steps(QWidget):
             row.addLayout(words, 1)
             column.addLayout(row)
             self.titles.append(title)
+
+    def paintEvent(self, event) -> None:        # noqa: N802 - Qt's name
+        paint_well(QPainter(self), self)
 
 
 # ---- the checklist (frame 09) -----------------------------------------------------------------
@@ -495,10 +500,10 @@ class _GroupCheck(Checkbox):
 
 
 class _Row(QWidget):
-    """A checklist row: the box, the name in mono, why it is listed, its size.
-    A click anywhere on it ticks it."""
+    """A checklist row: the box, the name in mono over why it is listed, and
+    its size. A click anywhere on it ticks it."""
 
-    def __init__(self, row: CheckRow, name_width: int, sized: bool, parent: QWidget | None = None):
+    def __init__(self, row: CheckRow, tone: str, sized: bool, parent: QWidget | None = None):
         super().__init__(parent)
         self.setAttribute(Qt.WA_Hover)
         line = QHBoxLayout(self)
@@ -507,16 +512,22 @@ class _Row(QWidget):
         line.setSpacing(theme.CHECK_ROW_GAP)
         self.box = Checkbox("")
         self.box.setAccessibleName(row.name)
-        name = Elided(row.name, "type.monoSm", "body", mode=Qt.ElideMiddle)
-        name.setFixedWidth(name_width)
-        reason = Elided(row.reason, "type.label", "mid")
-        reason.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Fixed)
+        self.box.setAccessibleDescription(row.reason)
+        words = QVBoxLayout()
+        words.setSpacing(theme.CHECK_LINE_GAP)
+        name = Elided(row.name, "type.mono", "body", mode=Qt.ElideMiddle)
+        name.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Fixed)
+        words.addWidget(name)
+        if row.reason:
+            # the reason in the group's hue where that is a warning, else quiet
+            reason = Elided(row.reason, "type.caption", tone if tone in ("warn", "danger") else "lo")
+            reason.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Fixed)
+            words.addWidget(reason)
         line.addWidget(self.box)
-        line.addWidget(name)
-        line.addWidget(reason, 1)
+        line.addLayout(words, 1)
         if sized:
-            size = Elided("" if row.size is None else fmt.size(row.size), "type.monoSm", "lo",
-                          align=Qt.AlignRight)
+            size = Elided("" if row.size is None else fmt.size(row.size), "type.monoSm",
+                          tone if tone in ("warn", "danger") else "lo", align=Qt.AlignRight)
             size.setFixedWidth(theme.CHECK_SIZE_WIDTH)
             line.addWidget(size)
         self._hot = False
@@ -533,12 +544,23 @@ class _Row(QWidget):
         return super().event(event)
 
     def paintEvent(self, event) -> None:        # noqa: N802 - Qt's name
+        painter = QPainter(self)
         if self._hot:
-            painter = QPainter(self)
-            painter.setRenderHint(QPainter.Antialiasing)
-            path = QPainterPath()
-            path.addRoundedRect(QRectF(self.rect()), theme.R_SM, theme.R_SM)
-            painter.fillPath(path, theme.color("surface.rowHover"))
+            painter.fillRect(QRectF(self.rect()), theme.color("surface.rowHover"))
+        painter.fillRect(QRectF(0, self.height() - 1, self.width(), 1), theme.color("border.faint"))
+
+
+class _Band(QWidget):
+    """A group's header: its tone's band, a hairline under it."""
+
+    def __init__(self, tone: str, parent: QWidget | None = None):
+        super().__init__(parent)
+        self.tone = tone
+
+    def paintEvent(self, event) -> None:        # noqa: N802 - Qt's name
+        painter = QPainter(self)
+        painter.fillRect(QRectF(self.rect()), theme.color(GROUP_BANDS[self.tone]))
+        painter.fillRect(QRectF(0, self.height() - 1, self.width(), 1), theme.color("border.hairline"))
 
 
 class _Checklist(QFrame):
@@ -561,45 +583,42 @@ class _Checklist(QFrame):
         self.more: list[LinkButton] = []
         self._boxes: list[QVBoxLayout] = []
 
-        metrics = QFontMetricsF(theme.font("type.monoSm"))
-        widest = max((metrics.horizontalAdvance(row.name) for g in self.groups for row in g.rows),
-                     default=0)
-        self._name_width = min(int(widest) + 2, theme.DIALOG_WIDE // 3)
-
         self._scroll = QScrollArea(self)
         self._scroll.setWidgetResizable(True)
         self._scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self._scroll.setFrameShape(QFrame.NoFrame)
+        self._scroll.setFocusPolicy(Qt.NoFocus)
+        self._scroll.viewport().installEventFilter(self)
         inner = QWidget()
         column = QVBoxLayout(inner)
-        column.setContentsMargins(theme.SP_4, theme.SP_4, theme.SP_4, theme.SP_6)
-        column.setSpacing(theme.SP_2)
+        column.setContentsMargins(0, 0, 0, 0)
+        column.setSpacing(0)
         for gi, group in enumerate(self.groups):
-            if gi:
-                column.addSpacing(theme.SP_8)
-            head = QWidget()
+            head = _Band(group.tone)
             line = QHBoxLayout(head)
-            vertical, horizontal = theme.CHECK_ROW_PAD
-            line.setContentsMargins(horizontal, vertical + 1, horizontal, vertical)
+            vertical, horizontal = theme.CHECK_HEAD_PAD
+            line.setContentsMargins(horizontal, vertical, horizontal, vertical + 1)
             line.setSpacing(theme.CHECK_ROW_GAP)
             box = _GroupCheck()
             box.setAccessibleName(group.title)
+            box.setAccessibleDescription(group.note)
             box.clicked.connect(lambda _=False, i=gi: self.set_group(i, self.heads[i].checkState() == Qt.Checked))
-            words = Elided(self.head_text(gi), "type.overline", GROUP_TONES[group.tone])
+            words = Elided(self.head_text(gi), "type.overline", "lo")
             words.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Fixed)
             line.addWidget(box)
             line.addWidget(words, 1)
+            if group.note:
+                line.addWidget(label(group.note, "type.monoXs", GROUP_TONES[group.tone]))
             column.addWidget(head)
             self.heads.append(box)
             rows = QVBoxLayout()
             rows.setSpacing(0)
             column.addLayout(rows)
             self._boxes.append(rows)
-            more = LinkButton("", font="type.label")
+            more = LinkButton("", font="type.monoXs")
             more.clicked.connect(lambda _=False, i=gi: self.expand(i))
             holder = QHBoxLayout()
-            holder.setContentsMargins(horizontal + theme.CHECK_BOX + theme.CHECK_ROW_GAP,
-                                      theme.SP_2, 0, theme.SP_2)
+            holder.setContentsMargins(horizontal, theme.SP_6, 0, theme.SP_6)
             holder.addWidget(more)
             holder.addStretch(1)
             column.addLayout(holder)
@@ -625,7 +644,7 @@ class _Checklist(QFrame):
     def _build(self, gi: int, upto: int) -> None:
         group, built = self.groups[gi], self.rows[gi]
         for ri in range(len(built), upto):
-            row = _Row(group.rows[ri], self._name_width, self.sized)
+            row = _Row(group.rows[ri], group.tone, self.sized)
             row.box.setChecked(self.ticks[gi][ri])
             row.box.clicked.connect(lambda on, g=gi, r=ri: self.set_row(g, r, on))
             self._boxes[gi].addWidget(row)
@@ -678,13 +697,20 @@ class _Checklist(QFrame):
     def paintEvent(self, event) -> None:        # noqa: N802 - Qt's name
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
-        box = QRectF(self.rect())
-        path = QPainterPath()
-        path.addRoundedRect(box, theme.R_ROW, theme.R_ROW)
-        painter.fillPath(path, theme.color("surface.subtle"))
+        box = QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5)
+        radius = theme.DIALOG_WELL_RADIUS
         painter.setPen(QPen(theme.color("border.hairline"), 1))
         painter.setBrush(Qt.NoBrush)
-        painter.drawRoundedRect(box.adjusted(0.5, 0.5, -0.5, -0.5), theme.R_ROW - 0.5, theme.R_ROW - 0.5)
+        painter.drawRoundedRect(box, radius, radius)
+
+    def eventFilter(self, watched, event) -> bool:      # noqa: N802 - Qt's name
+        # The bands and rows are square; the box's rounded corners clip them.
+        if watched is self._scroll.viewport() and event.type() == QEvent.Resize:
+            radius = theme.DIALOG_WELL_RADIUS - 1
+            path = QPainterPath()
+            path.addRoundedRect(QRectF(watched.rect()), radius, radius)
+            watched.setMask(QRegion(path.toFillPolygon().toPolygon()))
+        return False
 
 
 # ---- a plain list of what will be written ----------------------------------------------------

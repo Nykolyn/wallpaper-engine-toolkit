@@ -86,6 +86,7 @@ from .base import Page, SideScroll
 _MINUTE_MS = 60_000
 REVEAL_AGAIN = 1.0             # seconds before the same row opens Explorer again
 _TICK_MS = 1_000                # the countdown
+_LIST_SETTLE_MS = 150           # the feed's looks come in twos at times: read the list once
 META_CHUNK = 120                # project.json files read between two updates of the table
 FOOTER_NOTE = "Wallpaper Engine decides the order — this is a read of its playlist"
 SHOWN, QUEUE = "shown", "queue"
@@ -990,9 +991,9 @@ class TrackerPage(Page):
         self._minute = QTimer(self)
         self._minute.setSingleShot(True)
         self._minute.timeout.connect(self._tick)
-        self._list_timer = QTimer(self)             # the feed's looks come in twos at times
+        self._list_timer = QTimer(self)
         self._list_timer.setSingleShot(True)
-        self._list_timer.setInterval(150)
+        self._list_timer.setInterval(_LIST_SETTLE_MS)
         self._list_timer.timeout.connect(self._read_list)
 
         if feed is not None:
@@ -1043,6 +1044,9 @@ class TrackerPage(Page):
         column.addWidget(self.empty)
         self._stack.addWidget(empty_holder)
         self._empty_holder = empty_holder
+
+    def filter_field(self) -> QWidget | None:
+        return self.filter
 
     def _build_table(self) -> GlassPanel:
         card = GlassPanel(padding="none")

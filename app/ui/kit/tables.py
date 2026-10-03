@@ -286,14 +286,15 @@ class Column:
 class Cell:
     """A cell's text in a tone of its own ("on screen" in accent), or strong;
     `icon` is a glyph before it, in the same tone (a lock on a [protected]
-    folder); `sub` is a second, quieter line under it (mono, `sub_tone`,
-    text.lo by default): a wallpaper's date under its title."""
+    folder) or in `icon_tone`; `sub` is a second, quieter line under it (mono,
+    `sub_tone`, text.lo by default): a wallpaper's date under its title."""
     text: str
     tone: str | None = None
     strong: bool = False
     icon: str | None = None
     sub: str = ""
     sub_tone: str | None = None
+    icon_tone: str | None = None
 
 
 @dataclass(frozen=True)
@@ -1006,9 +1007,10 @@ class RowDelegate(QStyledItemDelegate):
         x, right = left, left + width
         middle = top + height / 2
         if column.thumb:
-            w, h, _ = theme.THUMB[column.thumb]
+            size = self._table.thumb_size(column)
+            w, h, _ = theme.THUMB[size]
             painter.drawPixmap(QPointF(x, middle - h / 2),
-                               self._table.thumb_tile(model.thumb_source(item), column.thumb))
+                               self._table.thumb_tile(model.thumb_source(item), size))
             x += w + theme.THUMB_GAP
         if column.icon:
             size = theme.TABLE_ICON
@@ -1118,7 +1120,7 @@ class RowDelegate(QStyledItemDelegate):
             if value.icon:
                 size = theme.TABLE_ICON
                 painter.drawPixmap(QPointF(x, middle - size / 2),
-                                   icons.pixmap(value.icon, tone, size, self._dpr))
+                                   icons.pixmap(value.icon, value.icon_tone or tone, size, self._dpr))
                 box.setLeft(x + size + theme.TABLE_ICON_GAP)
             if value.sub:
                 token = column.type_token()
@@ -1285,6 +1287,7 @@ class Table(QTableView):
         self._delegate = RowDelegate(self)
         self.setItemDelegate(self._delegate)
         self.setHorizontalHeader(TableHeader(self))
+        self.horizontalHeader().setAccessibleName("Column titles")
         self.verticalHeader().hide()
         self.verticalHeader().setSectionResizeMode(QHeaderView.Fixed)
         self.setShowGrid(False)
@@ -1297,11 +1300,15 @@ class Table(QTableView):
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.setMouseTracking(True)
         self.setCornerButtonEnabled(False)
+        # Tab goes on to the next control; the arrows move inside. QTableView's
+        # own Tab walks the cells, and a keyboard never got out of a table.
+        self.setTabKeyNavigation(False)
         self.horizontalHeader().sectionClicked.connect(self._header_clicked)
         self.horizontalHeader().sectionResized.connect(self._spans_changed)
         self.horizontalHeader().geometriesChanged.connect(self._spans_changed)
 
         self._row_height: int | None = None
+        self._narrow = False            # the stretched thumb column draws the smaller thumb
         self._hover = -1
         self._keyboard = False
         self._spans: list[tuple[float, float]] | None = None
@@ -1381,20 +1388,57 @@ class Table(QTableView):
 
     def _spans_changed(self, *args) -> None:
         self._spans = None
+        self._check_narrow()
         self.viewport().update()
+
+    def thumb_size(self, column: Column) -> str | None:
+        """The thumb a column draws: its own, or the next one down while it is
+        the stretched column and too narrow to leave its words
+        `theme.TABLE_WORDS_MIN`. Pictures are still asked for at the column's
+        own size, so stepping back up is never blurred."""
+        if self._narrow and column.width is None and column.thumb in theme.THUMB_NARROWER:
+            return theme.THUMB_NARROWER[column.thumb]
+        return column.thumb
+
+    def narrow(self) -> bool:
+        return self._narrow
+
+    def _check_narrow(self) -> None:
+        model = self.model()
+        if not isinstance(model, TableModel):
+            return
+        header = self.horizontalHeader()
+        narrow = self._narrow
+        # Counted as if the scroll bar were there: the shorter rows can take it
+        # away, which must not make the rows tall again (and the bar come back).
+        bar = self.verticalScrollBar()
+        missing = 0 if bar.isVisible() else bar.sizeHint().width()
+        for c, column in enumerate(model.columns):
+            if column.width is None and column.thumb in theme.THUMB_NARROWER and c < header.count():
+                left, right = self._pads(c, len(model.columns) - 1)
+                words = (header.sectionSize(c) - missing - left - right
+                         - theme.THUMB[column.thumb][0] - theme.THUMB_GAP)
+                narrow = words < theme.TABLE_WORDS_MIN
+                break
+        if narrow != self._narrow:
+            self._narrow = narrow
+            self._resize_rows()
 
     def _model_reset(self) -> None:
         self._hover = -1
         self._hot_button = self._pressed_button = None
         self._rows_for_key = {}
+        self._resize_rows()
+        self.horizontalHeader().viewport().update()
+        self._settle.start()
+
+    def _resize_rows(self) -> None:
         header = self.verticalHeader()
         header.setDefaultSectionSize(self.row_height())
         model: TableModel = self.model()
         group = self.group_row_height()
         for row in model.group_rows():
             header.resizeSection(row, group)
-        self.horizontalHeader().viewport().update()
-        self._settle.start()
 
     # -- sizes
 
@@ -1405,7 +1449,7 @@ class Table(QTableView):
         tallest = [theme.CHIP_HEIGHT, math.ceil(theme.line_height("type.bodySm"))]
         pad = theme.TABLE_ROW_PAD_TEXT
         if isinstance(model, TableModel):
-            thumbs = [theme.THUMB[c.thumb][1] for c in model.columns if c.thumb]
+            thumbs = [theme.THUMB[self.thumb_size(c)][1] for c in model.columns if c.thumb]
             if thumbs:
                 tallest += thumbs
                 pad = theme.TABLE_ROW_PAD

@@ -6,7 +6,7 @@ only); the sidebar and the status line stay put, and they are live:
 - `TitleBar`: the window's own 32 px bar — the app's mark, its name, and the
   minimise, maximise and close buttons. Windows still does the window's work
   (dragging, snapping, resizing): see `app/window_frame.py`.
-- `Sidebar`: 246 px of `nav.gradient` holding the pages in the order of the
+- `Sidebar`: 267 px of `nav.gradient` (246 of items) holding the pages in the order of the
   loop, in `NavSection`s, and "Next in the loop" above Settings at the foot.
   Below `theme.RAIL_BELOW` it folds into a 56 px rail of icons, their names in
   tool tips, their states as dots.
@@ -444,7 +444,7 @@ class NavItem(Interactive, Caster, QAbstractButton):
     def sizeHint(self) -> QSize:                # noqa: N802 - Qt's name
         if self._rail:
             return QSize(theme.RAIL_ITEM, theme.RAIL_ITEM)
-        return QSize(theme.SIDEBAR_WIDTH - 2 * theme.SIDEBAR_PAD[1], self._height())
+        return QSize(theme.SIDEBAR_ITEMS, self._height())
 
     # -- keys
 
@@ -755,7 +755,7 @@ class Sidebar(QWidget):
         return self._rail
 
     def set_rail(self, on: bool) -> None:
-        """Fold into icons only (56 px), or open out again (246 px). Instant: the
+        """Fold into icons only (56 px), or open out again (267 px). Instant: the
         frame does not move."""
         if on == self._rail:
             return

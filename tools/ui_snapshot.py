@@ -29,10 +29,13 @@ engines, feeds, Steam or Wallpaper Engine library scans run.
   the dialog over the window.
 - `--size WxH` (default 1280x860) and `--scale 1|1.5` (the user's screen is
   at 150 %; the picture is then 1.5 × the size in pixels).
+- `--reduced-motion`: as Windows draws it with its animations off — spinners
+  at rest beside the word "working", no sweeps, no fades.
 """
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import sys
 import tempfile
@@ -48,6 +51,8 @@ def _args(argv):
     parser.add_argument("--size", default="1280x860")
     parser.add_argument("--scale", default="1")
     parser.add_argument("--out", type=Path)
+    parser.add_argument("--reduced-motion", action="store_true",
+                        help="as with Windows' animations off: every loop at rest")
     parser.add_argument("--list", action="store_true", help="the frame's states, and stop")
     return parser.parse_args(argv)
 
@@ -59,7 +64,14 @@ def main(argv=None) -> int:
     # nobody's. Relative paths are resolved from an empty folder too.
     scratch = Path(tempfile.mkdtemp(prefix="toolkit_ui_snapshot_"))
     os.environ["WALLPAPER_TOOLKIT_DATA"] = str(scratch / "data")
-    os.environ["QT_QPA_PLATFORM"] = "offscreen"
+    # Offscreen Qt's screen is 800 × 800 unless it is told otherwise, smaller
+    # than the window, and popups that would not fit under their field open
+    # above it. A screen with room for any window asked for; the file is named
+    # relative to the scratch folder, as the platform's options split on ":".
+    (scratch / "screen.json").write_text(json.dumps({"screens": [{
+        "name": "snapshot", "x": 0, "y": 0, "width": 7680, "height": 4320,
+        "logicalDpi": 96, "logicalBaseDpi": 96, "dpr": 1}]}), encoding="utf-8")
+    os.environ["QT_QPA_PLATFORM"] = "offscreen:configfile=screen.json"
     os.environ.setdefault("QT_QPA_FONTDIR",
                           str(Path(os.environ.get("WINDIR", r"C:\Windows")) / "Fonts"))
     os.environ["QT_SCALE_FACTOR"] = str(float(args.scale))
@@ -68,7 +80,6 @@ def main(argv=None) -> int:
     sys.path.insert(0, str(ROOT))
 
     from app.main_window import load_shell_fixture, page_for
-    import json
     states = [k for k in json.loads((ROOT / "tests" / "fixtures" / "ui" / "shell.json")
                                     .read_text(encoding="utf-8")) if k != "//"]
     if args.list:
@@ -93,9 +104,11 @@ def main(argv=None) -> int:
         return 2
 
     window = build_window(args.page)
+    if args.reduced_motion:
+        from app import animations
+        animations.ENABLED = False
     if args.page == "creator":
         # Match the fixture's output to the Rotator so the Done action is exercised.
-        import json
         window.pages["creator"].config.destination = json.loads(
             (ROOT / "tests/fixtures/ui/creator.json").read_text(encoding="utf-8"))["target"]
     fixture = frame_fixture(window.pages[page_for(args.page)], args.state, states,
@@ -111,9 +124,17 @@ def main(argv=None) -> int:
     settle(420)                     # path checks, the live dot's first frame
     window.fade.stop()
     QApplication.processEvents()
+    dialog = getattr(window.pages[page_for(args.page)], "fixture_dialog", None)
+    if dialog is not None and dialog.isVisible():
+        # Opened by the page's fixture before its layout settled: placed again
+        # where it would open on the page as it stands now.
+        if hasattr(dialog, "place"):
+            dialog.place()
+        elif hasattr(dialog, "open_for"):
+            dialog.open_for(dialog.select)
+        settle(60)
     out.parent.mkdir(parents=True, exist_ok=True)
     picture = window.grab()
-    dialog = getattr(window.pages[page_for(args.page)], "fixture_dialog", None)
     if dialog is not None and dialog.isVisible():
         # A dialog is a window of its own over the window, scrim and all: drawn
         # over the window's picture where it stands.
@@ -200,13 +221,16 @@ def build_window(page_key: str):
     svc = services.Services(data_dir=Path(os.environ["WALLPAPER_TOOLKIT_DATA"]),
                             settings=settings)
     config = Config(source="", destination="", duplicates="", count=1000)
+    review = ReviewPage(settings, svc)
     pages = [OverviewPage(svc, feed, settings=settings),
              RotatorPage(config, svc),
              TrackerPage(feed, svc, settings=settings),
-             ReviewPage(settings, svc),
+             review,
              CreatorPage(settings, svc, config),
              CopierPage(settings, svc, config),
-             SettingsPage(settings, config, feed=feed, services=svc)]
+             # wired as build_pages wires it, so its two buttons draw as they are
+             SettingsPage(settings, config, feed=feed, services=svc,
+                          on_review_settings=review.edit_settings, on_authors=review.edit_authors)]
     key = page_for(page_key)
     if key is None:
         raise SystemExit(f"no page {page_key!r}")

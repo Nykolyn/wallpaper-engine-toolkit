@@ -3,6 +3,8 @@
 **Where the loop stands, at a glance: the first entry in the sidebar, and the
 page the window opens on (Ctrl+1).**
 
+![The Overview while a rotation runs (made-up data)](images/overview.png)
+
 The loop is rotate → watch the playlist run down → review what is new. The
 Overview reads each part from what the window already knows, so opening it
 costs nothing: it never lists the reserve on the page itself — that is counted
@@ -76,10 +78,10 @@ With Wallpaper Engine not running they show the last known wallpaper and
 count, and say so. A playlist shown to its end turns its card green. The
 [Tracker](tracker.md#the-page) page has the leading one in detail.
 
-Under them, the log: while a job runs, the newest lines of that job's own log
-file, followed as they are written; otherwise the log file written last, named
-beside the title. The badge counts its warnings and errors. Open it (the
+Under them, the log, newest line at the top: while a job runs, that job's own
+log file, followed as it is written; otherwise the log file written last,
+named beside the title. The badge counts its warnings and errors. Open it (the
 chevron) for **All / Problems**, copying lines, and **Open log folder**. The
-panel holds the last few hundred lines; the files themselves are in
+panel holds the last 5 000 lines; the files themselves are in
 `data/logs/`, kept for 30 days — see
 [Where the logs are](troubleshooting.md#where-the-logs-are).

@@ -51,7 +51,13 @@ def frame_for(state: str) -> dict:
     }
     if state == "scanning":
         return {"frame": "scanning"}
-    return {"frame": "idle", "nav": {"review": nav[state]}}
+    frame = {"frame": "idle", "nav": {"review": nav[state]}}
+    if state in ("done", "review-list"):
+        # Finish review has just written the database: the status line says so (frame 15)
+        frame["jobs"] = [{"tool": "review", "title": "Updating the authors database",
+                          "phase": "writing", "result": "clean", "ended": "14:12",
+                          "summary": "3 created, 23 updated. Backup: authors-20261001-141200.json.gz"}]
+    return frame
 
 
 def _at(now: datetime, clock: str, days_ago: int = 0) -> datetime:
