@@ -10,8 +10,7 @@
 
 The pages are in the order of the loop — Overview, Rotator, Tracker, Review,
 then Creator and Copier — and Settings at the foot; Ctrl+1…7 goes to each.
-The window opens on Overview. The old tabs are hosted as pages until each
-page step replaces its own.
+The window opens on Overview. Each tool owns its page.
 
 The sidebar and the status line are live and read one place, the services
 (app/services): the JobCenter for what runs, the Snapshot for the numbers.

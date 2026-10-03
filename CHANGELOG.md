@@ -6,6 +6,35 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [3.10.0] - 2026-10-03
+
+### Added
+
+- Copier queues wallpaper duplication jobs with editable copy counts and
+  optional per-job destinations. Folder sizes and free-space checks run in
+  the background, including a combined budget for jobs sharing a drive.
+- Pause between files, Stop with partial-output cleanup, optional file-count
+  and size verification, and per-job failure isolation with Retry and Skip.
+  Retrying completes only copies not already made in this session.
+- Empty, queued, running and finished Copier pages, with per-job progress,
+  measured speed/ETA, results, logs, journal entries and off-page notifications.
+
+### Changed
+
+- Copier retains playlist weighting: each folder still produces N numbered
+  duplicates, defaulting to three. Tracker sends remain supported; Review
+  keeps its subscription actions.
+- Removed the old Copier tab, callback bridge, legacy page adapters and
+  unused hand-styled helpers. Added editable count cells and progress
+  captions to the shared table kit.
+
+### Fixed
+
+- Copy numbering continues after the highest existing suffix instead of
+  filling gaps. Existing output folders are never overwritten.
+- Verification detects missing or truncated files and source changes.
+  Failed or stopped copies do not count as completed output.
+
 ## [3.9.0] - 2026-10-03
 
 ### Added
@@ -1141,7 +1170,8 @@ restructured yet; the tabs keep their layout and take on the new look.
   was right for one library and wrong for every other. Nothing is tagged now
   unless you ask for it.
 
-[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.9.0...HEAD
+[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.10.0...HEAD
+[3.10.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.9.0...v3.10.0
 [3.9.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.8.0...v3.9.0
 [3.8.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.7.0...v3.8.0
 [3.7.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.6.0...v3.7.0

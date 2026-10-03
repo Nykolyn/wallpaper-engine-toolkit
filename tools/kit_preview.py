@@ -564,17 +564,14 @@ def _disabled(widget: QWidget) -> QWidget:
 
 
 def controls_section() -> Section:
-    """What the generated stylesheet does to Qt's own widgets. The old tabs are
-    made of these until their pages are rebuilt from the kit."""
+    """The standard Qt controls used by dialogs and kit editors."""
     section = Section(6, "Standard controls",
                       "Qt's own widgets, drawn by the stylesheet theme.py generates: "
-                      "what the tabs not yet rebuilt are made of. Every state that "
+                      "Every state that "
                       "can be set without a pointer is shown.")
 
     start = QPushButton(icons.icon("play", "text.onAccent"), "Start run")
-    theme.make_accent(start)
     stopped = QPushButton(icons.icon("play", "text.onAccent"), "Start run")
-    theme.make_accent(stopped)
     section.body.addLayout(_row("QPushButton", start, _disabled(stopped),
                                 QPushButton(icons.icon("refresh"), "Rescan"),
                                 QPushButton("Playlist settings"),
@@ -646,7 +643,7 @@ def controls_section() -> Section:
 
     box = QGroupBox("QGroupBox")
     inside = QVBoxLayout(box)
-    inside.addWidget(text("A panel of the old tabs: glass, with its title above.",
+    inside.addWidget(text("A standard Qt group box, with its title above.",
                           "type.bodySm", "text.mid"))
     box.setFixedWidth(420)
     section.body.addLayout(_row("QGroupBox", box))
@@ -1556,6 +1553,41 @@ def tables_section() -> Section:
     progress_table.setFixedHeight(progress_table.horizontalHeader().sizeHint().height()
                                   + theme.CREATOR_READ_SKELETONS * progress_table.row_height())
     section.body.addWidget(progress_table)
+
+    from app.ui.kit import SpinCell
+    from PySide6.QtWidgets import QAbstractItemView
+    section.body.addWidget(overline("Copy counts — editable (F2) · disabled · minimum · maximum"))
+
+    class Counts(TableModel):
+        def flags(self, index):
+            flags = super().flags(index)
+            if index.isValid() and index.column() == 1 and self.item_at(index.row())[1].enabled:
+                flags |= Qt.ItemIsEditable
+            return flags
+
+        def data(self, index, role=Qt.DisplayRole):
+            if role == Qt.EditRole and index.column() == 1:
+                return self.item_at(index.row())[1].value
+            return super().data(index, role)
+
+        def setData(self, index, value, role=Qt.EditRole):
+            if role != Qt.EditRole or not self.flags(index) & Qt.ItemIsEditable:
+                return False
+            self.item_at(index.row())[1] = SpinCell(int(value))
+            self.dataChanged.emit(index, index)
+            return True
+
+    counts = Table()
+    counts.setModel(Counts([Column("State"), Column("Copies", theme.COPIER_COLUMNS[1]),
+                            Column("Progress", theme.COPIER_COLUMNS[4])],
+                          [["Queued", SpinCell(3), ProgressCell()],
+                           ["Copying", SpinCell(3, enabled=False), ProgressCell(.62, caption="62% · 148 MB/s")],
+                           ["Minimum", SpinCell(1), ProgressCell(1, "ok", caption="took 2 min 08 s")],
+                           ["Maximum", SpinCell(99_999), ProgressCell(.33, "danger", caption="1 of 3 · failed")]]))
+    counts.setEditTriggers(QAbstractItemView.DoubleClicked | QAbstractItemView.EditKeyPressed)
+    counts.set_row_height(theme.COPIER_ROW_HEIGHT)
+    counts.setFixedHeight(counts.horizontalHeader().sizeHint().height() + 4 * counts.row_height())
+    section.body.addWidget(counts)
 
     # Cells for work done from a row (the gallery's list): a title over a quieter line
     # (`Cell.sub`), a button that turns Accent on the row under the pointer (`ButtonCell`,

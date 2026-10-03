@@ -7,8 +7,9 @@ The three original tools were each written against a different GUI toolkit
 onto one — PySide6/Qt with the *Fusion* style — so every page shares the same
 widgets, progress bars and dialogs, painted from one theme.
 
-The **implementation is deliberately unchanged**. Each original feature's core
-engine is the original source, reused as-is:
+The engines remain independent of their pages. The redesign adds worker-based
+metadata, sequential queues and verified writes while retaining their existing
+entry points:
 
 ```
 app/
@@ -18,20 +19,20 @@ app/
 ├── window_instance.py    one window; the requests a second launch or the tray send it
 ├── selfcheck.py          what a build can import and reach (--selfcheck, Settings)
 ├── pages/                the window's pages, in the order of the loop:
-│   ├── base.py           Page, SideScroll (a page's 330 px left column), LegacyPage
+│   ├── base.py           Page, SideScroll (a page's 330 px left column)
 │   ├── overview.py       the loop at a glance
 │   ├── rotator.py        the next run, a run under way, how it ended; reserve, current, history
 │   ├── tracker.py        each monitor's playlist, counted down; its table
 │   ├── review.py         scan, go through the authors, finish; review_settings.py its
 │   │                       two dialogs, review_fixtures.py its made-up states
 │   ├── settings.py       what is set once
-│   └── legacy.py         what the old tabs' sidebar items say
+│   ├── creator.py        video metadata, selection, builds and results
+│   └── copier.py         sequential duplication queue, measurements and results
 ├── theme.py              the design tokens: colour, type, space, radius, shadows, the stylesheet
 ├── animations.py         motion tokens, the easing curve, reduced motion, the shared loops
 ├── data_location.py      where the data folder is, and moving it out of the program folder
 ├── settings.py           data/suite.json
 ├── secrets.py            data/secrets.json, DPAPI-encrypted
-├── workers.py            Qt signal bridges for the callback engines
 ├── tracker_tray.py       the tracker as a tray-only app (--tracker)
 ├── tracker_feed.py       one tracker, looked at when Wallpaper Engine writes
 ├── autostart.py          the logon task, and the rename migration
@@ -45,7 +46,7 @@ app/
 │   └── textfile.py       reading a file from its end
 ├── engines/
 │   ├── steam_paths.py    where Steam, its libraries and Wallpaper Engine are
-│   ├── copier.py         verbatim  wallpaper_copier/copier.py
+│   ├── copier.py         sequential duplication queue, verification and retry
 │   ├── creator.py        projects from videos: ffmpeg preview.gif + project.json
 │   ├── tracker.py        playlist progress, and when to look at it
 │   ├── wallpaper_timer.py  the countdown, the PLPV0005 parser, the file watcher
@@ -72,7 +73,6 @@ app/
     │                       the formats, data display (paths, tags, progress,
     │                       cards, tables, thumbs), feedback (log, toast,
     │                       statusline, dialogs), and the frame (shell)
-    ├── copier_tab.py
     └── gallery.py        Review's gallery: the grid of cards, the list, the marks
 ```
 
@@ -81,7 +81,7 @@ window that draws the design system from the app's own code, and a picture of
 the real window in a made-up state (see [Look and feel](#look-and-feel) and
 [Snapshots](#snapshots)).
 
-The Copier callback engine uses `app/workers.py`. Creator's page owns a
+Copier's page owns CopySignals and a MeasureWorker. Creator's page owns a
 `ReadWorker` for source metadata and `BuildSignals` for its callback engine;
 all worker results reach widgets through queued Qt signals. `SourceModel` and
 `ResultModel` use the kit's virtualized Table, including tag pills, checkboxes
@@ -118,20 +118,14 @@ and `41%` under the name), `count(done, total)` (`4/201` and a mini bar, green o
 under the name), or nothing. In the rail each is an icon with a dot for the
 bar, the badge and a warn or danger word.
 
-`LegacyPage(key, title, icon, tab, subtitle)` hosts one of the old tabs until
-its page step replaces it, and `app/pages/legacy.py` works out its sidebar
-item from the JobCenter (a job running, else idle). A tab with a
-`settings_requested` signal gets its **Change in Settings** wired to the
-Settings page. `build_pages(window)` makes them all: one Rotator `Config` is
+`build_pages(window)` makes them all: one Rotator `Config` is
 shared by the Rotator page and the Settings page, whose Rotator fields are
 read-only while a Rotator job runs; each tells the other when it saved
 (`SettingsPage.changed("rotator")` → `RotatorPage.config_changed()`,
 `RotatorPage.config_edited` → `SettingsPage.show_rotator()`). The Tracker page
 reads the same `Config` for where myprojects is. Its **Send to Copier** is
-`TrackerPage.copier_requested(folders)` → `CopierTab.add_folders(folders)` →
-`TrackerPage.copier_took(folders, added)`, wired in `build_pages`. **When the
-Copier gets a page of its own (step 14), that page must take these folders
-too**: `test_tracker_page.py` builds the window through `build_pages` and fails
+`TrackerPage.copier_requested(folders)` → `CopierPage.add_folders(folders)` →
+`TrackerPage.copier_took(folders, added)`, wired in `build_pages`. `test_tracker_page.py` builds the window through `build_pages` and fails
 if the Copier stops accepting folders from the Tracker.
 
 The status line reads the `JobCenter` (`StatusBinding`): the job that leads,
@@ -394,8 +388,7 @@ engines' own lines, `note(kind, title, detail, chip, run)` for a journal entry
 on the way, and `finish(result, summary, title=, detail=, chip=, run=,
 journal=True)` / `fail(message)`. `finish` ends the job, writes the last log
 line, and journals `<activity>.<result>`. With no services installed every
-call does nothing. The old tabs are wired this way, thinly, until their pages
-replace them.
+call does nothing, so pages can be built independently in tests.
 
 **`JobCenter`** (`jobs.py`). `start(tool, title, page)` → `Job`;
 `Job.update(phase_text, done, total, count_text=None)` (what is left out keeps
@@ -671,9 +664,8 @@ end of `theme.py` (`BUTTON`, `CONTROL_HEIGHT`, `CHIP_HEIGHT`, …), as `$(px:…
 in the template.
 
 `theme.apply(app)` sets Fusion, the palette, the font and the stylesheet, and
-reads Windows' animation switch. The old tabs' helpers (`label_style`,
-`console_style`, `make_accent`) are mapped onto
-the tokens until the pages that call them are replaced.
+reads Windows' animation switch. All pages now use kit components; the
+hand-styled helpers and legacy tab adapters have been removed.
 
 ### Icons
 
@@ -703,9 +695,8 @@ spinners.
   float property that writes the real value, because animating `value` itself
   would land back in `setValue` and recurse. A jump backwards is a run starting
   over, and a hidden bar has nothing to show, so both are applied at once.
-- **Pages cross-fade** (`fade_in`, `FadingTabWidget`). The opacity effect is
-  removed the moment the fade ends — leaving one attached routes every later
-  repaint through an offscreen pixmap.
+- **Pages cross-fade** through CrossFade, a cached image of the outgoing
+  page over the live incoming page. It disappears when the fade ends.
 - **A count that changed by itself flashes** (`flash`), and turns green rather
   than blue when the playlist is finished.
 - **Loops share one clock per kind.** `loop("spin")`, `"pulse"`, `"shimmer"`
@@ -926,9 +917,9 @@ the rail beside the full sidebar, the title bar and its buttons, the header.
 The real `MainWindow`, offscreen, in a made-up state, saved as a PNG — what a
 page step compares with the design's `screen-NN` pictures. It never reads this
 machine's data: it runs in a data folder of its own under `%TEMP%`, with no
-TrackerFeed and services that never start, and the old tabs are not built
-(building them reads the library, Steam and Wallpaper Engine); a stand-in says
-where each goes. Its Snapshot's worker reads nothing either: a fixture's
+TrackerFeed and services that never start. Every tool uses its real page with
+fabricated fixture data, without library or Steam scans. The Snapshot worker
+reads nothing either: a fixture's
 finished job would have it count the Rotator's folders, and with no config
 that is the machine's own myprojects. The fixtures are in
 `tests/fixtures/ui/`: `shell.json` holds the frame's states (`--list`: idle,
@@ -938,7 +929,7 @@ empty) as jobs put in the JobCenter, a reading put in the Snapshot
 the loop; `MainWindow.load_fixture(state)` applies one, then the page's own
 `load_fixture` (its state of that name, or its first). A page with more to
 make up keeps it in a file of its own: `overview.json`, `tracker.json`,
-`rotator.json`, `review.json`, `creator.json`. A
+`rotator.json`, `review.json`, `creator.json`, `copier.json`. A
 page's own states (`--list` prints them per page: the Tracker's `tracking`,
 `paused`, `disconnected`, `finished`, …) are asked for the same way; the page's
 `frame_fixture(state)` says which of the frame's states goes with each, and
@@ -970,3 +961,39 @@ all. Folders in fixtures are on a drive `X:` the tool reports as present. `--sca
   which starts the toolkit itself.
 - **Line endings** are normalised to LF by `.gitattributes`, except `.cmd`
   files, which cmd.exe wants as CRLF.
+
+## Copier queue
+
+The engine preserves CopyJob(source, count) and CopyEngine.start(jobs, destination).
+CopyJob also accepts a sequence of source folders, copies and a per-job
+destination. Jobs run sequentially and callbacks emit detached snapshots.
+Completed (source, copy ordinal) entries stay attached to a job for session
+retry, so successful copies are not duplicated twice.
+
+inspect_queue measures file manifests and aggregates disk_usage by st_dev on a
+worker. The page debounces queue edits and rejects stale measurement generations.
+The engine repeats preflight on Start and checks each destination before writing.
+All directory traversal and thumbnail discovery stay off the GUI thread.
+
+Each output is reserved with mkdir, after the highest existing _copyN.
+Failure or Stop removes only that newly reserved partial directory, after
+checking it still resolves directly under the requested destination.
+Verification compares file names and sizes against the source manifest.
+Pause waits between files; cancellation also checks between large-file chunks.
+Per-job failures do not interrupt subsequent jobs.
+
+CopierPage exposes add_jobs(paths, copies, destination), plus add_folders and
+folders for Tracker integration. Additions received during a run wait for the
+next explicit Start. Run reports byte totals to JobCenter and copy outcomes to
+the journal; copy.job.done and copy.job.failed record individual jobs.
+The optional copier.verify setting is additive and old builds ignore it.
+
+SpinCell paints copy counts without per-row widgets. Its RowDelegate creates
+a kit SpinBox only while a cell is edited; the model owns EditRole, editable
+flags and validation. ProgressCell gains an optional caption for speed,
+elapsed time or an incomplete result. Both are in the tables kit preview.
+No new dependencies are needed.
+
+Copier fixtures: empty, queue, running, done, no-space. Filesystem tests use
+temporary directories; page tests cover worker-only measurements, stale
+results, editing, retries, actual output totals and service integration.
