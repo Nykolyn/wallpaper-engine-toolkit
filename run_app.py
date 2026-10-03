@@ -5,6 +5,10 @@ Run:
     python run_app.py --tab Review     # ... on a given page: overview, rotator,
                                        #   tracker, review, creator, copier or
                                        #   settings, in any case
+    python run_app.py --command rotate:confirm
+                                       # ... and carry out a window command once
+                                       #   it is up: the tray's "Rotate now…"
+                                       #   asks the Rotator's start question
     python run_app.py --tracker        # the background playlist tracker, tray only
     python run_app.py --autostart on   # install / remove / report autostart:
                                        #   on | off | status
@@ -16,10 +20,9 @@ from __future__ import annotations
 
 import sys
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import QApplication
 
-from app.main_window import MainWindow
 from app import theme
 
 # How long a Python thread may hold the GIL before it is asked to hand it over.
@@ -135,13 +138,18 @@ def main():
     if "--tab" in args:
         position = args.index("--tab")
         tab = args[position + 1] if position + 1 < len(args) else ""
+    command = ""
+    if "--command" in args:
+        position = args.index("--command")
+        command = args[position + 1] if position + 1 < len(args) else ""
 
     # One window. A second launch — the tray's, or a double-click on the exe —
     # hands its request to the first and leaves.
     from app import window_instance
     instance = window_instance.WindowInstance.claim()
+    asked = window_instance.parse_command(command) if command else None
     if instance is None:
-        window_instance.ask_to_show(tab)
+        window_instance.ask_to_show(tab, command=command if asked else None)
         sys.exit(0)
     window_instance.make_normal_priority()
 
@@ -149,11 +157,19 @@ def main():
     from app.settings import app_data_dir
     watch = HangWatch(app_data_dir() / "window-hangs.log", "the toolkit window").start()
 
+    # Only the window needs the window: imported here, the tray tracker — which
+    # runs all day at below-normal priority — does not load the kit and every
+    # page to draw a ring.
+    from app.main_window import MainWindow
+
     theme.apply(app)
     # A name that is no page (a typo, an old script) opens on Overview.
     win = MainWindow(initial=tab)
     instance.command_received.connect(win.handle_command)
     win.show()
+    if asked is not None:
+        # Once the window is up, as if it had been asked by the tray.
+        QTimer.singleShot(0, lambda: win.handle_command(*asked))
     code = app.exec()
     watch.stop()
     sys.exit(code)

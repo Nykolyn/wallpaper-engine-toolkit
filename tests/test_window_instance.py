@@ -77,6 +77,17 @@ wi.ask_to_show("Review", wait=0, name=NAME)
 check("a line in neither form is dropped, and the next one still read",
       wait_for(lambda: asked[-1:] == ["Review"]) and commands[-1] == ("show", "Review"))
 
+del asked[:], commands[:]
+check("a command can follow the request to show, in the same write",
+      wi.ask_to_show("Rotator", wait=0, name=NAME, command=wi.command("rotate", "confirm"))
+      and wait_for(lambda: commands == [("show", "Rotator"), ("rotate", "confirm")]))
+check("the window is raised on the page first, then asked", asked == ["Rotator"])
+try:
+    wi.ask_to_show("Rotator", wait=0, name=NAME, command="Rotate Now")
+    check("a command that is no command is refused, not sent", False)
+except ValueError:
+    check("a command that is no command is refused, not sent", True)
+
 first.release()
 check("once the window is gone, nothing answers",
       not wi.ask_to_show("Tracker", wait=0, name=NAME))
@@ -90,6 +101,10 @@ check("from the source, the window is run_app.py",
 check("without a console flashing up when there is a windowed Python",
       Path(command[0]).name.lower() in ("pythonw.exe", "python.exe"))
 check("and with no tab, no --tab", "--tab" not in wi.window_command(""))
+check("with a command, the window is told to carry it out once it is up",
+      wi.window_command("Rotator", "rotate:confirm")[-4:]
+      == ["--tab", "Rotator", "--command", "rotate:confirm"])
+check("and with none, no --command", "--command" not in wi.window_command("Tracker"))
 
 launched: list[tuple] = []
 
@@ -117,6 +132,10 @@ wi.launch("Tracker")
 check("where the job will not let it go, it is still started",
       len(launched) == 2 and not launched[-1][1] & wi._CREATE_BREAKAWAY_FROM_JOB
       and launched[-1][1] & wi._NORMAL_PRIORITY_CLASS)
+FakePopen.refuse_breakaway = False
+wi.launch("Rotator", "rotate:confirm")
+check("a started window is handed the command on its command line",
+      launched[-1][0][-2:] == ["--command", "rotate:confirm"])
 wi.subprocess.Popen = real_popen
 
 done = wi.make_normal_priority()
@@ -139,19 +158,28 @@ class Icon:
 class TrayStandIn:
     def __init__(self):
         self.icon = Icon()
+        self.opened: list[tuple] = []
+        self.quit: list[bool] = []
+        self.app = self
+        self._balloon = None
+
+    def open_toolkit(self, page="Tracker", command=None):
+        self.opened.append((page, command))
 
 
-def open_with(answers: bool, running: bool) -> tuple[TrayStandIn, list]:
-    started: list[str] = []
+def open_with(answers: bool, running: bool, page="Tracker", command=None) -> tuple[TrayStandIn, list]:
+    started: list[tuple] = []
+    asked_for: list[tuple] = []
     real = (wi.ask_to_show, wi.already_running, wi.launch)
-    wi.ask_to_show = lambda tab, wait=0: answers
+    wi.ask_to_show = lambda tab, wait=0, command=None: asked_for.append((tab, command)) or answers
     wi.already_running = lambda: running
-    wi.launch = lambda tab: started.append(tab) or FakePopen
+    wi.launch = lambda tab, command=None: started.append((tab, command)) or FakePopen
     try:
         tray = TrayStandIn()
-        tray_mod.TrackerTray.open_toolkit(tray)
+        tray_mod.TrackerTray.open_toolkit(tray, page, command)
     finally:
         wi.ask_to_show, wi.already_running, wi.launch = real
+    tray.asked = asked_for
     return tray, started
 
 
@@ -160,10 +188,42 @@ check("a click with the window open raises it and starts nothing",
       started == [] and tray.icon.messages == [])
 tray, started = open_with(answers=False, running=False)
 check("a click with no window open starts one, on the Tracker tab",
-      started == ["Tracker"])
+      started == [("Tracker", None)])
 tray, started = open_with(answers=False, running=True)
 check("a window that exists but does not answer is not stacked with another",
       started == [] and len(tray.icon.messages) == 1)
+tray, started = open_with(answers=True, running=True, page="Rotator", command="rotate:confirm")
+check("Rotate now… asks an open window for the Rotator and its start question",
+      tray.asked == [("Rotator", "rotate:confirm")] and started == [])
+tray, started = open_with(answers=False, running=False, page="Rotator", command="rotate:confirm")
+check("and a closed one is started with that command, not left to a second click",
+      started == [("Rotator", "rotate:confirm")])
+
+# What each menu row opens, and what a click on a balloon does.
+from app import tray_menu as menu_mod  # noqa: E402
+
+for key, want in ((menu_mod.OPEN, ("Tracker", None)), (menu_mod.REVIEW, ("Review", None)),
+                  (menu_mod.SETTINGS, ("Settings", None)),
+                  (menu_mod.ROTATE, ("Rotator", "rotate:confirm"))):
+    tray = TrayStandIn()
+    tray_mod.TrackerTray._on_chosen(tray, key)
+    check(f"the {key} row opens {want[0]}" + (" with its command" if want[1] else ""),
+          tray.opened == [want])
+tray = TrayStandIn()
+tray.quit = []
+tray.app = type("App", (), {"quit": lambda self: tray.quit.append(True)})()
+tray_mod.TrackerTray._on_chosen(tray, menu_mod.QUIT)
+check("Quit quits, and opens nothing", tray.quit == [True] and tray.opened == [])
+
+for kind, page in ((tray_mod.BALLOON_FINISHED, "Rotator"), (tray_mod.BALLOON_RESTARTED, "Tracker")):
+    tray = TrayStandIn()
+    tray._balloon = kind
+    tray_mod.TrackerTray._on_message_clicked(tray)
+    check(f"a click on the {kind} balloon opens the {page}, and only shows it",
+          tray.opened == [(page, None)])
+tray = TrayStandIn()
+tray_mod.TrackerTray._on_message_clicked(tray)
+check("a click on a balloon that was neither opens nothing", tray.opened == [])
 
 # ---- The window's side ----------------------------------------------------------
 

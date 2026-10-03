@@ -124,9 +124,20 @@ TOKENS: dict[str, str] = {
     "console.rowAlt": "rgba(255,255,255,.035)",
     "console.selection": "rgba(76,141,255,.28)",
 
-    # the tray icon on a light taskbar
+    # The tray icon follows Windows, not the glass: its own pair of palettes,
+    # one per taskbar (`Tray and Notifications`). Ring = the live state's
+    # colour; track = the empty part of the ring; glyph = the pause bars, the
+    # tick, the "?" and the number.
+    "tray.dark.ring": "#6FA5FF",
+    "tray.dark.paused": "#B7C0D0",
+    "tray.dark.ok": "#3DD68C",
+    "tray.dark.glyph": "#FFFFFF",
+    "tray.dark.track": "rgba(255,255,255,.22)",
     "tray.light.ring": "#2C6BD8",
+    "tray.light.paused": "#5A6270",
+    "tray.light.ok": "#0F8A4F",
     "tray.light.glyph": "#1A1A1A",
+    "tray.light.track": "rgba(0,0,0,.22)",
 
     # The app's mark (Branding): a grey outline and an accent fill on a dark
     # tile (`brand.tile`); the fill is cut out of the outline by this edge.
@@ -1548,11 +1559,17 @@ def app_icon() -> QIcon:
     return QIcon(str(path)) if path.exists() else QIcon()
 
 
-def apply(app: QApplication) -> None:
+def apply(app: QApplication, *, styled: bool = True) -> None:
     """Paint the whole application. Call once, before building any window.
 
     Also reads Windows' own animation switch: with animations off there, the
     app's motion is off too.
+
+    `styled=False` leaves the stylesheet out: the style, palette, font and
+    icon only. The tray tracker's one widget is its menu, which draws itself
+    (see tray_menu), and the sheet — a few hundred rules, parsed once and then
+    consulted by every widget — is the biggest thing a process that sits at
+    below-normal priority all day would otherwise load for nothing.
     """
     from . import animations
 
@@ -1561,7 +1578,8 @@ def apply(app: QApplication) -> None:
     app.setStyle("Fusion")
     app.setPalette(_palette())
     app.setFont(font("type.body"))
-    app.setStyleSheet(stylesheet())
+    if styled:
+        app.setStyleSheet(stylesheet())
     app.setWindowIcon(app_icon())
 
 # Copier: shared table at all widths, with editable copy counts (gate G2 A).
@@ -1573,3 +1591,21 @@ COPIER_SCAN_DEBOUNCE_MS = 180
 COPIER_LOG_HEIGHT = 120
 
 COPIER_ROW_HEIGHT = 48
+
+# -- the tray menu (`Tray and Notifications`): a popup of its own, 268 px wide
+# on `surface.overlay`; the tray process draws it without the stylesheet.
+
+TRAY_MENU_WIDTH = 268
+TRAY_MENU_PAD = 5          # frame + padding, 1 + 4
+TRAY_MENU_RADIUS = R_LG    # the design's 9, the nearest token
+TRAY_ROW_HEIGHT = 32       # 8 + a 16 px line + 8
+TRAY_ROW_PAD = 11          # left and right inside a row
+TRAY_ROW_GAP = 11          # icon to label
+TRAY_ICON_BOX = 16
+TRAY_HEADER_HEIGHT = 53    # 10 + the two lines (17 + 2 + 15) + 9
+TRAY_HEADER_PAD = (11, 10)  # left, top
+TRAY_HEADER_GAP = 10       # ring to words
+TRAY_HEADER_LINE_GAP = 2   # the title to its line
+TRAY_HEADER_RING = 24
+TRAY_DIVIDER_HEIGHT = 11   # the hairline, 5 above and 5 below
+TRAY_DIVIDER_INSET = 9

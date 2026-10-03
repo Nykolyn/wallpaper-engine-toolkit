@@ -30,6 +30,7 @@ from PySide6.QtWidgets import (
 )
 
 from .. import __version__, autostart, external, selfcheck, theme
+from ..branding import FULL_NAME
 from ..engines.rotator.config import Config
 from ..services.snapshot import PLAYLIST, RESERVE, ROTATION
 from ..settings import (
@@ -42,9 +43,6 @@ from ..ui.kit import (
 )
 from ..ui.kit.base import set_tone
 from .base import Page
-
-DISPLAY_NAME = "Toolkit"
-FULL_NAME = "Toolkit for Wallpaper Engine"
 
 # The Rotator's batch: at least one folder, and no more than a reserve could hold.
 _BATCH = (1, 100_000)

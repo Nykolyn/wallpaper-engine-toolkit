@@ -153,7 +153,7 @@ each through its own code, and they stay two files.
 | Creator tags | [Creator](creator.md) | `suite.json` (`creator.tags`) | none — nothing is tagged unless you say so |
 | `config.json` path | [Settings](settings.md#wallpaper-engine) | `suite.json` (`tracker.we_config`) | Wallpaper Engine's, detected |
 | Safety check ("Also check every") | [Settings](settings.md#wallpaper-engine) | `suite.json` (`tracker.heartbeat`, seconds) | 5 min — changes themselves are picked up as Wallpaper Engine writes them |
-| Lead monitor | [Settings](settings.md#tracker-and-tray), a monitor's menu on the [Tracker](tracker.md#the-page) page, or the tray's **Show on the icon** | `suite.json` (`tracker.primary`) | automatic |
+| Lead monitor | [Settings](settings.md#tracker-and-tray), or a monitor's menu on the [Tracker](tracker.md#the-page) page | `suite.json` (`tracker.primary`) | automatic |
 | Review source | [Review settings](review.md#what-gets-reviewed) | `suite.json` (`review.scope`) | the `new` folder |
 | Subscribe by | [Review settings](review.md#how-a-click-subscribes) | `suite.json` (`review.subscribe`: `steam` or `page`) | Steam directly |
 | Second copy of the authors backups | [Review settings](authors-database.md#a-second-copy-somewhere-else) | `suite.json` (`review.backup_mirror`) | none |

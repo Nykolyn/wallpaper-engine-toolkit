@@ -6,6 +6,50 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [3.11.0] - 2026-10-03
+
+### Added
+
+- **A new tray icon.** One ring with four states: running (the accent ring
+  draining with the wallpaper's timer, the percentage of the playlist shown in
+  the middle), paused (grey, with a pause glyph), unknown (a dotted empty
+  track) and finished (a full green ring and a tick). It is drawn on its own
+  for every size Windows asks for, 16 to 48 px, so it is crisp at every display
+  scale, and it follows a light taskbar (`#2C6BD8` ring, dark glyphs) and
+  changes when Windows does.
+- **A new tray menu**, headed by what the icon says in words ("tracking · 4 of
+  201 shown"): *Open Toolkit*, *Rotate now…* with the number of the next run,
+  *Review* with the authors waiting, *Settings* and *Quit*. *Rotate now…* opens
+  the window on the Rotator and its start question ("Start run 39?"): nothing is
+  moved until that is answered. (A window command, `rotate:confirm`, and a
+  `--command` start-up argument carry it.)
+- **The app icon is the design's mark**: two overlapping rounded rectangles on
+  a dark tile, drawn separately at 16, 20, 24, 32, 40, 48, 64, 128 and 256 px.
+  `assets/make_icon.py` draws it with QPainter, without PIL.
+- `tools/tray_preview.py` draws the tray's icon, menu and balloon copy.
+
+### Changed
+
+- The two balloons ("Playlist finished", "Playlist started over") use the
+  design's wording with the real numbers, and carry the ring as their picture.
+  Clicking one opens the Rotator after the first and the Tracker after the
+  second. They are still shown once per cycle.
+- The tray tooltip says `4 of 201 shown · next in 2:45` per monitor, and drops
+  whole lines, not half of one, when Windows would cut it.
+- *Refresh now*, *Show on the icon*, *New cycle* and *Start with Windows* are no
+  longer in the tray menu; they are on the Tracker page (a monitor's **…**
+  menu, **Playlist settings**, Refresh) and on the Settings page.
+- The tray process is lighter: it loads none of the window's code, which
+  `run_app.py` used to import before it knew which program it was starting, and
+  draws its menu without the stylesheet.
+
+### Fixed
+
+- **The tray could stall for most of a minute while its menu was being built.**
+  Every rebuild asked Task Scheduler whether autostart was on, and the tray's
+  hang log caught that taking 29 seconds. The item is gone from the menu, and
+  the menu is built only when it is opened.
+
 ## [3.10.0] - 2026-10-03
 
 ### Added
@@ -1170,7 +1214,8 @@ restructured yet; the tabs keep their layout and take on the new look.
   was right for one library and wrong for every other. Nothing is tagged now
   unless you ask for it.
 
-[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.10.0...HEAD
+[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.11.0...HEAD
+[3.11.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.10.0...v3.11.0
 [3.10.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.9.0...v3.10.0
 [3.9.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.8.0...v3.9.0
 [3.8.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.7.0...v3.8.0

@@ -23,9 +23,15 @@ launch of the program, which passes the request on and exits.
 - `show <page>` (or `show` alone): come forward, on that page. Every version
   sends this to bring the window up, because it is the only form a window
   from before the redesign reads; `<page>` may be an old tab name.
-- `<verb>:<argument>`, the command form: `show:rotator` now; the tray's
-  "Rotate now…" will send `rotate:confirm`. A window that does not know a
-  verb still comes forward.
+- `<verb>:<argument>`, the command form: `show:rotator`, and `rotate:confirm`,
+  which the tray's "Rotate now…" sends: come forward on the Rotator and ask the
+  start question ("Start run N?"). Nothing is moved before that is answered.
+  A window that does not know a verb still comes forward.
+
+The tray sends a command after the plain `show <page>` line, in one write, so
+a window from before the command existed still comes forward on the right page,
+and one that is not running yet is started with ``--command <verb:argument>``
+and carries the command out once it is up.
 """
 from __future__ import annotations
 
@@ -164,11 +170,17 @@ class WindowInstance(QObject):
 
 
 def ask_to_show(tab: str = "", wait: float = REACH_SECONDS,
-                name: str | None = None) -> bool:
+                name: str | None = None, command: str | None = None) -> bool:
     """Ask a running window to come forward. False if none could be reached.
 
-    Sent in the plain form, which a window of any version understands."""
-    return send(f"show {tab}", wait, name)
+    Sent in the plain form, which a window of any version understands; a
+    `command` (as `command()` writes it) follows on a line of its own."""
+    message = f"show {tab}"
+    if command:
+        if parse_command(command) is None:
+            raise ValueError(f"not a window command: {command!r}")
+        message += "\n" + command
+    return send(message, wait, name)
 
 
 def send(message: str, wait: float = REACH_SECONDS, name: str | None = None) -> bool:
@@ -204,19 +216,21 @@ def send(message: str, wait: float = REACH_SECONDS, name: str | None = None) -> 
         time.sleep(0.2)
 
 
-def window_command(tab: str = "") -> list[str]:
-    """How to start the window on this machine: the built exe, or the source."""
+def window_command(tab: str = "", command: str | None = None) -> list[str]:
+    """How to start the window on this machine: the built exe, or the source.
+    `command` is carried out once the window is up (see `run_app --command`)."""
     if getattr(sys, "frozen", False):
-        command = [sys.executable]
+        argv = [sys.executable]
     else:
         exe = Path(sys.executable)
         windowed = exe.with_name("pythonw.exe")
         script = Path(__file__).resolve().parent.parent / "run_app.py"
-        command = [str(windowed if windowed.exists() else exe), str(script)]
-    return command + (["--tab", tab] if tab else [])
+        argv = [str(windowed if windowed.exists() else exe), str(script)]
+    return (argv + (["--tab", tab] if tab else [])
+            + (["--command", command] if command else []))
 
 
-def launch(tab: str = "") -> subprocess.Popen:
+def launch(tab: str = "", command: str | None = None) -> subprocess.Popen:
     """Start the window as a program of its own, at normal priority.
 
     A child inherits a below-normal priority class unless it is told otherwise,
@@ -229,16 +243,16 @@ def launch(tab: str = "") -> subprocess.Popen:
     ``external`` keeps from other programs. Its own bootloader sets them up
     again anyway.
     """
-    command = window_command(tab)
+    argv = window_command(tab, command)
     cwd = str(Path(sys.executable).resolve().parent if getattr(sys, "frozen", False)
               else Path(__file__).resolve().parent.parent)
     flags = _NORMAL_PRIORITY_CLASS | _CREATE_BREAKAWAY_FROM_JOB
     try:
-        return subprocess.Popen(command, cwd=cwd, creationflags=flags, close_fds=True)
+        return subprocess.Popen(argv, cwd=cwd, creationflags=flags, close_fds=True)
     except OSError:
         # The job does not allow breaking away; a window inside it is still a
         # window of its own.
-        return subprocess.Popen(command, cwd=cwd, creationflags=_NORMAL_PRIORITY_CLASS,
+        return subprocess.Popen(argv, cwd=cwd, creationflags=_NORMAL_PRIORITY_CLASS,
                                 close_fds=True)
 
 

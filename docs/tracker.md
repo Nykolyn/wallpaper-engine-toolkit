@@ -28,9 +28,10 @@ Open the Tracker page (Ctrl+3), or run the tray-only tracker:
 python run_app.py --tracker
 ```
 
-…or `run_tracker.cmd`. The tray icon is a progress ring with the percent in the
-middle; the tooltip carries `seen/total` per monitor. A balloon fires once a
-playlist has been shown end to end — that is the cue to rotate.
+…or `run_tracker.cmd`. The tray icon is a ring with the percent of the playlist
+shown in the middle; the tooltip says `4 of 201 shown` per monitor, and a balloon
+fires once a playlist has been shown end to end — that is the cue to rotate.
+See [The tray](#the-tray).
 
 Clicking the icon opens the main window on this page — as a **program of its
 own**, at normal priority, and clicking again brings the same window forward
@@ -162,6 +163,70 @@ window is open" when it does not.
 
 With nothing to show, the page says why: `config.json` was not found (choose it
 in Settings), no monitor plays a playlist, or Wallpaper Engine is not running.
+
+## The tray
+
+The tray icon is the one part of the toolkit that lives outside its window, so
+it follows Windows rather than the window's look.
+
+**The icon** is a ring, in four states, and it never animates:
+
+| State | Looks like | When |
+|---|---|---|
+| running | accent ring, filled to the time left on the current wallpaper; the percentage of the playlist shown in the middle | Wallpaper Engine's timer is being followed |
+| paused | the same ring in grey, with a pause glyph | the wallpaper is paused |
+| unknown | a dotted empty track; the percentage in the middle while the count is known, a **?** when it is not | no timer reading yet, Wallpaper Engine is not running, or there is no playlist |
+| finished | a full green ring and a tick | every wallpaper of the playlist has been shown |
+
+The ring is drawn **for each size Windows asks for** — 16, 20, 24, 32, 40 and
+48 px, so 100 % to 300 % scaling — rather than one picture shrunk: the stroke is
+2.5 px at 16, 3 at 24, 3.5 at 32. The percentage is drawn from 24 px up; below
+that the middle carries a dot. On a **light taskbar** (`SystemUsesLightTheme`
+in the registry) the ring is `#2C6BD8` and the glyphs `#1A1A1A`; the tray hears
+Windows change it and also reads it again every minute.
+
+The ring moves in 2° steps, so on a 10-minute delay the icon is redrawn every
+few seconds, not every second.
+
+**The menu** (right-click) opens with the icon in words — `tracking · 4 of 201
+shown`, `paused · …`, `timer unknown · …`, `finished · all 201 shown` — then:
+
+- **Open Toolkit** (Enter) — the window, on this page. A left click does the same.
+- **Rotate now…** `run 39` — the window on the [Rotator](rotator.md), which
+  checks the folders and asks "Start run 39?". Nothing is moved before that
+  question is answered, so a stray click on the tray only opens a question.
+- **Review** `12 waiting` — the window on [Review](review.md). The number is the
+  authors of the last scan not gone through yet, and is left out when there is
+  none.
+- **Settings** — the window's [Settings](settings.md).
+- **Quit** — stops the tray. The count survives a restart.
+
+*Refresh now*, *Show on the icon*, *New cycle* and *Start with Windows* are not
+in the menu: they are on this page (the header's Refresh, a monitor's **…**
+menu, **Playlist settings**) and on the Settings page.
+
+**The tooltip** has a line per monitor: `▸ Monitor1 · 4 of 201 shown · next in
+2:45`, the lead marked; Windows cuts a tooltip at 128 characters, so lines that
+do not fit are left out whole.
+
+**The balloons** are the only two the toolkit sends:
+
+- *Playlist finished* — "All 201 wallpapers on Monitor1 have been shown. Rotate
+  to swap in 1 000 folders from the reserve." The second sentence is left out
+  when the Rotator's settings do not say how many folders a run moves in. (The
+  design adds "that have never been used"; the tray cannot know that without
+  listing the reserve on the wallpaper disk, so it does not say it.)
+- *Playlist started over* — "Monitor1 is back at wallpaper 1 of 201 without a
+  rotation — Wallpaper Engine restarted or the playlist was rebuilt. The count
+  starts again."
+
+Each is shown once per cycle. Clicking one opens the window on the Rotator
+(after *finished*) or on this page (after *started over*). They are Windows'
+own notifications from the tray icon, so they have no buttons.
+
+The tray is kept light on purpose: it runs all day at below-normal priority. It
+imports none of the window's code, draws its menu without the stylesheet, and
+reads two small files in the data folder only when the menu opens.
 
 ## Starting with Windows
 
@@ -377,8 +442,8 @@ With two monitors running two playlists, the page's detailed card, its table,
 the tray number and "Next in the loop" all follow the playlist a **rotation
 built** — that is the one whose end is the cue to rotate again. A subscribed or
 hand-made playlist runs forever and says nothing about timing. *Show on the
-icon* in the tray menu, *Show on the tray icon* in a card's menu and **Lead
-monitor** on the Settings page override this, and the choice is remembered.
+tray icon* in a card's menu and **Lead monitor** on the Settings page override
+this, and the choice is remembered.
 (*Show its playlist below* only changes which list the table shows.)
 
 ### When Wallpaper Engine starts a playlist over
@@ -435,8 +500,9 @@ draw at a time, in the same pass.
 
 The number in the middle of the tray icon is how much of the playlist has been
 shown. The ring around it is how long the current wallpaper has left — full just
-after a change, draining clockwise, grey while paused, an empty track while the
-time is not yet known.
+after a change, draining clockwise from twelve, grey while paused, a dotted empty
+track while the time is not yet known ([the tray](#the-tray) has the four
+states).
 
 Wallpaper Engine does not publish its timer. Its `-control` commands report no
 time and it keeps no pipe open to ask. It does keep two files in `bin/` in a

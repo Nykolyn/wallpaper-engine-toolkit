@@ -59,7 +59,10 @@ def run() -> tuple[bool, str]:
                         ("app.pages.creator", "the Creator page: reading, building and verified Move"),
                         ("app.pages.review_settings",
                          "Review settings, the authors database and its backups"),
-                        ("app.window_frame", "the window's own title bar")):
+                        ("app.window_frame", "the window's own title bar"),
+                        ("app.tracker_tray", "the tray tracker, its ring and its balloons"),
+                        ("app.tray_menu", "the tray's menu"),
+                        ("app.tray_words", "the tray's tooltip, menu hints and balloon copy")):
         try:
             __import__(module)
             lines.append(f"ok      {module}  ({why})")
