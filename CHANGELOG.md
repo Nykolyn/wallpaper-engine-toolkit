@@ -6,6 +6,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [3.15.0] - 2026-10-04
+
+### Added
+
+- **The Overview's monitor cards show each display's size and the
+  wallpaper's author**, as the design's frame 01 does: `2560×1440` beside the
+  name, "Marlow · 14 min in" under the title. The size is worked out from
+  config.json's monitor map (already in memory) and Windows' list of displays
+  (`wallpaper_timer.monitor_resolutions`, which the Tracker page's cards now
+  share), the author by the Tracker page's own reader, on its thread. Each is
+  left out until it is known.
+
 ## [3.14.0] - 2026-10-04
 
 ### Added
@@ -1382,7 +1394,8 @@ restructured yet; the tabs keep their layout and take on the new look.
   was right for one library and wrong for every other. Nothing is tagged now
   unless you ask for it.
 
-[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.14.0...HEAD
+[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.15.0...HEAD
+[3.15.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.14.0...v3.15.0
 [3.14.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.13.0...v3.14.0
 [3.13.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.12.2...v3.13.0
 [3.12.2]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.12.1...v3.12.2

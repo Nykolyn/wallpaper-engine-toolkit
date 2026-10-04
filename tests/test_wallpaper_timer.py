@@ -662,6 +662,19 @@ if "--live" in sys.argv:
         check(f"and the search read only what it had to ({finder._search_cost[0]:.0f} MB "
               f"in {taken:.0f} s)", taken < 180)
 
+print("-- each monitor's display size --")
+CONFIG = {"?installdirectory": "x", "steamuser": {"general": {"user": {"monitormap": {
+    "\\\\?\\DISPLAY#A": {"location": 1}}}}}}
+check("the monitor map is the first user's", wt.monitor_map(CONFIG) == {
+    "\\\\?\\DISPLAY#A": {"location": 1}} and wt.monitor_map(None) == {} and wt.monitor_map({"x": 1}) == {})
+check("a display's rectangle reads as its size, none as nothing",
+      wt.resolution_of((2560, 0, 4480, 1080)) == "1920×1080" and wt.resolution_of(None) == "")
+real_rects = wt.display_rects
+wt.display_rects = lambda mapping: {"Monitor1": (0, 0, 2560, 1440)} if mapping else {}
+check("the sizes come from the map config.json keeps", wt.monitor_resolutions(CONFIG)
+      == {"Monitor1": "2560×1440"} and wt.monitor_resolutions(None) == {})
+wt.display_rects = real_rects
+
 print()
 print("PASSED %d/%d" % (sum(results), len(results)))
 sys.exit(0 if all(results) else 1)

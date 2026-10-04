@@ -535,6 +535,30 @@ def _norm(path: str) -> str:
     return path.replace("\\", "/").lower()
 
 
+def monitor_map(config: dict | None) -> dict:
+    """config.json's `monitormap`, from its first user that has one; {} without."""
+    for user in (config or {}).values():
+        general = user.get("general") if isinstance(user, dict) else None
+        if isinstance(general, dict):
+            return (general.get("user") or {}).get("monitormap") or {}
+    return {}
+
+
+def resolution_of(rect: Rect | None) -> str:
+    """"2560×1440" for a display's rectangle; "" when there is none."""
+    if not rect:
+        return ""
+    left, top, right, bottom = rect
+    return f"{right - left}×{bottom - top}"
+
+
+def monitor_resolutions(config: dict | None) -> dict[str, str]:
+    """MonitorN → "2560×1440", for the displays attached now. From config.json
+    as already read (EngineFiles.config) and Windows' list of displays: no
+    file is read, so a window's thread may ask."""
+    return {m: resolution_of(r) for m, r in display_rects(monitor_map(config)).items()}
+
+
 def display_rects(monitor_map: dict) -> dict[str, Rect]:
     """Wallpaper Engine's MonitorN mapped to each attached display's rectangle.
 

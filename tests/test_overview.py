@@ -318,6 +318,13 @@ check("Wallpaper Engine not running: the last known, and no time on screen made 
       view.shown_for is None and view.note == "last known · Wallpaper Engine is not running"
       and view.title == "Paper Lanterns at Dusk")
 check("nothing counted: no cards", monitor_views([], None, NOW) == [])
+view = monitor_views([progress("Monitor1", from_rotation=True)], None, NOW,
+                     authors={"X:/projects/monitor1-folder/scene.pkg": "Marlow"},
+                     resolutions={"Monitor1": "2560×1440"})[0]
+check("the display's size and the author, when they are known",
+      (view.resolution, view.author) == ("2560×1440", "Marlow")
+      and view.meta_text(NOW) == "Marlow · 14 min in")
+check("and left out while they are not", (views[1].resolution, views[1].author) == ("", ""))
 
 
 # ---- the log file, followed -----------------------------------------------------------------
@@ -457,6 +464,36 @@ check("no monitors: the column says no playlist is counted yet",
       page.monitor_cards == [] and page.no_monitors.isVisibleTo(page))
 feed.results = [progress("Monitor1", from_rotation=True)]
 feed.updated.emit()
+
+print("-- the cards' resolution and author --")
+from app.engines.wallpaper_meta import Described, WallpaperMeta                # noqa: E402
+read_on_gui: list[bool] = []
+
+
+class Knows(ov.MetaCache):
+    """An author found for each wallpaper, recording which thread asked."""
+
+    def describe(self, items):
+        read_on_gui.append(threading.current_thread() is threading.main_thread())
+        return {i: Described(WallpaperMeta("Paper Lanterns at Dusk", "scene", "1"), "Marlow", True)
+                for i in items}
+
+
+real_resolutions = ov.monitor_resolutions
+ov.monitor_resolutions = lambda config: {"Monitor1": "2560×1440"}
+page._reader.meta = Knows()
+page._described, page._asked, page._resolution_key = {}, set(), None
+feed.results = [progress("Monitor1", from_rotation=True)]
+feed.updated.emit()
+check("the author is read off the window's thread and the card shows it",
+      wait_for(lambda: page.monitor_cards[0].texts()["meta"] == "Marlow · 14 min in")
+      and read_on_gui == [False])
+check("and the display's size beside the name", page.monitor_cards[0].texts()["resolution"]
+      == "2560×1440")
+feed.updated.emit()
+app.processEvents()
+check("a wallpaper already described is not asked about again", read_on_gui == [False])
+ov.monitor_resolutions = real_resolutions
 
 print("-- a rotation runs --")
 run = services.begin("rotator", "Run 39", activity="run")
