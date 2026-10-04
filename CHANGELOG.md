@@ -6,6 +6,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [3.18.1] - 2026-10-04
+
+### Fixed
+
+- **The tray icon is as big as the tray's other icons.** The mark kept the
+  margins it has on the Branding page's tile, so it filled about two thirds of
+  the square and looked small next to Steam's. It now spans the icon's width,
+  centred top to bottom, and its badge grows with it. The fill moves a pixel
+  at a time: 16 steps at 16 px.
+
 ## [3.18.0] - 2026-10-04
 
 ### Changed
@@ -16,9 +26,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   frame's right edge: empty just after a change, both frames filled whole
   (100 %) the moment the next one is due. Paused freezes the fill in grey with
   a pause badge, unknown is the muted mark with an amber "?", and a finished
-  playlist turns both frames green with a tick. The mark spans the icon's
-  whole width, as the other icons in the tray fill theirs; the fill's edge sits
-  on whole pixels, and the icon is redrawn only when it moves one. The colours are the
+  playlist turns both frames green with a tick. The fill's edge sits on whole
+  pixels, and the icon is redrawn only when it moves one. The colours are the
   same on a light and a dark taskbar, so the tray no longer watches Windows'
   theme.
 - **The tray's tooltip starts each monitor's line with its playlist's share**:
@@ -1486,7 +1495,8 @@ restructured yet; the tabs keep their layout and take on the new look.
   was right for one library and wrong for every other. Nothing is tagged now
   unless you ask for it.
 
-[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.18.0...HEAD
+[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.18.1...HEAD
+[3.18.1]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.18.0...v3.18.1
 [3.18.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.17.1...v3.18.0
 [3.17.1]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.17.0...v3.17.1
 [3.17.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.16.0...v3.17.0
