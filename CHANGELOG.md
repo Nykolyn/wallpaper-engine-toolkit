@@ -6,6 +6,46 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [3.17.0] - 2026-10-04
+
+### Added
+
+- **Delete, on the Tracker's and the Rotator's rows.** A trash button at the end
+  of each row sends the wallpaper's folder to the Recycle Bin, after asking. A
+  Workshop item (a folder under Steam's `workshop\content\431960`) is
+  unsubscribed first, through the running Steam client, so Steam does not
+  download it again; if Steam is not running or will not drop it, nothing is
+  deleted and the toast says why. It runs off the window's thread and is
+  refused while a rotation runs.
+- **The Rotator's rows act as the Tracker's**: a click opens the folder in
+  Explorer, and each row has **Send to Copier** and **Delete**.
+- **SIZE on the Tracker's playlist**: each wallpaper's folder, measured on the
+  reader's thread after the titles and kept until "Read again". The Rotator's
+  tables, the Copier and Review's list had it already.
+- **Animated previews play in the tables**: a GIF preview plays while its row
+  is on screen, eight at most, read off the window's thread and played from
+  memory; none with Windows' animations off.
+
+### Changed
+
+- **The tables' previews are square, 200 × 200**, the picture filling the
+  square rather than letterboxed in it (the Tracker, the Rotator, the Copier,
+  the Creator's results, Review's list). A window too narrow to leave the
+  title room draws them at 120 or 72. The still kept for each preview is now
+  up to 480 × 480, so each is read again once.
+- **The Tracker's `#` undoes a sort**: clicking its title puts the playlist
+  back in its own order rather than sorting by number.
+- **The window opens without flashing.** It comes up at once with the mark and
+  "Opening Toolkit…", makes its pages once that is on screen, and fades them
+  in. Before, 21 labels were shown for a moment as windows of their own while
+  the pages were made (each a small window with a title bar, at the corner of
+  the screen), then an empty frame came up, and only then the window.
+
+### Removed
+
+- **The Tracker's AUTHOR column and author list.** The filter looks in the
+  title. The lead card still names the author.
+
 ## [3.16.0] - 2026-10-04
 
 ### Added
@@ -1407,7 +1447,8 @@ restructured yet; the tabs keep their layout and take on the new look.
   was right for one library and wrong for every other. Nothing is tagged now
   unless you ask for it.
 
-[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.16.0...HEAD
+[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.17.0...HEAD
+[3.17.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.16.0...v3.17.0
 [3.16.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.15.0...v3.16.0
 [3.15.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.14.0...v3.15.0
 [3.14.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.13.0...v3.14.0

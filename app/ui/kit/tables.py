@@ -24,6 +24,11 @@ wallpapers live on a hard disk, so everything is built for that:
   visible rows and drops what it had queued for the rest. A row whose
   preview is not in yet shows an empty well; one with no preview, the
   placeholder's cross.
+- **An animated preview plays, on screen only.** For the rows on screen whose
+  preview is a GIF, the loader reads its bytes on a worker and a QMovie plays
+  them from memory, `MAX_PLAYERS` at a time, stopped when the table is off
+  screen or motion is off. The row stays a tile, its picture a still; each
+  frame is drawn over it, so a frame costs two copies, not a row drawn anew.
 
 The column spec (`Column`) says, per column: its title, a fixed content width
 or a share of what is left, alignment, mono or sans, whether it sorts, and
@@ -45,10 +50,12 @@ from dataclasses import dataclass
 from typing import Callable, Hashable, Iterable, Sequence
 
 from PySide6.QtCore import (
-    QAbstractTableModel, QEvent, QItemSelection, QItemSelectionModel, QModelIndex, QPoint,
-    QPointF, QRect, QRectF, QSize, Qt, QTimer, Signal,
+    QAbstractTableModel, QBuffer, QByteArray, QEvent, QIODevice, QItemSelection,
+    QItemSelectionModel, QModelIndex, QPoint, QPointF, QRect, QRectF, QSize, Qt, QTimer, Signal,
 )
-from PySide6.QtGui import QCursor, QFont, QFontMetricsF, QPainter, QPainterPath, QPen, QPixmap
+from PySide6.QtGui import (
+    QCursor, QFont, QFontMetricsF, QMovie, QPainter, QPainterPath, QPen, QPixmap,
+)
 from PySide6.QtWidgets import (
     QAbstractItemView, QHBoxLayout, QHeaderView, QLabel, QListView, QSizePolicy, QStyle,
     QStyledItemDelegate, QTableView, QToolTip, QWidget,
@@ -71,11 +78,13 @@ THUMB_STATES = ("placeholder", "loading", "image")
 
 
 def paint_thumb(painter: QPainter, rect: QRectF, pixmap: QPixmap | None, state: str,
-                radius: float, *, shimmer: float | None = None) -> None:
+                radius: float, *, shimmer: float | None = None, cover: bool = False) -> None:
     """A preview in its well: the picture fitted inside (letterboxed, never
-    cropped, as the gallery draws it), or while it loads an empty well, or
-    when there is none the placeholder's two diagonals. `shimmer` is a loading
-    skeleton's opacity, for a Thumb that pulses while it waits."""
+    cropped, as the gallery draws it) — or, with `cover`, filling the well
+    and cropped about its middle (a table's square thumbs) — or while it
+    loads an empty well, or when there is none the placeholder's two
+    diagonals. `shimmer` is a loading skeleton's opacity, for a Thumb that
+    pulses while it waits."""
     rect = QRectF(rect)
     path = QPainterPath()
     path.addRoundedRect(rect, radius, radius)
@@ -85,7 +94,8 @@ def paint_thumb(painter: QPainter, rect: QRectF, pixmap: QPixmap | None, state: 
     painter.setClipPath(path)
     if state == "image" and pixmap is not None and not pixmap.isNull():
         size = pixmap.deviceIndependentSize()
-        scale = min(rect.width() / size.width(), rect.height() / size.height())
+        fit = max if cover else min
+        scale = fit(rect.width() / size.width(), rect.height() / size.height())
         w, h = size.width() * scale, size.height() * scale
         target = QRectF(rect.center().x() - w / 2, rect.center().y() - h / 2, w, h)
         painter.setRenderHint(QPainter.SmoothPixmapTransform)
@@ -121,7 +131,8 @@ def thumb_tile(pixmap: QPixmap | None, state: str, size: str, dpr: float) -> QPi
     tile.setDevicePixelRatio(dpr)
     tile.fill(Qt.transparent)
     painter = QPainter(tile)
-    paint_thumb(painter, QRectF(0, 0, width, height), pixmap, state, radius)
+    paint_thumb(painter, QRectF(0, 0, width, height), pixmap, state, radius,
+                cover=size in theme.THUMB_COVER)
     painter.end()
     if state != "image":
         _state_tiles[key] = tile
@@ -256,6 +267,9 @@ class Column:
       type.bodySm. `font` names another type token outright.
     - `tone`: the text's colour token.
     - `sortable`: a click on its title sorts by it.
+    - `natural`: the column is the order the rows were given in (a playlist's
+      `#`): a click on its title undoes any sort rather than sorting, and its
+      title is lit while no column sorts.
     - `thumb`: a `theme.THUMB` size drawn before the text; `icon`: a glyph.
     - `elide`: "right", or "left" for paths, whose end is the part that tells.
     """
@@ -269,6 +283,7 @@ class Column:
     thumb: str | None = None
     icon: str | None = None
     elide: str = "right"
+    natural: bool = False
 
     def __post_init__(self) -> None:
         if self.align not in ALIGNMENTS:
@@ -1044,6 +1059,27 @@ class RowDelegate(QStyledItemDelegate):
             p, QRect(0, 0, width, height), model, item, values, spans, fill, edge, focused,
             faded))
         painter.drawPixmap(x, y, tile)
+        if table.playing():
+            self._paint_frames(painter, model, item, x, y, height, spans, faded)
+
+    def _paint_frames(self, painter: QPainter, model: "TableModel", item, x: int, y: int,
+                      height: int, spans, faded) -> None:
+        """An animated preview's frame, over the still its row's tile holds."""
+        table = self._table
+        source = model.thumb_source(item)
+        for c, column in enumerate(model.columns):
+            if not column.thumb or spans[c][1] <= 0:
+                continue
+            size = table.thumb_size(column)
+            frame = table.frame_tile(source, size)
+            if frame is None:
+                continue
+            h = theme.THUMB[size][1]
+            if faded is not None:
+                painter.setOpacity(faded)
+            painter.drawPixmap(QPointF(x + spans[c][0], y + height / 2 - h / 2), frame)
+            if faded is not None:
+                painter.setOpacity(1.0)
 
     def _look(self, row: int, c: int, value):
         """How a cell that answers the pointer looks on this row now: part of its key."""
@@ -1354,7 +1390,8 @@ class TableHeader(QHeaderView):
                 continue
             box = QRectF(left, 0, width, rect.height() - 1)
             title = column.title.upper()
-            lit = c == sorted_by or (column.sortable and c == self._hot)
+            lit = (c == sorted_by or (column.sortable and c == self._hot)
+                   or (column.natural and sorted_by < 0))
             icon = theme.TABLE_SORT_ICON + theme.SP_4 if c == sorted_by else 0
             shown = metrics.elidedText(title, Qt.ElideRight, max(0.0, box.width() - icon))
             text_w = metrics.horizontalAdvance(shown)
@@ -1385,12 +1422,17 @@ class Table(QTableView):
     Rows are a fixed height (`row_height()`: the thumb column's height and
     its padding, or one line of text and a chip); group headers are shorter.
     Selection is by row. A click on a sortable column's title sorts by it,
-    and again the other way; the selection follows its items. Thumbnails are
+    and again the other way; a `natural` column's title goes back to the
+    order the rows were given in. The selection follows its items. Thumbnails are
     asked for once scrolling settles, for the rows on screen only.
     """
 
     THUMB_SETTLE = 90               # ms of stillness before thumbnails are asked for
     THUMB_CACHE = 400               # pixmaps kept; a screen shows a few dozen
+    # Animated previews playing at once. A table of 200 px thumbs shows four or
+    # five rows; the gallery, thirty to a page, found eight the most worth it.
+    MAX_PLAYERS = 8
+    ANIMATION_CACHE = 24            # GIFs' bytes kept, for rows scrolled back to
 
     sort_changed = Signal(int, object)      # column, Qt.SortOrder
     button_clicked = Signal(int, int)       # row, column: a ButtonCell was clicked
@@ -1422,7 +1464,9 @@ class Table(QTableView):
         self.horizontalHeader().geometriesChanged.connect(self._spans_changed)
 
         self._row_height: int | None = None
-        self._narrow = False            # the stretched thumb column draws the smaller thumb
+        # The size the stretched thumb column draws while too narrow for its own
+        # (theme.THUMB_NARROWER); None draws its own.
+        self._narrow: str | None = None
         self._hover = -1
         self._keyboard = False
         self._spans: list[tuple[float, float]] | None = None
@@ -1435,6 +1479,12 @@ class Table(QTableView):
 
         self._loader = loader or ThumbLoader(self)
         self._loader.local_done.connect(self._thumb_arrived)
+        self._loader.animation_done.connect(self._animation_arrived)
+        # key → the GIF's bytes, empty when its preview is not animated
+        self._gifs: OrderedDict[str, QByteArray] = OrderedDict()
+        self._players: dict[str, tuple[QMovie, QBuffer]] = {}
+        self._frames: dict[tuple[str, str], QPixmap] = {}    # (key, size) → frame tile
+        self._frame_images: dict[str, QPixmap] = {}         # key → the frame playing
         self._pixmaps: OrderedDict[str, QPixmap | None] = OrderedDict()
         self._tiles: dict[tuple[str, str], QPixmap] = {}
         self._thumb_gen: dict[str, int] = {}    # pictures arrived per source: part of a row's key
@@ -1514,13 +1564,15 @@ class Table(QTableView):
         `theme.TABLE_WORDS_MIN`. Pictures are still asked for at the column's
         own size, so stepping back up is never blurred."""
         if self._narrow and column.width is None and column.thumb in theme.THUMB_NARROWER:
-            return theme.THUMB_NARROWER[column.thumb]
+            return self._narrow
         return column.thumb
 
     def narrow(self) -> bool:
-        return self._narrow
+        return self._narrow is not None
 
     def _check_narrow(self) -> None:
+        """Step the stretched thumb column's thumb down (THUMB_NARROWER, as far
+        as it goes) until its words keep `theme.TABLE_WORDS_MIN`."""
         model = self.model()
         if not isinstance(model, TableModel):
             return
@@ -1533,9 +1585,12 @@ class Table(QTableView):
         for c, column in enumerate(model.columns):
             if column.width is None and column.thumb in theme.THUMB_NARROWER and c < header.count():
                 left, right = self._pads(c, len(model.columns) - 1)
-                words = (header.sectionSize(c) - missing - left - right
-                         - theme.THUMB[column.thumb][0] - theme.THUMB_GAP)
-                narrow = words < theme.TABLE_WORDS_MIN
+                room = header.sectionSize(c) - missing - left - right - theme.THUMB_GAP
+                size = column.thumb
+                while (room - theme.THUMB[size][0] < theme.TABLE_WORDS_MIN
+                       and size in theme.THUMB_NARROWER):
+                    size = theme.THUMB_NARROWER[size]
+                narrow = None if size == column.thumb else size
                 break
         if narrow != self._narrow:
             self._narrow = narrow
@@ -1600,6 +1655,11 @@ class Table(QTableView):
         model: TableModel = self.model()
         if not isinstance(model, TableModel) or not model.columns[column].sortable:
             return
+        if model.columns[column].natural:
+            # the order the rows came in: back to it, whatever was sorted
+            if model.sort_column() >= 0:
+                self.sort_by(-1)
+            return
         if model.sort_column() == column:
             order = (Qt.DescendingOrder if model.sort_order() == Qt.AscendingOrder
                      else Qt.AscendingOrder)
@@ -1655,10 +1715,127 @@ class Table(QTableView):
 
     def thumb_key(self, source, size: str | None) -> tuple:
         """What decides how a row's thumb looks, for its tile's key: the source,
-        the size, and the state of its picture with how many times it came."""
+        the size, and the state of its picture with how many times it came. A
+        playing preview's frames are drawn over the tile, never into it."""
         key = str(source) if source else None
         state = self.thumb_state(source)[0]
         return key, size, state, self._thumb_gen.get(key, 0) if state == "image" else 0
+
+    # -- animated previews
+
+    def playing(self) -> bool:
+        """Whether any preview is playing (a row then draws its frame)."""
+        return bool(self._frame_images)
+
+    def players(self) -> list[str]:
+        """The sources whose previews are playing now."""
+        return list(self._players)
+
+    def frame_tile(self, source, size: str) -> QPixmap | None:
+        """The frame an animated preview is on, ready to copy; None when it is
+        not playing (the still in the row's tile shows)."""
+        key = str(source) if source else ""
+        image = self._frame_images.get(key)
+        if image is None:
+            return None
+        tile = self._frames.get((key, size))
+        if tile is None:
+            tile = self._frames[(key, size)] = thumb_tile(image, "image", size,
+                                                          self.devicePixelRatioF())
+        return tile
+
+    def _animates(self) -> bool:
+        window = self.window()
+        return (animations.ENABLED and self.isVisible()
+                and not (window is not None and window.isMinimized()))
+
+    def _play_visible(self) -> None:
+        """Play the animated previews of the rows on screen, up to MAX_PLAYERS;
+        stop the rest. Asks for the bytes of those not read yet."""
+        wanted: list[str] = []
+        if self._animates():
+            for key in self._rows_for_key:
+                data = self._gifs.get(key)
+                if data is None:
+                    self._loader.request_animation(key, key)
+                elif not data.isEmpty():
+                    wanted.append(key)
+        wanted = wanted[:self.MAX_PLAYERS]
+        for key in [k for k in self._players if k not in wanted]:
+            self._stop_player(key)
+        for key in wanted:
+            if key not in self._players:
+                self._start_player(key)
+
+    def stop_players(self) -> None:
+        for key in list(self._players):
+            self._stop_player(key)
+
+    def _animation_arrived(self, key: str, data) -> None:
+        self._gifs[key] = data
+        self._gifs.move_to_end(key)
+        while len(self._gifs) > self.ANIMATION_CACHE:
+            gone, _ = self._gifs.popitem(last=False)
+            if gone in self._players:
+                self._stop_player(gone)
+        if key in self._rows_for_key and not data.isEmpty():
+            self._play_visible()
+
+    def _start_player(self, key: str) -> None:
+        buffer = QBuffer(self)
+        buffer.setData(self._gifs[key])
+        buffer.open(QIODevice.ReadOnly)
+        movie = QMovie(buffer, QByteArray(), self)
+        movie.setCacheMode(QMovie.CacheNone)
+        if not movie.isValid() or movie.frameCount() == 1 or not movie.jumpToFrame(0):
+            # one frame is a still, and the still is shown already
+            buffer.close()
+            movie.deleteLater()
+            buffer.deleteLater()
+            self._gifs[key] = QByteArray()
+            return
+        model = self.model()
+        column = next(c for c in model.columns if c.thumb)
+        width, height, _ = theme.THUMB[column.thumb]
+        dpr = self.devicePixelRatioF()
+        box = QSize(math.ceil(width * dpr), math.ceil(height * dpr))
+        first = movie.currentImage().size()
+        if first.isValid() and not first.isEmpty():
+            fit = (Qt.KeepAspectRatioByExpanding if column.thumb in theme.THUMB_COVER
+                   else Qt.KeepAspectRatio)
+            scaled = first.scaled(box, fit)
+            if scaled.width() < first.width():
+                movie.setScaledSize(scaled)     # decoded big, kept small
+        movie.frameChanged.connect(lambda _n, k=key: self._next_frame(k))
+        self._players[key] = (movie, buffer)
+        movie.start()
+
+    def _stop_player(self, key: str) -> None:
+        movie, buffer = self._players.pop(key)
+        movie.stop()
+        movie.deleteLater()
+        buffer.close()
+        buffer.deleteLater()
+        self._frame_images.pop(key, None)
+        for stale in [k for k in self._frames if k[0] == key]:
+            del self._frames[stale]
+        for row in self._rows_for_key.get(key, ()):
+            self._update_row(row)
+
+    def _next_frame(self, key: str) -> None:
+        player = self._players.get(key)
+        if player is None:
+            return
+        image = player[0].currentImage()
+        if image.isNull():
+            return
+        frame = QPixmap.fromImage(image)
+        frame.setDevicePixelRatio(self.devicePixelRatioF())
+        self._frame_images[key] = frame
+        for stale in [k for k in self._frames if k[0] == key]:
+            del self._frames[stale]
+        for row in self._rows_for_key.get(key, ()):
+            self._update_row(row)
 
     def thumb_tile(self, source, size: str) -> QPixmap:
         """The row's thumb as a tile ready to copy: its picture, or the empty
@@ -1695,11 +1872,13 @@ class Table(QTableView):
         width, height, _ = theme.THUMB[column.thumb]
         dpr = self.devicePixelRatioF()
         box = QSize(math.ceil(width * dpr), math.ceil(height * dpr))
+        cover = column.thumb in theme.THUMB_COVER
         for key in wanted:
             if key in self._pixmaps:
                 self._pixmaps.move_to_end(key)
             else:
-                self._loader.request_local(key, key, box)
+                self._loader.request_local(key, key, box, cover)
+        self._play_visible()
 
     def _thumb_arrived(self, key: str, image) -> None:
         pixmap = None
@@ -1727,6 +1906,15 @@ class Table(QTableView):
         super().resizeEvent(event)
         self._spans = None
         self._settle.start()
+
+    def showEvent(self, event) -> None:         # noqa: N802 - Qt's name
+        super().showEvent(event)
+        if self._gifs:
+            self._settle.start()        # what is on screen plays again
+
+    def hideEvent(self, event) -> None:         # noqa: N802 - Qt's name
+        super().hideEvent(event)
+        self.stop_players()
 
     # -- buttons in cells
 

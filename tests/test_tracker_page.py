@@ -57,7 +57,7 @@ from app.engines.tracker import (                                        # noqa:
 from app.engines.wallpaper_meta import Described, MetaCache, WallpaperMeta   # noqa: E402
 from app.engines.wallpaper_timer import Countdown                        # noqa: E402
 from app.pages.tracker import (                                          # noqa: E402
-    PlaylistModel, TrackerPage, author_choices, empty_text, finish_at, finish_sentence,
+    PlaylistModel, TrackerPage, empty_text, finish_at, finish_sentence,
     header_subtitle, monitor_view, nav_state, pace_figure, playlist_rows, provenance,
     queue_words, rebuild_sentence, reveal, row_matches, when_text,
 )
@@ -356,14 +356,10 @@ for row, (author, title) in zip(rows, [("Marlow", "Harbour Lights"), ("tidewrigh
                                        ("Marlow", "Salt Field"), ("", "Glass River"),
                                        ("Quill", "Harbour Fog")]):
     row.author, row.title = author, title
-check("the filter looks in the title and the author, without case",
-      row_matches(rows[0], "harbour") and row_matches(rows[1], "TIDE")
-      and not row_matches(rows[2], "harbour") and row_matches(rows[2], ""))
-check("and the author chosen is the author, exactly",
-      row_matches(rows[0], "", "Marlow") and not row_matches(rows[1], "", "Marlow")
-      and not row_matches(rows[4], "harbour", "Marlow"))
-check("the authors present, most wallpapers first, the unknown left out",
-      author_choices(rows) == [("Marlow", 2), ("Quill", 1), ("tidewright", 1)])
+check("the filter looks in the title, without case, and not in the author",
+      row_matches(rows[0], "harbour") and row_matches(rows[4], "FOG")
+      and not row_matches(rows[1], "tide") and not row_matches(rows[2], "harbour")
+      and row_matches(rows[2], ""))
 found = Described(WallpaperMeta("Cedar Linen", "video"), "orbit_lab", True)
 check("a row takes what was read, once", rows[5].describe(found) and not rows[5].describe(found)
       and (rows[5].title, rows[5].author, rows[5].kind, rows[5].known)
@@ -661,8 +657,15 @@ try:
     check("the guard does catch a GUI-thread call",
           raises(lambda: os.path.isdir(str(TMP)), OSError) and len(on_gui_thread) == 1)
     on_gui_thread.clear()
+    measured: list[bool] = []
+
+    def measure(folder: str) -> int:
+        measured.append(threading.current_thread() is threading.main_thread())
+        return 1_000_000 * (int(folder[-3:]) if folder[-3:].isdigit() else 1)
+
     page = TrackerPage(feed, None, settings=None, now=lambda: NOW,
-                       make_timer=lambda f: FakeTimer(), meta=ReadNothing(), load=load)
+                       make_timer=lambda f: FakeTimer(), meta=ReadNothing(), load=load,
+                       measure=measure)
     host.column.addWidget(page)
     host.show()
     feed.results = [progress(current=LIST[3]),
@@ -674,6 +677,9 @@ try:
     check("the list is read off the window's thread", wait_for(lambda: page.model.item_rows() == 201))
     check("and its titles and authors fill in", wait_for(
         lambda: page.model.item_at(page.model.group_rows()[0] + 1).author != ""))
+    check("then each folder's size, measured on the reader's thread",
+          wait_for(lambda: all(r.size is not None for r in page.model.items()))
+          and measured and not any(measured))
     page.filter.setText("title 00")
     page.jump.set_current_index(1)
     page.countdowns.tick()
@@ -711,15 +717,38 @@ rows_before = page.model.item_rows()
 page.filter.setText("Title 00")
 check("the filter narrows the rows", 0 < page.model.item_rows() < rows_before)
 page.filter.setText("")
-authors = [page.author_pick.itemText(i) for i in range(page.author_pick.count())]
-check("the author list: all, then the authors present", authors[0] == "All authors"
-      and set(authors[1:]) == {"Marlow", "Quill"})
-page.author_pick.choose(1)
-check("choosing one shows only theirs", all(r.author == authors[1]
-                                            for r in (page.model.item_at(i) for i in
-                                                      range(page.model.rowCount())) if r))
-page.author_pick.choose(0)
-check("and All authors shows them all again", page.model.item_rows() == rows_before)
+check("and empty again shows them all", page.model.item_rows() == rows_before)
+check("no author column and no author list: # · WALLPAPER · TYPE · SIZE · SHOWN · STATE",
+      [c.title for c in page.model.columns] == ["#", "Wallpaper", "Type", "Size", "Shown",
+                                                "State", ""]
+      and not hasattr(page, "author_pick"))
+
+print("-- # is the playlist's own order --")
+playlist_order = [r.item for r in page.model.items()]
+
+
+def shown_order() -> list:
+    return [page.model.item_at(r).item for r in range(page.model.rowCount())
+            if page.model.item_at(r) is not None]
+
+
+natural = shown_order()
+page.table._header_clicked(1)                    # by title
+check("sorted by title, the rows move", page.model.sort_column() == 1 and shown_order() != natural)
+page.table._header_clicked(0)                    # #
+check("#'s title brings the playlist's own order back",
+      page.model.sort_column() == -1 and shown_order() == natural)
+page.table._header_clicked(0)
+check("and clicked again it stays there, rather than sorting the other way",
+      page.model.sort_column() == -1 and shown_order() == natural)
+check("its title is lit while nothing else sorts", page.model.columns[0].natural)
+queued = [r for r in page.model.items() if r.group == "queue"]
+check("SIZE says each folder's size", page.model.cell(queued[0], 3) == fmt.size(queued[0].size))
+page.table._header_clicked(3)
+sizes = [page.model.item_at(r).size for r in range(page.model.rowCount())
+         if page.model.item_at(r) is not None and page.model.item_at(r).group == "queue"]
+check("and sorts by it, smallest first", sizes == sorted(sizes) and len(set(sizes)) > 1)
+page.table._header_clicked(0)
 page.jump.set_current_index(1)
 app.processEvents()
 check("Queue brings the queue's header to the top",
@@ -875,8 +904,8 @@ check("a state it does not have is refused", raises(lambda: fixture_page.load_fi
 print("-- a row's actions: which rows offer what --")
 from app.engines.rotator.config import Config              # noqa: E402
 from app.pages.tracker import (                             # noqa: E402
-    ACTIONS, MARKED, OFFER, PROTECT, SEND, STALE_NOTE, PlaylistRow, action_cell, protect_state,
-    protected_name,
+    ACTIONS, DELETE, MARKED, OFFER, PROTECT, SEND, STALE_NOTE, PlaylistRow, action_cell,
+    protect_state, protected_name,
 )
 from app.settings import DEFAULT_COPIER_COUNT              # noqa: E402
 
@@ -908,12 +937,17 @@ def keys(cell) -> list:
 
 plain_row = PlaylistRow("x", "queue", 1, folder=in_dest("wallpaper_0012"))
 offered = action_cell(plain_row, OFFER)
-check("a myprojects row: Send to Copier, then Mark [protected]…, each saying what it does",
-      keys(offered) == [SEND, PROTECT]
-      and [b.tip for b in offered.buttons] == ["Send to Copier", "Mark [protected]…"]
+check("a myprojects row: Send to Copier, Mark [protected]…, Delete…, each saying what it does",
+      keys(offered) == [SEND, PROTECT, DELETE]
+      and [b.tip for b in offered.buttons] == ["Send to Copier", "Mark [protected]…", "Delete…"]
       and all(b.enabled and not b.mark for b in offered.buttons))
-check("a Workshop row: Send to Copier alone, the second slot empty so the buttons line up",
-      keys(action_cell(plain_row, "")) == [SEND, None])
+check("a row not offered Mark: its slot empty so the buttons line up",
+      keys(action_cell(plain_row, "")) == [SEND, None, DELETE])
+workshop_row = PlaylistRow("w", "queue", 1, folder=str(Path(WORKSHOP) / "1700000005"))
+check("a Workshop row's Delete says it unsubscribes",
+      action_cell(workshop_row, "").buttons[2].tip == "Unsubscribe and delete…")
+check("while Delete runs, it is off",
+      not action_cell(plain_row, OFFER, deleting=True).buttons[2].enabled)
 marked = action_cell(plain_row, MARKED).buttons[1]
 check("an already protected row: a lock that is no button, and says what it means",
       marked.mark and marked.icon == "lock" and marked.tone == "accent.hover"
@@ -940,7 +974,8 @@ check("the table's last column holds them, with no title and no sorting",
       and not actions_model.columns[ACTIONS].sortable)
 check("each row as its folder says: offered, Workshop, protected, marked here",
       [keys(actions_model.cell(r, ACTIONS)) for r in actions_rows]
-      == [[SEND, PROTECT], [SEND, None], [SEND, MARKED], [SEND, MARKED]])
+      == [[SEND, PROTECT, DELETE], [SEND, None, DELETE], [SEND, MARKED, DELETE],
+          [SEND, MARKED, DELETE]])
 check("the row marked here says so under its title, in warn",
       actions_model.cell(stale_row, 1).sub == STALE_NOTE
       and actions_model.cell(stale_row, 1).sub_tone == "warn"
@@ -1045,7 +1080,7 @@ check("the folder is renamed, and nothing else",
 keep = next(r for r in mark_page.model.items() if r.item == MARK_ITEMS[0])
 check("the row follows: its new folder, the warn lock, the note under its title",
       Path(keep.folder) == MYP / "[protected] w_keep" and keep.stale
-      and keys(mark_page.model.cell(keep, ACTIONS)) == [SEND, MARKED]
+      and keys(mark_page.model.cell(keep, ACTIONS)) == [SEND, MARKED, DELETE]
       and mark_page.model.cell(keep, ACTIONS).buttons[1].tone == "warn"
       and mark_page.model.cell(keep, 1).sub == STALE_NOTE
       and mark_page.model.thumb_source(keep) == keep.folder)
@@ -1151,7 +1186,7 @@ check("wallpaper 2 was marked here: its row says so",
       and fixture_page.model.cell(fixture_rows[2], ACTIONS).buttons[1].tone == "warn")
 check("3 was protected already, 5 is a Workshop one, 4 is offered Mark",
       [keys(fixture_page.model.cell(fixture_rows[n], ACTIONS)) for n in (3, 5, 4)]
-      == [[SEND, MARKED], [SEND, None], [SEND, PROTECT]])
+      == [[SEND, MARKED, DELETE], [SEND, None, DELETE], [SEND, PROTECT, DELETE]])
 
 
 # ---- Send to Copier, through the window's own wiring --------------------------------------------

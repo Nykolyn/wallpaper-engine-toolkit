@@ -148,7 +148,7 @@ def settle(old: Path, new: Path, recycle=None, sandbox: str = "") -> Resolved:
     ``sandbox`` names the app whose private copy takes this process's writes,
     if one does: then nothing is moved, created or marked.
     """
-    recycle = recycle or _to_recycle_bin
+    recycle = recycle or to_recycle_bin
     marker = new / MARKER
     if sandbox:
         return _sandboxed(old, new, sandbox)
@@ -296,8 +296,9 @@ def _exclusive():
         kernel32.CloseHandle(handle)
 
 
-def _to_recycle_bin(path: Path) -> bool:
-    """Send a folder to the Recycle Bin, silently. True if it is gone."""
+def to_recycle_bin(path: Path) -> bool:
+    """Send a folder to the Recycle Bin, silently. True if it is gone. The
+    Tracker's and the Rotator's Delete use it too (engines/wallpaper_delete)."""
     if sys.platform != "win32":
         return False
     from ctypes import wintypes

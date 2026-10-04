@@ -144,7 +144,7 @@ def video_length(seconds):
 class ResultModel(TableModel):
     def __init__(self, page, *, omitted=False):
         self.omitted = omitted
-        columns = [Column("FILE", thumb=None if omitted else "sm", sortable=False),
+        columns = [Column("FILE", thumb=None if omitted else "row", sortable=False),
                    Column("STATE", theme.CREATOR_RESULT_COLUMNS[1], sortable=False)]
         if not omitted:
             columns.append(Column("PROGRESS", theme.CREATOR_RESULT_COLUMNS[2], sortable=False))

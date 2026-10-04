@@ -95,9 +95,16 @@ own pace). The table shows the history, the run just finished marked.
   its preview, author, type, size and when a run last moved it in; **New** on
   the ones never used since the history last started over — what the next run
   draws from — and **Unidentified** on one with no readable `project.json`.
-  `[protected]` folders are marked with a lock. Rows appear as soon as the
+  `[protected]` folders are marked with a lock. The preview is a square
+  200 × 200 (120 or 72 in a window too narrow for it), and a GIF one plays
+  while its row is on screen. Rows appear as soon as the
   folders are listed; titles, authors and sizes fill in as they are read, the
-  visible rows first. The summary above counts the folders, the never-used
+  visible rows first. Clicking a row opens that folder in Explorer. Each row
+  ends with **Send to Copier**, which puts the folder on the
+  [Copier](copier.md)'s list for the usual copies, and **Delete**, which sends
+  it to the Recycle Bin after asking — a Workshop item unsubscribed first, as
+  on the [Tracker](tracker.md#a-rows-actions) — and is refused while a run
+  is under way. The summary above counts the folders, the never-used
   ones, and the size once every folder has been measured. **Check folders**
   runs [the reserve check](#the-reserve-check) on its own; **Open folder**
   opens it in Explorer.

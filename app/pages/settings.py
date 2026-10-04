@@ -64,7 +64,8 @@ class _Row(QWidget):
         column.addWidget(field)
         self.note = label(note, "type.caption", "lo")
         self.note.setWordWrap(True)
-        self.note.setVisible(bool(note))
+        if not note:
+            self.note.hide()            # never shown while it has no parent: a flash on screen
         column.addWidget(self.note)
         self.field = field
         if not field.accessibleName():

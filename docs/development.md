@@ -181,14 +181,15 @@ leading monitor (`pick_primary` with `tracker.primary`) in a detailed
 `Table`. Its words are plain functions — `monitor_view` (→ `MonitorView`),
 `pace_figure`, `finish_sentence`, `provenance` (→ `(tone, sentence)` notes),
 `playlist_rows` (a `Cycle` → `PlaylistRow`s and whether the queue is in
-playing order), `row_matches`, `author_choices`, `header_subtitle`,
+playing order), `row_matches` (the title), `header_subtitle`,
 `nav_state`, `empty_text` — and `tests/test_tracker_page.py` calls them
 directly. Nothing on the window's thread reads a file (the test patches the
 file functions to raise there):
 
 - `ListReader` does the reading on a thread of its own, a job at a time: a
   monitor's `Cycle` out of `data/tracker.json`, its rows at once, then
-  `project.json` a chunk at a time and the authors, each chunk sent back
+  `project.json` a chunk at a time and the authors, then each folder's size
+  (`measure_folder`, kept by folder until "Read again"), each chunk sent back
   through a queued signal. A newer list makes an older one stop.
 - `engines/wallpaper_meta.py`: `read_meta(item)` (title, type, workshop id
   from `project.json`), `author_names(ids)` (Review's `steam_cache.sqlite`,
@@ -196,9 +197,16 @@ file functions to raise there):
   opened read-only) and `MetaCache`, which keeps a session's answers. Measured
   here: a 196-wallpaper playlist 1.5 s cold, 1 756 in 14 s; 0.01 s and 0.1 s warm.
 - A row's actions are a `ButtonsCell` in the last column (`action_cell`):
-  Send to Copier, and Mark [protected] where `protect_state(folder,
+  Send to Copier, Mark [protected] where `protect_state(folder,
   destination)` offers it — a folder directly in the Rotator's myprojects
-  whose name is not `[protected] …` already (that one gets a lock mark).
+  whose name is not `[protected] …` already (that one gets a lock mark) —
+  and Delete. Delete is `pages/folder_actions`' question (`delete_dialog`)
+  and words (`deleted_words`), shared with the Rotator, around
+  `engines/wallpaper_delete.delete_wallpaper(folder)` on the page's
+  `_Offload`: the Recycle Bin (`data_location.to_recycle_bin`), a folder
+  under `…/431960/<id>` unsubscribed first through `SteamUgc`, and nothing
+  deleted if Steam will not. A deleted row is remembered by folder
+  (`_deleted`) until `tracker.json` lists it as missing.
   Paths only, compared with `os.path.normcase`. The rename is
   `protect_folder(folder)` on a thread of the page's own `_Offload` (the
   Rotator page's pattern), after `protect_dialog`; it raises `ProtectError`
@@ -384,6 +392,17 @@ shared by two views:
   has the numbers. `tests/perf_pages.py` does the same for the other long
   lists — the reserve's 33 000 folders, a 1 400-row playlist, 450 authors and
   a log at its cap while a job streams — see [Performance](#performance).
+
+**Opening.** `run_app.py` builds the window with `defer=True`: the frame comes
+up at once with a `LoadingCover` (the mark and "Opening Toolkit…") under the
+title bar, and the pages are made once that has been painted, then
+cross-faded in (`MainWindow._build_pages`); a command asked meanwhile waits
+for them. Building the pages first left the screen empty for that long and
+then showed a frame with nothing painted in it. Nothing is shown before it has
+a parent: a kit widget that hides a part it has no words for calls `hide()`,
+never `setVisible(True)` on a parentless label, which Windows draws as a
+window of its own for a moment (21 of them flashed up while the pages were
+made).
 
 **Window requests** (`window_instance`): a second launch or the tray sends one
 line — `show <page>`, which every version understands, or the command form
@@ -575,6 +594,7 @@ for %f in (tests\test_*.py) do .venv\Scripts\python.exe %f
 | `test_app_identity.py` | the balloons' sender: the shortcut made only by the built exe, again when it points elsewhere or carries another ID, the ID taken only once it is there; on Windows a real shortcut made and read back |
 | `test_row_tiles.py` | rows as tiles: copied while nothing changes, drawn again on a changed cell, hover, selection or a table switched off, never for a spinning row, and pixel for pixel the row drawn directly; a list's rows in one pass through `list_item` or its roles; a panel's glass once per size and tone; a caster's shadow skipped only inside its box clear of the corners |
 | `test_steam_paths.py` | Steam's folders found on a thread of their own: nothing known and nothing waited for before, the answer and `when_found` after; the Rotator's first-run settings saved only once it is in, an empty, chosen or missing destination each kept or filled as it should be; no Steam at all |
+| `test_folder_actions.py` | Delete: the Recycle Bin, a Workshop item unsubscribed first and nothing deleted when Steam will not; the question and the toasts; the Tracker's and the Rotator's rows (Delete on a worker, refused while a rotation runs, Send to Copier, a click opening the folder once); `#` undoing a sort; square thumbs filled; a GIF preview playing on screen only; the window opening on its LoadingCover with no other window shown |
 | `test_startup.py` | a plain start of the window and of the tray with `gui_guard` on before `app.settings` is imported and Steam made up on a guarded folder that answers late: no GUI-thread call on its disk, the fields empty meanwhile, then filled in (a chosen one left alone), the Rotator's defaults saved then, the Tracker's config.json found |
 | `test_tracker_feed.py` | a real Tracker on a made-up config.json and state file, every look on the feed's worker and no file call on the window's thread (`gui_guard.watch`); the window's copy of the files and a countdown reading it; a new cycle and a rebuild answered after their look; another config.json under a look; looks asked for while one runs; a failing look said once; the worker stopping with its owner |
 | `test_playlist_refresh.py` | finding the rotation's playlist, refilling it, restarting one monitor's pass, the state file written back byte for byte |
@@ -875,8 +895,10 @@ the parent's own background.
 
 **Tables.** A `TableModel` takes the page's items as they are and a
 `Column` spec per column: title, a content `width` (or None to share what is
-left), `align`, `mono` (or a `font` token), `tone`, `sortable`, and a `thumb`
-size or `icon` drawn before the text. A subclass says what a cell shows
+left), `align`, `mono` (or a `font` token), `tone`, `sortable`, `natural`
+(the column is the order the rows were given in: a click on its title undoes
+the sort, as the Tracker's `#` does), and a `thumb` size or `icon` drawn
+before the text. A subclass says what a cell shows
 (`cell(item, column)`: a str, a `Cell` for another tone, a `ChipCell`), what
 it sorts by (`sort_key`), where a row's preview is (`thumb_source`),
 whether it is dimmed (`row_dimmed`) and whether it is marked in a hue
@@ -901,10 +923,12 @@ thread busy in Python can make every one of them wait. Measured on a
 repaints the two rows it moved between; a click on a sortable column's title
 sorts, keeping the selection.
 
-A stretched column with a thumb steps down to the next thumb (`row`'s 120 × 68
-to `md`'s 64 × 36) while it would leave its words less than
-`TABLE_WORDS_MIN` (80 px, about a dozen characters): at 1 200 px the Tracker's
-playlist had 114 px for a 120 px picture and no title at all. The room is
+A table's thumbs are square (`row`, 200 × 200, `THUMB_COVER`: the picture
+fills the square, cropped about its middle). A stretched column with a thumb
+steps down through `THUMB_NARROWER` (`rowsm` 120, then `rowxs` 72) while it
+would leave its words less than `TABLE_WORDS_MIN` (80 px, about a dozen
+characters): at 1 280 px the Tracker's playlist has 199 px for a picture and
+its title, the Rotator's reserve 157. The room is
 counted as if the scroll bar were there, so the shorter rows taking the bar
 away cannot make the rows tall again. Pictures are still loaded at the
 column's own size. Tab leaves a table (`setTabKeyNavigation(False)`); the
@@ -913,10 +937,21 @@ arrows move inside it.
 **Thumbnails.** A table asks its `ThumbLoader` for the previews of the rows
 on screen once scrolling has settled for 90 ms, and drops whatever it had
 queued for rows scrolled past. The loader lists the wallpaper folder on a
-worker, takes one still (a GIF's first bright frame), fits it into 480 × 270
+worker, takes one still (a GIF's first bright frame), fits it into 480 × 480
 and keeps it as a JPEG under `data/thumbs/local/`, named by the preview's
 path, modification time and size: an unchanged preview is never decoded
-twice, an edited one misses its old still, which is then deleted. Nothing on
+twice, an edited one misses its old still, which is then deleted. A table's
+square thumbs ask for a still that covers the box (`request_local(…,
+cover=True)`).
+
+**Animated previews.** For the rows on screen whose preview is a GIF the
+table asks `request_animation`, which reads its bytes on the same workers
+(none over 32 MB), and plays them with a `QMovie` from memory, decoded at the
+thumb's size: `Table.MAX_PLAYERS` (8) at a time, none while the table is
+hidden or motion is off, the bytes of the last 24 kept for rows scrolled back
+to. A playing row is still a tile with the still in it; each frame is a
+rounded tile of its own drawn over it (`Table.frame_tile`), so a frame costs
+two copies rather than a row drawn again. Nothing on
 the GUI thread touches the disk; `test_kit_data.py` checks it by making every
 file-system call from the GUI thread fail while a table of thumbs is shown.
 

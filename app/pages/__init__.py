@@ -74,8 +74,10 @@ def build_pages(window) -> list[Page]:
         if what == "creator" and creator_page._on_screen:
             creator_page.on_shown()
 
-    def to_copier(folders: list) -> None:
-        tracker_page.copier_took(folders, copier.add_folders(folders))
+    def to_copier(page) -> Callable[[list], None]:
+        def send(folders: list) -> None:
+            page.copier_took(folders, copier.add_folders(folders))
+        return send
 
     def steam_found() -> None:
         # Steam's folders were looked up in the background (steam_paths), and
@@ -97,8 +99,9 @@ def build_pages(window) -> list[Page]:
 
     settings_page.changed.connect(changed)
     rotator_page.config_edited.connect(settings_page.show_rotator)
-    # The Tracker queues folders without starting any disk writes.
-    tracker_page.copier_requested.connect(to_copier)
+    # The Tracker and the Rotator queue folders without starting any disk writes.
+    tracker_page.copier_requested.connect(to_copier(tracker_page))
+    rotator_page.copier_requested.connect(to_copier(rotator_page))
     on_steam_found(settings_page, steam_found)
     return [OverviewPage(services, feed, settings=settings), rotator_page, tracker_page,
             review_page, creator_page, copier, settings_page]

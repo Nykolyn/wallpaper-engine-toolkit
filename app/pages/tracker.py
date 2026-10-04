@@ -24,7 +24,7 @@ Where the numbers come from:
   each wallpaper's project.json, Review's Steam cache and the authors
   database (`engines/wallpaper_meta`), read off the GUI thread too, and kept.
 
-Each row ends with two glyph buttons. **Send to Copier** puts the row's
+Each row ends with three glyph buttons. **Send to Copier** puts the row's
 folder on the Copier's list (`copier_requested`, wired to the Copier in
 `pages.build_pages`). **Mark [protected]** renames a folder that sits directly
 in the Rotator's myprojects to `[protected] <name>`, after asking, on a thread
@@ -32,6 +32,13 @@ of its own (the library is on a hard disk); the Rotator then leaves it there.
 Wallpaper Engine's playlist is not touched: its entry keeps the old name and
 stops working until the next rotation rebuilds the playlist, and the row says
 so. Workshop folders are not offered it; a protected one shows a lock.
+**Delete** sends the folder to the Recycle Bin after asking, a Workshop item
+unsubscribed first (`engines/wallpaper_delete`, `pages/folder_actions`), and
+the row leaves the table.
+
+The `#` column is the playlist's own order: its title, clicked, undoes any
+sort. Each row's SIZE is its folder's, measured on the reader's thread after
+the titles and kept until "Read again".
 
 The words come from plain functions (`monitor_view`, `pace_figure`,
 `finish_sentence`, `provenance`, `playlist_rows`, `protect_state`, …), which
@@ -69,25 +76,30 @@ from ..engines.tracker import (
     ANCHOR_ENGINE, ANCHOR_FILE_TIMES, ANCHOR_NONE, ANCHOR_ROTATION, MIN_SAMPLE, TIME_FMT, Cycle,
     Progress, TrackerState, pick_primary, queue_is_known, upcoming,
 )
+from ..engines.rotator.core import folder_size
+from ..engines.wallpaper_delete import delete_wallpaper
 from ..engines.wallpaper_meta import Described, MetaCache, fallback_title, folder_of
 from ..services.snapshot import LAST_RUN, PLAYLIST
 from ..settings import DEFAULT_COPIER_COUNT
 from ..tracker_feed import tray_running
 from ..ui.kit import (
-    AccentButton, ButtonsCell, Callout, Cell, CellButton, Column, ConfirmDialog, Dropdown,
-    EmptyState, FormDialog, GhostButton, Glyph, GlassPanel, Group, IconButton, LinkButton,
+    AccentButton, ButtonsCell, Callout, Cell, CellButton, Column, ConfirmDialog, EmptyState, FormDialog, GhostButton, Glyph, GlassPanel, Group, IconButton, LinkButton,
     MonitorCard, MonitorView, NavState, Overline, PathField, Rule, SecondaryButton,
     SegmentedControl, Table, TableBar, TableFooter, TableModel, TextInput, format as fmt, label,
 )
 from ..ui.kit.base import set_tone
 from ..ui.kit.cards import qualified_html
 from .base import Page, SideScroll
+from .folder_actions import (
+    DELETE, SEND, SEND_TIP, delete_dialog, delete_tip, deleted_words,
+)
 
 _MINUTE_MS = 60_000
 REVEAL_AGAIN = 1.0             # seconds before the same row opens Explorer again
 _TICK_MS = 1_000                # the countdown
 _LIST_SETTLE_MS = 150           # the feed's looks come in twos at times: read the list once
 META_CHUNK = 120                # project.json files read between two updates of the table
+SIZE_CHUNK = 8                  # folders measured between two updates of the table
 FOOTER_NOTE = "Wallpaper Engine decides the order — this is a read of its playlist"
 SHOWN, QUEUE = "shown", "queue"
 
@@ -322,6 +334,7 @@ class PlaylistRow:
     kind: str = ""
     known: bool = False
     folder: str = field(default="", repr=False)
+    size: int | None = None             # the folder's, in bytes, once measured
     # Marked [protected] here: `folder` is its new name, and Wallpaper Engine's
     # entry (`item`) still names the old one until the next rotation.
     stale: bool = False
@@ -408,26 +421,15 @@ def when_text(moment: datetime | None, now: datetime) -> str:
     return fmt.date_activity(moment, now) if days <= 6 else fmt.day(moment, now)
 
 
-def row_matches(row: PlaylistRow, text: str = "", author: str | None = None) -> bool:
-    """The filter: the words in the title or the author, and the author chosen."""
-    if author is not None and row.author != author:
-        return False
+def row_matches(row: PlaylistRow, text: str = "") -> bool:
+    """The filter: the words in the title."""
     words = text.strip().casefold()
-    return not words or words in row.title.casefold() or words in row.author.casefold()
+    return not words or words in row.title.casefold()
 
 
-def author_choices(rows) -> list[tuple[str, int]]:
-    """The authors present, with how many wallpapers each, most first."""
-    counts: dict[str, int] = {}
-    for row in rows:
-        if row.author:
-            counts[row.author] = counts.get(row.author, 0) + 1
-    return sorted(counts.items(), key=lambda kv: (-kv[1], kv[0].casefold()))
+# ---- a row's actions: Send to Copier, Mark [protected], Delete ----------------------------------
 
-
-# ---- a row's actions: Send to Copier, Mark [protected] ------------------------------------------
-
-SEND, PROTECT, MARKED = "copier", "protect", "protected"     # the buttons' keys
+PROTECT, MARKED = "protect", "protected"     # the buttons' keys, with SEND and DELETE
 OFFER = "offer"                         # protect_state: Mark [protected] is offered
 # under the title of a row marked [protected] here; the consequence first, for a narrow table
 STALE_NOTE = "playlist entry broken until the next rotation · renamed [protected]"
@@ -459,11 +461,13 @@ def protected_name(folder: str) -> str:
     return f"{PROTECTED_PREFIX} {os.path.basename(os.path.normpath(folder))}"
 
 
-def action_cell(row: PlaylistRow, state: str, renaming: bool = False) -> ButtonsCell:
+def action_cell(row: PlaylistRow, state: str, renaming: bool = False,
+                deleting: bool = False) -> ButtonsCell:
     """The row's last cell: Send to Copier, then Mark [protected] where it is
     offered (off while the rename runs), a lock where the folder is marked
     already (in warn, with what it means, when it was marked here), or an
-    empty slot."""
+    empty slot; then Delete (off while it runs; "Unsubscribe and delete" for
+    a Workshop item)."""
     second = None
     if state == MARKED:
         second = (CellButton(MARKED, "lock", "Marked [protected] here. Wallpaper Engine's "
@@ -475,7 +479,9 @@ def action_cell(row: PlaylistRow, state: str, renaming: bool = False) -> Buttons
     elif state == OFFER:
         second = (CellButton(PROTECT, "lock", "Renaming it [protected]…", enabled=False)
                   if renaming else CellButton(PROTECT, "lock", "Mark [protected]…"))
-    return ButtonsCell((CellButton(SEND, "copier", "Send to Copier"), second))
+    delete = (CellButton(DELETE, "trash", "Deleting it…", enabled=False) if deleting
+              else CellButton(DELETE, "trash", delete_tip(row.folder)))
+    return ButtonsCell((CellButton(SEND, "copier", SEND_TIP), second, delete))
 
 
 class ProtectError(Exception):
@@ -527,16 +533,19 @@ def protect_dialog(old: str, new: str, parent: QWidget | None) -> ConfirmDialog:
         confirm_text="Rename")
 
 
+# `#` is the playlist's own order: a click on it undoes any sort (`natural`).
 COLUMNS = (
-    Column("#", theme.TRACKER_COLUMNS["number"], "right", mono=True, tone="text.lo"),
+    Column("#", theme.TRACKER_COLUMNS["number"], "right", mono=True, tone="text.lo",
+           natural=True),
     Column("Wallpaper", None, thumb="row"),
-    Column("Author", theme.TRACKER_COLUMNS["author"], font="type.label", tone="text.mid"),
     Column("Type", theme.TRACKER_COLUMNS["type"], font="type.monoXs", tone="text.lo"),
+    Column("Size", theme.TRACKER_COLUMNS["size"], "right", mono=True, tone="text.mid"),
     Column("Shown", theme.TRACKER_COLUMNS["shown"], "right", mono=True, tone="text.mid"),
     Column("State", theme.TRACKER_COLUMNS["state"], "right", mono=True, tone="text.lo",
            sortable=False),
     Column("", theme.TRACKER_COLUMNS["actions"], "right", sortable=False),
 )
+TYPE, SIZE, SHOWN_FOR = 2, 3, 4
 ACTIONS = len(COLUMNS) - 1
 GROUPS = (Group(SHOWN, "Already shown this cycle"), Group(QUEUE, "Queue"))
 
@@ -551,6 +560,7 @@ class PlaylistModel(TableModel):
         self._digits = 3
         self.destination = ""               # the Rotator's myprojects
         self.renaming: set[str] = set()     # folder_key()s being marked [protected]
+        self.deleting: set[str] = set()     # folder_key()s on their way to the Recycle Bin
 
     def set_playlist(self, rows: list[PlaylistRow], in_order: bool, now: datetime) -> None:
         self.now, self.in_order = now, in_order
@@ -568,13 +578,14 @@ class PlaylistModel(TableModel):
                         else "text.mid" if row.group == SHOWN else None,
                         sub=STALE_NOTE if row.stale else "", sub_tone="warn")
         if column == ACTIONS:
-            return action_cell(row, self.protect_state(row),
-                               folder_key(row.folder) in self.renaming)
-        if column == 2:
-            return row.author or fmt.DASH
-        if column == 3:
+            key = folder_key(row.folder)
+            return action_cell(row, self.protect_state(row), key in self.renaming,
+                               key in self.deleting)
+        if column == TYPE:
             return row.kind
-        if column == 4:
+        if column == SIZE:
+            return fmt.size(row.size) if row.size is not None else ""
+        if column == SHOWN_FOR:
             if row.shown_for is None:
                 return fmt.DASH
             text = fmt.duration(row.shown_for, exact=False)
@@ -590,7 +601,9 @@ class PlaylistModel(TableModel):
     def sort_key(self, row: PlaylistRow, column: int):
         if column == 0:
             return row.queue if row.queue is not None else row.number
-        if column == 4:
+        if column == SIZE:
+            return row.size
+        if column == SHOWN_FOR:
             return row.shown_for
         return super().sort_key(row, column)
 
@@ -617,17 +630,28 @@ def load_cycle(monitor: str) -> Cycle | None:
     return TrackerState.load().cycles.get(monitor)
 
 
+def measure_folder(folder: str) -> int:
+    """A wallpaper folder's size in bytes. OSError when it is not there: a
+    playlist outlives its folders, and a gone one has no size, not 0 B."""
+    if not os.path.isdir(folder):
+        raise OSError(f"not a folder: {folder}")
+    return folder_size(folder)
+
+
 class ListReader(QObject):
     """Reads what the table and the cards need, one job at a time on a thread
     of its own: a monitor's list out of tracker.json, then its titles, types
-    and authors, a chunk at a time; or just the wallpapers the cards show.
-    A newer list job makes an older one stop where it is."""
+    and authors, a chunk at a time, then each folder's size; or just the
+    wallpapers the cards show. A newer list job makes an older one stop where
+    it is. Sizes are kept, by folder, until `forget`."""
 
     rows_read = Signal(int, object)         # generation, (monitor, rows, in order)
     described = Signal(object)              # {item: Described}
+    sized = Signal(object)                  # {folder_key: bytes}
 
     def __init__(self, meta: MetaCache, load: Callable[[str], Cycle | None] = load_cycle,
-                 parent: QObject | None = None):
+                 parent: QObject | None = None, *,
+                 measure: Callable[[str], int] = measure_folder):
         super().__init__(parent)
         self.meta = meta
         self._load = load
@@ -635,6 +659,8 @@ class ListReader(QObject):
         self._lock = threading.Lock()
         self._generation = 0
         self._thread: threading.Thread | None = None
+        self._measure = measure
+        self.sizes: dict[str, int] = {}     # folder_key → bytes; this thread writes it
 
     def read_list(self, monitor: str, now: datetime, live: bool) -> int:
         with self._lock:
@@ -691,6 +717,7 @@ class ListReader(QObject):
     def _do(self, job) -> None:
         if job[0] == "forget":
             self.meta.forget()
+            self.sizes = {}
             return
         if job[0] == "items":
             found = self.meta.describe(job[1])
@@ -703,6 +730,8 @@ class ListReader(QObject):
         rows, in_order = playlist_rows(cycle, now, live=live, described=self.meta.cached)
         if self._stale(generation):
             return
+        for row in rows:
+            row.size = self.sizes.get(folder_key(row.folder))
         self._emit(self.rows_read, generation, (monitor, rows, in_order))
         items = [row.item for row in rows]
         for start in range(0, len(items), META_CHUNK):
@@ -716,6 +745,21 @@ class ListReader(QObject):
             return
         self.meta.resolve_authors(items)
         self._emit(self.described, {i: d for i in items if (d := self.meta.cached(i)) is not None})
+        # Then the sizes: a walk of each folder, the slowest read, so last.
+        folders = [folder_key(row.folder) for row in rows if row.folder]
+        waiting = [f for f in dict.fromkeys(folders) if f not in self.sizes]
+        for start in range(0, len(waiting), SIZE_CHUNK):
+            if self._stale(generation):
+                return
+            found = {}
+            for folder in waiting[start:start + SIZE_CHUNK]:
+                try:
+                    found[folder] = int(self._measure(folder))
+                except OSError:
+                    continue
+            self.sizes.update(found)
+            if found:
+                self._emit(self.sized, found)
 
 
 def reveal(item: str) -> str | None:
@@ -947,7 +991,8 @@ class TrackerPage(Page):
 
     def __init__(self, feed=None, services=None, parent: QWidget | None = None, *,
                  settings=None, config=None, now=None, make_timer: Callable = page_timer,
-                 meta: MetaCache | None = None, load: Callable = load_cycle):
+                 meta: MetaCache | None = None, load: Callable = load_cycle,
+                 measure: Callable[[str], int] = measure_folder):
         super().__init__(parent)
         self._feed = feed
         self._services = services
@@ -970,13 +1015,15 @@ class TrackerPage(Page):
         self._on_screen = False
         self._revealed_last: tuple[str, float] = ("", 0.0)
         self._renamed: dict[str, str] = {}      # folder_key(old) → new folder, this session
+        self._deleted: set[str] = set()         # folder_key()s sent to the Recycle Bin here
         self._copier_answer: int | None = None
         self._sending = ""                      # the title of the row sent to the Copier
         self.messages: list[tuple[str, str]] = []   # (tone, words) of each toast, for tests
 
-        self.reader = ListReader(meta or MetaCache(), load, self)
+        self.reader = ListReader(meta or MetaCache(), load, self, measure=measure)
         self.reader.rows_read.connect(self._rows_read)
         self.reader.described.connect(self._items_described)
+        self.reader.sized.connect(self._items_sized)
         self.countdowns = Countdowns(feed, self, make_timer=make_timer)
         self.countdowns.ticked.connect(self._render_cards)
         self._revealed = _Revealed(self)
@@ -1051,21 +1098,16 @@ class TrackerPage(Page):
         column.setContentsMargins(0, 0, 0, 0)
         column.setSpacing(0)
         bar = TableBar()
-        self.filter = TextInput(placeholder="Filter by title or author…", search=True)
+        self.filter = TextInput(placeholder="Filter by title…", search=True)
         self.filter.setFixedWidth(theme.TRACKER_FILTER)
-        self.filter.setAccessibleName("Filter by title or author")
+        self.filter.setAccessibleName("Filter by title")
         self.filter.textChanged.connect(self._apply_filter)
-        self.author_pick = Dropdown()
-        self.author_pick.setMinimumWidth(theme.TRACKER_AUTHORS)
-        self.author_pick.setAccessibleName("Author")
-        self.author_pick.activated.connect(self._apply_filter)
-        self._fill_authors([])
         self.jump = SegmentedControl(("Shown", "Queue"))
         self.jump.setAccessibleName("Go to")
         self.jump.changed.connect(self._jump_to)
         self.reload = IconButton("refresh", "Read the titles and authors again")
         self.reload.clicked.connect(self.read_again)
-        for widget in (self.filter, self.author_pick, self.jump):
+        for widget in (self.filter, self.jump):
             bar.add(widget)
         bar.add_stretch()
         bar.add(self.reload)
@@ -1351,13 +1393,14 @@ class TrackerPage(Page):
         same = monitor == self._list_monitor
         scroll = self.table.verticalScrollBar().value() if same else 0
         self._list_monitor = monitor
+        if self._deleted:
+            rows = [row for row in rows if folder_key(row.folder) not in self._deleted]
         for row in rows:
             renamed = self._renamed.get(folder_key(row.folder))
             if renamed:
                 row.folder, row.stale = renamed, True
         self.model.destination = self._destination()
         self.model.set_playlist(rows, in_order, now)
-        self._fill_authors(rows)
         self._apply_filter()
         self.table.verticalScrollBar().setValue(scroll)
         self._count_footer()
@@ -1373,38 +1416,36 @@ class TrackerPage(Page):
         for row in self.model.items():
             changed |= row.describe(found.get(row.item))
         if changed:
-            self._fill_authors(self.model.items())
-            if self._filtering():
+            if self._filtering() or self.model.sort_column() >= 0:
                 self._apply_filter()
             else:
                 self.table.viewport().update()
 
-    def _fill_authors(self, rows) -> None:
-        chosen = self.author_pick.currentData() if self.author_pick.count() else None
-        choices = author_choices(rows)
-        wanted = [None] + [name for name, _ in choices]
-        if [self.author_pick.itemData(i) for i in range(self.author_pick.count())] == wanted:
-            for i, (_, n) in enumerate(choices, 1):
-                self.author_pick.set_count(i, n)
-            return
-        self.author_pick.blockSignals(True)
-        self.author_pick.clear()
-        self.author_pick.add_item("All authors", None)
-        for name, n in choices:
-            self.author_pick.add_item(name, name, count=n)
-        self.author_pick.setCurrentIndex(wanted.index(chosen) if chosen in wanted else 0)
-        self.author_pick.blockSignals(False)
+    def _items_sized(self, found: dict) -> None:
+        changed = False
+        for row in self.model.items():
+            size = found.get(folder_key(row.folder))
+            if size is not None and size != row.size:
+                row.size = size
+                changed = True
+        if changed:
+            if self.model.sort_column() == SIZE:
+                self._apply_filter()
+            else:
+                self.table.viewport().update()
 
     def _filtering(self) -> bool:
-        return bool(self.filter.text().strip()) or self.author_pick.currentData() is not None
+        return bool(self.filter.text().strip())
 
     def _apply_filter(self, *_args) -> None:
-        text, author = self.filter.text(), self.author_pick.currentData()
-        if text.strip() or author is not None:
-            self.model.set_filter(lambda row: row_matches(row, text, author))
+        text = self.filter.text()
+        scroll = self.table.verticalScrollBar().value()
+        if text.strip():
+            self.model.set_filter(lambda row: row_matches(row, text))
         else:
             self.model.set_filter(None)
         self._select_on_screen()
+        self.table.verticalScrollBar().setValue(scroll)
 
     def _select_on_screen(self) -> None:
         index = next((i for i, row in enumerate(self.model.items()) if row.on_screen), -1)
@@ -1486,6 +1527,8 @@ class TrackerPage(Page):
             self.send_to_copier(item)
         elif key == PROTECT:
             self.protect(item)
+        elif key == DELETE:
+            self.delete(item)
 
     def send_to_copier(self, row: PlaylistRow) -> bool:
         """Put the row's folder on the Copier's list, for the default copies,
@@ -1560,6 +1603,51 @@ class TrackerPage(Page):
         self._say("ok", f"{old} is now {new}: the Rotator leaves it in myprojects. Wallpaper "
                         f"Engine's playlist still has the old name; that entry stops working "
                         f"until the next rotation.")
+
+    def delete(self, row: PlaylistRow) -> bool:
+        """Delete: ask, then send the row's folder to the Recycle Bin on a
+        worker, a Workshop item unsubscribed first. False when it was not
+        wanted or not possible now."""
+        if self._fixture is not None or not row.folder:
+            return False
+        folder = row.folder
+        if folder_key(folder) in self.model.deleting:
+            return False
+        if self._rotating():
+            self._say("warn", "A rotation is running. Delete folders once it has finished.")
+            return False
+        name = row.title or os.path.basename(os.path.normpath(folder))
+        if not self._answer(delete_dialog(name, folder, self._dialog_parent(),
+                                          on_screen=row.on_screen)):
+            return False
+        if self._rotating():
+            self._say("warn", "A rotation started meanwhile. Delete folders once it has "
+                              "finished.")
+            return False
+        self.model.deleting.add(folder_key(folder))
+        self.table.viewport().update()
+        self._offload.run(lambda: self._delete_folder(folder),
+                          lambda result: self._deleted_folder(folder, name, result))
+        return True
+
+    def _delete_folder(self, folder: str):
+        """The work itself, on the worker. Tests put their own here."""
+        return delete_wallpaper(folder)
+
+    def _deleted_folder(self, folder: str, name: str, result) -> None:
+        """Delete is done, or could not be: the row goes, and a toast."""
+        key = folder_key(folder)
+        self.model.deleting.discard(key)
+        tone, words = deleted_words(name, result)
+        if not isinstance(result, Exception):
+            self._deleted.add(key)
+            rows = [row for row in self.model.items() if folder_key(row.folder) != key]
+            self._show_rows(self._list_monitor or "", rows, self.model.in_order, self._now())
+            if self._feed is not None:
+                self._feed.refresh()        # the count, without it
+        else:
+            self.table.viewport().update()
+        self._say(tone, words)
 
     def _rotating(self) -> bool:
         jobs = getattr(self._services, "jobs", None)
@@ -1875,6 +1963,9 @@ class TrackerPage(Page):
         rows, in_order = playlist_rows(
             cycle, now, live=bool(p.live),
             described=lambda item: self._described.get(item) or _fixture_row_described(data, item))
+        for row in rows:
+            # made up, as the rest: between 40 MB and 940 MB
+            row.size = ((_fixture_number(row.item) * 37) % 900 + 40) * 1_000_000
         self._show_rows(monitor, rows, in_order, now)
 
 

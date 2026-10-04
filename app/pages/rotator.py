@@ -30,6 +30,12 @@ small files in the data folder — the history, its side file, a run's log —
 are read where the old tab read them, on the window's thread, and never in
 the constructor.
 
+The reserve's and Current's rows act as the Tracker's do: a click opens the
+folder in Explorer, and each ends with **Send to Copier** (`copier_requested`,
+wired to the Copier in `pages.build_pages`) and **Delete** — to the Recycle
+Bin after asking, a Workshop item unsubscribed first, refused while a run is
+under way (`pages/folder_actions`).
+
 The words come from plain functions (`plan_rows`, `confirmation`,
 `broken_groups`, `history_rows`, `done_steps`, `RunTracker`, …) that tests
 call without building a widget.
@@ -42,6 +48,7 @@ import io
 import json
 import os
 import threading
+import time
 from collections import Counter
 from dataclasses import dataclass, field
 from datetime import date, datetime, time as day_time, timedelta
@@ -73,8 +80,11 @@ from ..engines.rotator.worker import (
 from ..services import begin
 from ..services.logstore import KEEP_DAYS, LogTail
 from ..services.snapshot import LAST_RUN, PLAYLIST, moved_on
+from ..engines.wallpaper_delete import delete_wallpaper
+from ..settings import DEFAULT_COPIER_COUNT
 from ..ui.kit import (
-    AccentButton, ActivityLine, Callout, CardTitle, Cell, CheckGroup, CheckRow, ChipCell, Column,
+    AccentButton, ActivityLine, ButtonsCell, Callout, CardTitle, Cell, CellButton, CheckGroup,
+    CheckRow, ChipCell, Column,
     ConfirmDialog, DangerButton, GhostButton, GlassPanel, Glyph, IconButton, IconDisc, LinkButton,
     LiveDot, LogPanel, MetricStrip, NavState, Overline, OverlayDialog, PathField, ProgressBar,
     ProgressRing, SecondaryButton, SegmentedControl, SpinBox, StepList, Table, TableBar,
@@ -82,7 +92,11 @@ from ..ui.kit import (
 )
 from ..ui.kit.base import Elided, set_tone
 from .base import Page, SideScroll
+from .folder_actions import (
+    DELETE, SEND, SEND_TIP, delete_dialog, delete_tip, deleted_words, open_in_explorer,
+)
 
+REVEAL_AGAIN = 1.0             # seconds before the same row opens Explorer again
 VIEWS = ("reserve", "current", "history")
 VIEW_TITLES = ("Reserve", "Current", "History")
 BATCH_RANGE = (1, 100_000)          # as the Settings page takes it
@@ -902,7 +916,11 @@ def library_columns(wide_chips: bool = False) -> tuple[Column, ...]:
         Column("Size", widths["size"], "right", mono=True, tone="text.mid"),
         Column("Last used", widths["used"], "right", mono=True, tone="text.mid"),
         Column("", chip, sortable=False),
+        Column("", widths["actions"], "right", sortable=False),
     )
+
+
+LIBRARY_ACTIONS = 6                 # the reserve's and Current's last column
 
 
 class LibraryModel(TableModel):
@@ -921,6 +939,7 @@ class LibraryModel(TableModel):
         self.now = datetime.now()
         self.show_thumbs = True
         self.wide_chips = False
+        self.deleting: set[str] = set()     # names on their way to the Recycle Bin
         self.sort(0, Qt.AscendingOrder)
 
     def set_names(self, names) -> None:
@@ -988,6 +1007,11 @@ class LibraryModel(TableModel):
         if column == 4:
             when = self.last_used(name)
             return fmt.day(when, self.now) if when is not None else Cell("never", "text.lo")
+        if column == LIBRARY_ACTIONS:
+            folder = self.folder_of(name)
+            delete = (CellButton(DELETE, "trash", "Deleting it…", enabled=False)
+                      if name in self.deleting else CellButton(DELETE, "trash", delete_tip(folder)))
+            return ButtonsCell((CellButton(SEND, "copier", SEND_TIP), delete))
         if info is not None and info.unidentified:
             return ChipCell("Unidentified")
         if not is_protected(name) and self.never_used(name):
@@ -1003,6 +1027,15 @@ class LibraryModel(TableModel):
             when = self.last_used(name)
             return when.timestamp() if when is not None else 0.0
         return super().sort_key(name, column)
+
+    def folder_of(self, name: str) -> str:
+        return os.path.join(self.root, name) if self.root else ""
+
+    def title_of(self, name: str) -> str:
+        """What a toast or a question calls the folder: its title, or its name."""
+        info = self.infos.get(name)
+        return (info.title if info is not None and info.title
+                else name[len(PROTECTED_PREFIX):].strip() if is_protected(name) else name)
 
     def thumb_source(self, name: str) -> str | None:
         # The folder, always: the loader finds its preview on a worker. A key
@@ -1091,6 +1124,15 @@ class HistoryModel(TableModel):
 
 
 # ---- work off the window's thread ----------------------------------------------------------------
+
+class _Said(QObject):
+    """Words from a thread, said on the window's (Explorer could not open)."""
+
+    said = Signal(str)
+
+    def emit(self, words: str) -> None:
+        self.said.emit(words)
+
 
 class _Offload(QObject):
     """Runs a function on a thread of its own and hands its result (or the
@@ -1692,6 +1734,9 @@ class RotatorPage(Page):
 
     # The page saved the batch or the playlist switch: the Settings page shows it.
     config_edited = Signal()
+    # Send to Copier: these folders, for the Copier's list. `build_pages` hands
+    # them to the Copier and its answer back to `copier_took`.
+    copier_requested = Signal(list)
 
     def __init__(self, config: Config, services=None, parent: QWidget | None = None, *,
                  now: Callable[[], datetime] | None = None, index: LibraryIndex | None = None):
@@ -1732,6 +1777,11 @@ class RotatorPage(Page):
         self._dup_job = None
         self._header: dict[str, QWidget] = {}
         self._offload = _Offload(self)
+        self._opened_last: tuple[str, float] = ("", 0.0)
+        self._copier_answer: int | None = None
+        self._sending = ""                      # the title of the folder sent to the Copier
+        self._open_failed = _Said(self)
+        self._open_failed.said.connect(self._could_not_open)
 
         self._build()
 
@@ -1842,6 +1892,10 @@ class RotatorPage(Page):
                 table.doubleClicked.connect(lambda index: self._history_clicked(index, True))
             else:
                 table.verticalScrollBar().valueChanged.connect(lambda _v: self._sizes_timer.start())
+                table.clicked.connect(lambda index, v=view: self._folder_clicked(v, index))
+                table.activated.connect(lambda index, v=view: self._folder_clicked(v, index))
+                table.action_clicked.connect(
+                    lambda row, _c, key, v=view: self._folder_action(v, row, key))
             self.tables[view] = table
             self.table_stack.addWidget(table)
         column.addWidget(self.table_stack, 1)
@@ -2181,6 +2235,110 @@ class RotatorPage(Page):
         root = self.config.source if self.view == "reserve" else self.config.destination
         if folder_is_set(root):
             self._explore(root)
+
+    # -- a folder's row: open it, Send to Copier, Delete
+
+    def _folder_clicked(self, view: str, index) -> None:
+        """A click, a double-click or Enter opens the folder in Explorer —
+        once: a double-click is also a click."""
+        model = self.models[view]
+        name = model.item_at(index.row())
+        if name is None or self._fixture is not None or not model.root:
+            return
+        folder = model.folder_of(name)
+        last, when = self._opened_last
+        if folder == last and time.monotonic() - when < REVEAL_AGAIN:
+            return
+        self._opened_last = (folder, time.monotonic())
+        open_in_explorer(folder, self._open_failed.emit)
+
+    def _could_not_open(self, words: str) -> None:
+        self._say("warn", words)
+
+    def _folder_action(self, view: str, row: int, key: str) -> None:
+        model = self.models[view]
+        name = model.item_at(row)
+        if name is None:
+            return
+        if key == SEND:
+            self.send_to_copier(view, name)
+        elif key == DELETE:
+            self.delete_folder(view, name)
+
+    def send_to_copier(self, view: str, name: str) -> bool:
+        """Put the folder on the Copier's list, for the default copies, and
+        stay here: a toast says so."""
+        model = self.models[view]
+        if self._fixture is not None or not model.root:
+            return False
+        self._copier_answer = None
+        self._sending = model.title_of(name)
+        self.copier_requested.emit([model.folder_of(name)])
+        self._sending = ""
+        if self._copier_answer is None:
+            self._say("warn", "The Copier is not there to take it.")
+            return False
+        return True
+
+    def copier_took(self, folders: list, added: int) -> None:
+        """The Copier's answer to `copier_requested`: how many it added."""
+        self._copier_answer = added
+        names = (f"“{self._sending}”" if self._sending and len(folders) == 1
+                 else ", ".join(os.path.basename(os.path.normpath(f)) for f in folders))
+        if added:
+            self._say("ok", f"{names} is on the Copier's list, for "
+                            f"{fmt.counted(DEFAULT_COPIER_COUNT, 'copy', 'copies')}.")
+        else:
+            self._say("info", f"{names} is on the Copier's list already.")
+
+    def delete_folder(self, view: str, name: str) -> bool:
+        """Delete: ask, then send the folder to the Recycle Bin on a worker
+        (a Workshop item unsubscribed first). Never while a run is under way."""
+        model = self.models[view]
+        if self._fixture is not None or not model.root or name in model.deleting:
+            return False
+        if self.state == "running" or self._rotating_elsewhere():
+            self._say("warn", "A rotation is running. Delete folders once it has finished.")
+            return False
+        folder, title = model.folder_of(name), model.title_of(name)
+        if not self._answer(delete_dialog(title, folder, self._dialog_parent())):
+            return False
+        if self.state == "running" or self._rotating_elsewhere():
+            self._say("warn", "A rotation started meanwhile. Delete folders once it has "
+                              "finished.")
+            return False
+        model.deleting.add(name)
+        self.tables[view].viewport().update()
+        self._offload.run(lambda: self._delete_folder(folder),
+                          lambda result: self._deleted_folder(view, name, title, result))
+        return True
+
+    def _delete_folder(self, folder: str):
+        """The work itself, on the worker. Tests put their own here."""
+        return delete_wallpaper(folder)
+
+    def _deleted_folder(self, view: str, name: str, title: str, result) -> None:
+        model = self.models[view]
+        model.deleting.discard(name)
+        tone, words = deleted_words(title, result)
+        if not isinstance(result, Exception):
+            table = self.tables[view]
+            scroll = table.verticalScrollBar().value()
+            model.set_names([n for n in model.items() if n != name])
+            self._apply_filter()
+            table.verticalScrollBar().setValue(scroll)
+            self._render_table_bars()
+            snapshot = getattr(self._services, "snapshot", None)
+            if snapshot is not None:
+                from ..services.snapshot import RESERVE, ROTATION
+                snapshot.refresh([RESERVE if view == "reserve" else ROTATION])
+        else:
+            self.tables[view].viewport().update()
+        self._say(tone, words)
+
+    def _rotating_elsewhere(self) -> bool:
+        jobs = getattr(self._services, "jobs", None)
+        return jobs is not None and jobs.is_running("rotator")
 
     def _explore(self, path: str) -> None:
         try:

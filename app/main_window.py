@@ -31,7 +31,7 @@ from .pages.base import Page
 from .services.snapshot import PLAYLIST, parse_estimate
 from .settings import Settings
 from .tracker_feed import TrackerFeed, heartbeat_setting
-from .ui.kit import NavState, PageHeader, Sidebar, StatusLine, TitleBar, ToastHost
+from .ui.kit import BrandMark, NavState, PageHeader, Sidebar, StatusLine, TitleBar, ToastHost
 from .ui.kit import base as kit_base
 from .ui.kit import format as fmt
 from .window_frame import NativeFrame
@@ -97,6 +97,59 @@ class Backdrop(QWidget):
         x, y, w, h = area.x(), area.y(), area.width(), area.height()
         painter.drawPixmap(QRectF(x, y, w, h), ground, QRectF(x * dpr, y * dpr, w * dpr, h * dpr))
         kit_base.paint(painter, self, area)
+
+
+class LoadingCover(QWidget):
+    """What the window shows while its pages are being made: the window's
+    ground, the mark and "Opening Toolkit…", over everything under the title
+    bar.
+
+    The pages take a while to build (seven of them, ~1 100 widgets: 0.36 s
+    measured offscreen on a fast machine, longer on Windows with a library to
+    look at), and building them before the window was shown left the screen
+    empty for that long, then put up a frame with nothing painted in it. The window now
+    comes up at once with this, draws it, and only then makes the pages, which
+    fade in over it (`MainWindow._build_pages`). `painted` is called once, after
+    the first paint has reached the screen.
+    """
+
+    def __init__(self, ground: Backdrop, painted, parent: QWidget | None = None):
+        super().__init__(parent or ground)
+        self._ground = ground
+        self._painted = painted
+        self._fired = False
+        kit_base.declare(self)
+        column = QVBoxLayout(self)
+        column.setSpacing(theme.SP_12)
+        column.addStretch(1)
+        self.mark = BrandMark(theme.LOADING_MARK, self)
+        column.addWidget(self.mark, 0, Qt.AlignHCenter)
+        self.words = kit_base.label(f"Opening {DISPLAY_NAME}…", "type.bodySm", "mid")
+        self.words.setParent(self)
+        column.addWidget(self.words, 0, Qt.AlignHCenter)
+        column.addStretch(1)
+        self.setAccessibleName(self.words.text())
+
+    def paintEvent(self, event) -> None:        # noqa: N802 - Qt's name
+        painter = QPainter(self)
+        ground = self._ground._drawn()
+        dpr = ground.devicePixelRatio()
+        area = event.rect()
+        origin = self.mapTo(self._ground, area.topLeft())
+        painter.drawPixmap(QRectF(area), ground,
+                           QRectF(origin.x() * dpr, origin.y() * dpr,
+                                  area.width() * dpr, area.height() * dpr))
+        painter.end()
+        if not self._fired:
+            self._fired = True
+            # A frame's worth later: the paint has been handed to the screen by then.
+            QTimer.singleShot(theme.LOADING_SETTLE, self._painted)
+
+    def fire_now(self) -> None:
+        """Build without waiting for a paint (the window never came on screen)."""
+        if not self._fired:
+            self._fired = True
+            self._painted()
 
 
 # ---- the status line, bound to the JobCenter --------------------------------------------
@@ -204,10 +257,13 @@ class MainWindow(QMainWindow):
     settings, the TrackerFeed, the services and the pages — which is how tests
     and `tools/ui_snapshot.py` build it without this machine's data.
     `start=False` leaves the services unstarted (no thread reads the disk).
+    `defer=True` shows a LoadingCover first and makes the pages once it is on
+    screen, which is how the program opens (run_app.py).
     """
 
     def __init__(self, *, settings: Settings | None = None, feed=None, services_=None,
-                 pages=None, start: bool = True, initial: str | None = None):
+                 pages=None, start: bool = True, initial: str | None = None,
+                 defer: bool = False):
         super().__init__()
         self.settings = settings if settings is not None else Settings.load()
         self.setWindowTitle(DISPLAY_NAME)
@@ -257,11 +313,10 @@ class MainWindow(QMainWindow):
         self._shown: Page | None = None         # the page the header and sidebar show
         # Sidebar parts a snapshot fixture has pinned, which the live ones leave alone.
         self._fixture_nav: dict[str, NavState] = {}
-        if pages is None:
-            from .pages import build_pages
-            pages = build_pages(self)
-        for page in pages:
-            self.add_page(page)
+        self._initial = page_for(initial) or DEFAULT_PAGE
+        self._start = start
+        # Commands asked (by the tray, a second launch) before the pages were made.
+        self._waiting: list[tuple[str, str]] = []
         self.sidebar.page_requested.connect(self.show_page)
 
         self.status_binding = StatusBinding(self.status, self.services.jobs, self.show_page,
@@ -274,11 +329,67 @@ class MainWindow(QMainWindow):
         find = QShortcut(QKeySequence.Find, self)
         find.activated.connect(self.focus_filter)
 
-        self.show_page(page_for(initial) or DEFAULT_PAGE, animate=False)
+        # `defer`: come up with the LoadingCover and make the pages once it has
+        # been painted (run_app.py); otherwise, as tests and snapshots want it,
+        # the window is whole when this returns.
+        self.loading: LoadingCover | None = None
+        if pages is None and defer:
+            self.loading = LoadingCover(self.backdrop, self._build_pages)
+            self._reveal = animations.CrossFade(self.backdrop, cover=self.loading,
+                                                duration=animations.SLOW)
+            self._place_cover()
+            QTimer.singleShot(theme.LOADING_FALLBACK, self._build_if_hidden)
+        else:
+            if pages is None:
+                from .pages import build_pages
+                pages = build_pages(self)
+            self._install(pages)
         self.resize(self.opening_size())
         self._place_rail()
-        if start:
+
+    def _install(self, pages) -> None:
+        for page in pages:
+            self.add_page(page)
+        self.show_page(self._initial, animate=False)
+        if self._start:
             self.services.start()
+        waiting, self._waiting = self._waiting, []
+        for verb, argument in waiting:
+            self.handle_command(verb, argument)
+
+    def ready(self) -> bool:
+        """Whether the pages are made (they are made after the window first
+        paints, when it was built with `defer`)."""
+        return self.loading is None
+
+    def _build_pages(self) -> None:
+        """The LoadingCover is on screen: make the pages, then fade it out
+        over them."""
+        cover = self.loading
+        if cover is None or self.pages:
+            return
+
+        def change() -> None:
+            from .pages import build_pages
+            self.loading = None         # from here on, commands are carried out
+            self._install(build_pages(self))
+            cover.hide()
+
+        self._reveal.switch(change)
+        cover.deleteLater()
+
+    def _build_if_hidden(self) -> None:
+        """Never painted (started minimised, or no screen): make them anyway."""
+        if self.loading is not None:
+            self.loading.fire_now()
+
+    def _place_cover(self) -> None:
+        if self.loading is not None:
+            top = self.title_bar.geometry().bottom() + 1 if self.title_bar.height() else 0
+            top = max(top, theme.TITLE_BAR_HEIGHT)
+            self.loading.setGeometry(0, top, self.backdrop.width(),
+                                     max(0, self.backdrop.height() - top))
+            self.loading.raise_()
 
     # -- pages
 
@@ -394,7 +505,12 @@ class MainWindow(QMainWindow):
         `rotate:confirm`, the tray's "Rotate now…": the Rotator, and its start
         question (the check of the folders, then "Start run N?"; nothing is
         moved before that is answered). A command this version does not know
-        still brings the window forward."""
+        still brings the window forward. Asked before the pages are made, it
+        brings the window forward now and is carried out once they are."""
+        if self.loading is not None:
+            self._waiting.append((verb, argument))
+            self.bring_forward()
+            return
         if (verb, argument) == ("rotate", "confirm"):
             self.bring_forward("rotator")
             self.pages["rotator"].start_rotation()
@@ -433,6 +549,7 @@ class MainWindow(QMainWindow):
         super().resizeEvent(event)
         self._place_rail()
         self._fit_maximised()
+        self._place_cover()
 
     def showEvent(self, event) -> None:         # noqa: N802 - Qt's name
         if self._native is None:

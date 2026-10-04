@@ -183,8 +183,10 @@ def main():
     from app.main_window import MainWindow
 
     theme.apply(app)
-    # A name that is no page (a typo, an old script) opens on Overview.
-    win = MainWindow(initial=tab)
+    # A name that is no page (a typo, an old script) opens on Overview. The
+    # window comes up at once, saying it is opening, and makes its pages once
+    # that is on screen (MainWindow's `defer`).
+    win = MainWindow(initial=tab, defer=True)
     instance.command_received.connect(win.handle_command)
     win.show()
     if asked is not None:
