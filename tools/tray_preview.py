@@ -4,8 +4,8 @@
     .venv\\Scripts\\python.exe tools\\tray_preview.py --grab menu   out.png [--state running]
     .venv\\Scripts\\python.exe tools\\tray_preview.py --grab notes  out.png
 
-`icons` is the design's sheet (`Tray and Notifications`): the four states at
-16, 24 and 32 px (and the three between) on a dark and a light taskbar, each
+`icons` is the design's sheet (`Tray: fill icon`): the four states at 16, 24
+and 32 px (and the three between) on a dark and a light taskbar, each
 drawn at its true pixel size and then magnified four times without smoothing,
 so what the shell would show is what you see. `menu` is the tray menu over a
 dark desktop; `notes` the two balloons' copy over both. Everything is made up
@@ -30,13 +30,13 @@ from PySide6.QtWidgets import QApplication                       # noqa: E402
 
 from app import theme                                            # noqa: E402
 from app.tray_icon import (FINISHED, PAUSED, RUNNING, SIZES, UNKNOWN,   # noqa: E402
-                           ring_pixmap)
+                           mark_pixmap)
 from app.tray_menu import TrayMenu, build_model                  # noqa: E402
 from app import tray_words as words                              # noqa: E402
 
 TASKBARS = (("dark", "#202020", "#FFFFFF"), ("light", "#F3F3F3", "#1A1A1A"))
-CASES = (("Running", RUNNING, 0.62, 62), ("Paused", PAUSED, 0.62, 62),
-         ("Unknown", UNKNOWN, None, None), ("Finished", FINISHED, 1.0, 100))
+CASES = (("Running 20%", RUNNING, 0.2), ("Running 75%", RUNNING, 0.75),
+         ("Paused", PAUSED, 0.62), ("Unknown", UNKNOWN, None), ("Finished", FINISHED, 1.0))
 ZOOM = 4
 GAP = 8
 
@@ -59,15 +59,13 @@ def icons_sheet() -> QImage:
     painter = QPainter(sheet)
     y = 14
     for name, ground, ink in TASKBARS:
-        light = name == "light"
         painter.fillRect(QRect(12, y, width - 24, cell + 44), QColor(ground))
         _label(painter, 24, y + 16, f"{name.upper()} TASKBAR  {ground}", ink)
         x = 24
-        for title, state, fraction, number in CASES:
+        for title, state, fill in CASES:
             _label(painter, x, y + 34, title, ink)
             for size in SIZES:
-                pixmap = ring_pixmap(state, size, fraction=fraction, number=number,
-                                     light=light)
+                pixmap = mark_pixmap(state, size, fill=fill)
                 image = pixmap.toImage().scaled(size * ZOOM, size * ZOOM,
                                                 Qt.IgnoreAspectRatio, Qt.FastTransformation)
                 painter.drawImage(x, y + 44 + (max(SIZES) * ZOOM - size * ZOOM) // 2, image)
@@ -80,7 +78,7 @@ def icons_sheet() -> QImage:
 
 
 def menu_sheet(state: str) -> QImage:
-    # 4 of 201 shown is 2 percent: the number in the ring is the playlist's, not the ring's.
+    # The fill is the time to the next change; 4 of 201 shown is 2 percent.
     fractions = {RUNNING: (0.62, 2), PAUSED: (0.62, 2), UNKNOWN: (None, 2), FINISHED: (1.0, 100)}
     fraction, number = fractions[state]
     line = {RUNNING: "tracking · 4 of 201 shown", PAUSED: "paused · 4 of 201 shown",

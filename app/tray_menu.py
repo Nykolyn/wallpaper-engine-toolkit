@@ -1,8 +1,8 @@
 """The tray's menu: a header that says what the icon says, and five rows.
 
 The design (`Tray and Notifications`) draws a popup on `surface.overlay`: the
-icon's ring and "Toolkit" with one line in words ("tracking · 4 of 201 shown",
-because nobody should have to read a ring), then
+icon (the mark, filled as it is in the tray) and "Toolkit" with one line in
+words ("tracking · 4 of 201 shown", which the icon does not say), then
 
     Open Toolkit                  Enter
     ───────────────────────────────────
@@ -17,7 +17,7 @@ before it does (see `MainWindow.handle_command`). The words are `tray_words`'s;
 this module is the shape.
 
 **A QMenu that paints itself.** A native or QSS-styled menu cannot put a mono
-hint at the right of a row, or a ring in its header. The menu is a `QMenu`
+hint at the right of a row, or the tray's icon in its header. The menu is a `QMenu`
 still, so Windows' ways with a tray menu (it closes when the shell is clicked,
 the arrow keys, Enter, Escape) are Qt's own; it only draws its own rows, in
 `paintEvent`, and tells Qt how tall they are through `_MenuStyle`. The tray
@@ -40,7 +40,7 @@ from PySide6.QtWidgets import QMenu, QProxyStyle, QStyle, QStyleOptionMenuItem
 
 from . import theme
 from .branding import DISPLAY_NAME
-from .tray_icon import ring_pixmap
+from .tray_icon import mark_pixmap
 
 # ---- what the menu says ------------------------------------------------------------
 
@@ -60,7 +60,7 @@ class Row:
 class MenuModel:
     """What a menu shows: the icon's state and words, and the rows in groups."""
     state: str
-    fraction: float | None
+    fraction: float | None      # the icon's fill
     number: int | None
     title: str
     line: str
@@ -76,7 +76,7 @@ class MenuModel:
 def build_model(state: str, fraction: float | None, number: int | None, line: str, *,
                 run_hint: str = "", review_hint: str = "") -> MenuModel:
     """The menu for one state of the icon. The rows are the same in every state;
-    what changes is the header (its ring and its line) and the two hints."""
+    what changes is the header (its icon and its line) and the two hints."""
     return MenuModel(
         state, fraction, number, DISPLAY_NAME, line,
         ((Row(OPEN, f"Open {DISPLAY_NAME}", "Enter", "review"),),
@@ -257,8 +257,7 @@ class TrayMenu(QMenu):
         line_height = QFontMetricsF(line).height()
         block = title_height + theme.TRAY_HEADER_LINE_GAP + line_height
         y = rect.top() + top
-        pixmap = ring_pixmap(model.state, max(1, round(ring * dpr)),
-                             fraction=model.fraction, number=model.number)
+        pixmap = mark_pixmap(model.state, max(1, round(ring * dpr)), fill=model.fraction)
         pixmap.setDevicePixelRatio(dpr)
         painter.drawPixmap(int(rect.left() + left), int(y + (block - ring) / 2), pixmap)
         x = rect.left() + left + ring + theme.TRAY_HEADER_GAP

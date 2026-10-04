@@ -6,6 +6,24 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [3.18.0] - 2026-10-04
+
+### Changed
+
+- **The tray icon is the app's mark, filling with colour as the next wallpaper
+  nears.** The ring with a number gave way to the two frames of the mark,
+  which fill from left to right, from the back frame's left edge to the front
+  frame's right edge: empty just after a change, both frames filled whole
+  (100 %) the moment the next one is due. Paused freezes the fill in grey with
+  a pause badge, unknown is the muted mark with an amber "?", and a finished
+  playlist turns both frames green with a tick. The fill's edge sits on whole
+  pixels, and the icon is redrawn only when it moves one. The colours are the
+  same on a light and a dark taskbar, so the tray no longer watches Windows'
+  theme.
+- **The tray's tooltip starts each monitor's line with its playlist's share**:
+  `▸ 55% · Monitor1 · 81 of 192 shown · next in 4:29`, and `100% · … · 192 of
+  192 shown · finished` once it is done, since the icon no longer shows it.
+
 ## [3.17.1] - 2026-10-04
 
 ### Fixed
@@ -1467,7 +1485,8 @@ restructured yet; the tabs keep their layout and take on the new look.
   was right for one library and wrong for every other. Nothing is tagged now
   unless you ask for it.
 
-[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.17.1...HEAD
+[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.18.0...HEAD
+[3.18.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.17.1...v3.18.0
 [3.17.1]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.17.0...v3.17.1
 [3.17.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.16.0...v3.17.0
 [3.16.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.15.0...v3.16.0

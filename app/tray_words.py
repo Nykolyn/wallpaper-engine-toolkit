@@ -35,20 +35,21 @@ def is_finished(progress) -> bool:
 
 
 def icon_state(progress, countdown) -> tuple[str, float | None]:
-    """(state, ring fraction) for the icon.
+    """(state, fill) for the icon: the fill is the time to the next wallpaper
+    change, 0 just after one and 1 the moment the next is due.
 
     Finished wins over everything: the playlist is done whatever the timer
-    says. Without a timer reading the ring cannot say anything, and without a
+    says. Without a timer reading the fill cannot say anything, and without a
     playlist there is nothing to say at all.
     """
     if progress is None:
         return UNKNOWN, None
     if is_finished(progress):
         return FINISHED, 1.0
-    fraction = countdown.fraction if countdown is not None else None
-    if fraction is None:
+    left = countdown.fraction if countdown is not None else None
+    if left is None:
         return UNKNOWN, None
-    return (PAUSED if countdown.paused else RUNNING), fraction
+    return (PAUSED if countdown.paused else RUNNING), 1.0 - left
 
 
 def shown(progress) -> str:
@@ -72,10 +73,15 @@ def header_line(state: str, progress, error: str = "") -> str:
 
 
 def tooltip_line(progress, countdown, *, lead: bool) -> str:
-    """One monitor: `▸ Monitor1 · 4 of 201 shown · next in 3:45`."""
-    line = f"{'▸' if lead else ' '} {progress.monitor} · {shown(progress)}"
+    """One monitor, the playlist's share first, since the icon no longer shows
+    it: `▸ 55% · Monitor1 · 81 of 192 shown · next in 4:29`, or
+    `100% · Monitor1 · 192 of 192 shown · finished`."""
+    line = (f"{'▸' if lead else ' '} {progress.percent}% · {progress.monitor} · "
+            f"{count(progress.seen)} of {count(progress.total)} shown")
+    if is_finished(progress):
+        return line + " · finished"
     timing = countdown.describe() if countdown is not None else ""
-    if timing and not is_finished(progress):
+    if timing:
         line += f" · {timing}"
     return line
 

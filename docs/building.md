@@ -188,7 +188,7 @@ large picture would blur it. The `.ico` is written by hand, one PNG per size.
 ```
 
 The script also writes `icon.png` (1024 px) and `icon_preview.png`, a contact
-sheet of the real sizes, to check the small ones by eye. The tray's ring is
+sheet of the real sizes, to check the small ones by eye. The tray's icon is
 drawn in code (`app/tray_icon.py`), not from these files; `tools\tray_preview.py`
 shows it.
 
