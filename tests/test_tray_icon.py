@@ -85,16 +85,32 @@ def at(img: QImage, xy) -> QColor:
 
 print("-- geometry --")
 check("every size Windows may ask for is drawn", ti.SIZES == (16, 20, 24, 32, 40, 48))
-check("the mark spans the icon's width, as the tray's other icons do: a step a pixel",
-      [ti.fill_steps(s) for s in ti.SIZES] == list(ti.SIZES) and ti.FILL_STEPS == 48)
+check("the mark spans the icon's width, as the tray's other icons do",
+      all(abs(ti.origin(s)[0] + ti.FILL_FROM * ti.scale(s) - 0.5) < 1e-9
+          and abs(ti.origin(s)[0] + ti.RIGHT * ti.scale(s) - (s - 0.5)) < 1e-9 for s in ti.SIZES))
 check("and is centred top to bottom",
       all(abs(ti.origin(s)[1] + ti.TOP * ti.scale(s)
               - (s - ti.origin(s)[1] - ti.BOTTOM * ti.scale(s))) < 1e-9 for s in ti.SIZES))
-check("the scale runs from the back frame's left edge to the front frame's right edge",
-      (ti.FILL_FROM, ti.FILL_TO) == (11.0, 52.5))
-check("a fill is snapped to its steps, clamped to 0..1",
-      ti.snap(0.5004, 10) == 0.5 and ti.snap(1.4) == 1.0 and ti.snap(-1) == 0.0
-      and ti.snap(None) is None)
+check("the scale runs from the back frame's left edge to the inside of the front frame's edge",
+      (ti.FILL_FROM, ti.FILL_TO, ti.RIGHT) == (11.0, 49.5, 52.5))
+check("a step a pixel of what can be seen filled",
+      [ti.fill_steps(s) for s in ti.SIZES] == [14, 18, 22, 29, 37, 44] and ti.FILL_STEPS == 44)
+check("a step is shown once reached, never before: the last one only at 1",
+      ti.step(0.5, 10) == 5 and ti.step(0.59, 10) == 5 and ti.step(0.999, 10) == 9
+      and ti.step(1.0, 10) == 10 and ti.step(1.4) == ti.FILL_STEPS and ti.step(-1) == 0
+      and ti.step(None) is None)
+check("a full fill runs to the icon's edge",
+      all(ti.fill_edge(s, 1.0) == s for s in ti.SIZES))
+
+
+def seen_end(size: int) -> float:
+    return ti.origin(size)[0] + ti.FILL_TO * ti.scale(size)
+
+
+check("with a minute and a half of ten to go the icon is not full at any size",
+      all(seen_end(s) - ti.fill_edge(s, 0.85) >= 2 for s in ti.SIZES))
+check("nor with seconds to go: some of the front frame is still dark",
+      all(seen_end(s) - ti.fill_edge(s, 0.99) >= 0.5 for s in ti.SIZES))
 check("the fill's edge is on a whole pixel",
       all(float(ti.fill_edge(s, f)).is_integer() for s in ti.SIZES for f in (0, 0.13, 0.5, 0.77, 1)))
 
@@ -135,7 +151,9 @@ check("both frames filled whole is 100 %: nothing grey or dark is left",
       and near(at(full, FRONT_LEFT), FILL) and near(at(full, FRONT_RIGHT), FILL)
       and painted(full, "tray.body", FRONT_INSIDE, slack=6) == 0)
 check("anything short of it leaves some unfilled",
-      painted(image(ti.RUNNING, 32, fill=0.8), "tray.body", FRONT_INSIDE, slack=6) > 0)
+      painted(image(ti.RUNNING, 32, fill=0.8), "tray.body", FRONT_INSIDE, slack=6) > 0
+      and painted(image(ti.RUNNING, 32, fill=0.85), "tray.body", FRONT_INSIDE, slack=6) >= 8
+      and painted(image(ti.RUNNING, 32, fill=0.99), "tray.body", FRONT_INSIDE, slack=6) > 0)
 check("the same step draws the same icon",
       image(ti.RUNNING, 16, fill=0.501) == image(ti.RUNNING, 16, fill=0.5))
 check("another step draws another",
@@ -526,7 +544,7 @@ drawn = len(shell.icons)
 clock.now = {"Monitor1": countdown(running=150.0)}
 tray._tick_clock()
 check("a counting playlist fills the icon and says where it is",
-      len(shell.icons) == drawn + 1 and tray._icon_key == (ti.RUNNING, round(0.25 * ti.FILL_STEPS))
+      len(shell.icons) == drawn + 1 and tray._icon_key == (ti.RUNNING, ti.step(0.25))
       and shell.tip == "▸ 2% · Monitor1 · 4 of 201 shown · next in 7:30")
 drawn = len(shell.icons)
 clock.now = {"Monitor1": countdown(running=151.0)}

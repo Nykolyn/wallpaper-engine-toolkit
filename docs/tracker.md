@@ -216,10 +216,13 @@ the same on a light taskbar as on a dark one.
 The icon is drawn **for each size Windows asks for** — 16, 20, 24, 32, 40 and
 48 px, so 100 % to 300 % scaling — rather than one picture shrunk, and the edge
 of the fill sits on a whole pixel. The mark spans the icon's whole width, as
-the other icons in the tray fill theirs, so the fill moves a pixel at a time:
-16 steps at 16 px. The icon is redrawn only when the fill crosses a step of the
-largest size (48 of them), so on a 10-minute delay about every twelve seconds,
-never every second.
+the other icons in the tray fill theirs, so the fill moves a pixel at a time
+across what can be seen filled: 14 steps at 16 px. A step shows once it is
+reached, never before, so the frames are filled whole only the moment the
+next change is due: with half a minute of ten to go a sliver of the front frame
+is still dark. The icon is redrawn only when the fill crosses a step of the
+largest size (44 of them), so on a 10-minute delay about every fourteen
+seconds, never every second.
 
 **The tooltip** has one line per monitor, the lead one marked `▸`, each starting
 with the share of its playlist shown: `▸ 55% · Monitor1 · 81 of 192 shown ·
@@ -637,6 +640,13 @@ a second before the timer reset. The remaining second is Wallpaper Engine's own:
 it checks the timer about once a second, so it changes at anywhere from 599 to
 601 s. If the object cannot be found — a 32-bit build, or an update that moved
 the fields — the tray says so in `data/tracker.log` and uses the estimate.
+
+A timer read this way is **paused** when it has not moved for five seconds
+(`STILL_SECONDS`), not when one read matches the one before: Wallpaper Engine
+does not move its number on every second of the tray's, so a running timer read
+once a second stands still now and then, and the icon used to flick to paused
+about every third second while the wallpaper played on. A real pause shows
+within five seconds.
 
 What cannot be known is said, not guessed. Until the tray has seen a change the
 ring is empty, because the state file does not say when the wallpaper on screen

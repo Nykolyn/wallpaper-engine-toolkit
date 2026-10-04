@@ -40,7 +40,7 @@ from .engines.tracker import FALLBACK_SECONDS, TIME_FMT, Progress, app_data_dir,
 from .engines.wallpaper_timer import Countdown, WallpaperTimer
 from .settings import Settings
 from .tracker_feed import TRAY_MUTEX, TrackerFeed, heartbeat_setting
-from .tray_icon import FILL_STEPS, FINISHED, UNKNOWN, tray_icon
+from .tray_icon import FINISHED, UNKNOWN, step, tray_icon
 from .tray_menu import OPEN, QUIT, REVIEW, ROTATE, SETTINGS, TrayMenu, build_model
 
 
@@ -63,7 +63,7 @@ RESTART_NOTICE_SECONDS = 15 * 60
 # The icon's fill is the time to the next wallpaper change, which moves by the
 # second, so the icon is redrawn only when the fill crosses one of
 # ``tray_icon.FILL_STEPS``: whole pixels of the largest size, a new icon every
-# twelve seconds or so on a 10-minute delay, never one a second.
+# fourteen seconds or so on a 10-minute delay, never one a second.
 
 # What a balloon was about, for what a click on it should open.
 BALLOON_FINISHED, BALLOON_RESTARTED = "finished", "restarted"
@@ -223,8 +223,7 @@ class TrackerTray:
     def _render_icon(self):
         """The icon and its tooltip: cheap enough to run every tick."""
         primary, state, fill, _number = self._reading()
-        step = None if fill is None else round(fill * FILL_STEPS)
-        key = (state, step)
+        key = (state, step(fill))
         if key != self._icon_key:
             self._icon_key = key
             self.icon.setIcon(tray_icon(state, fill))
