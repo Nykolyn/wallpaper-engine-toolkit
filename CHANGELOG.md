@@ -6,6 +6,19 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [3.16.0] - 2026-10-04
+
+### Added
+
+- **The tray's balloons say they come from Toolkit**, not from
+  `WallpaperEngineToolkit.exe`. Windows takes a notification's sender from the
+  process's AppUserModelID and the Start-menu shortcut that carries it: the
+  built exe now makes `Toolkit.lnk` in the user's Start menu (itself, its icon,
+  the ID), and then sets the ID, in the window and in the tray alike, the
+  logon task's start included. A process that cannot make the shortcut keeps
+  its old name rather than take an ID nothing registers, which can make
+  Windows drop a notification. Source runs are unchanged.
+
 ## [3.15.0] - 2026-10-04
 
 ### Added
@@ -1394,7 +1407,8 @@ restructured yet; the tabs keep their layout and take on the new look.
   was right for one library and wrong for every other. Nothing is tagged now
   unless you ask for it.
 
-[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.15.0...HEAD
+[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.16.0...HEAD
+[3.16.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.15.0...v3.16.0
 [3.15.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.14.0...v3.15.0
 [3.14.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.13.0...v3.14.0
 [3.13.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.12.2...v3.13.0

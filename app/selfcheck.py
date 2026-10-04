@@ -62,7 +62,8 @@ def run() -> tuple[bool, str]:
                         ("app.window_frame", "the window's own title bar"),
                         ("app.tracker_tray", "the tray tracker, its ring and its balloons"),
                         ("app.tray_menu", "the tray's menu"),
-                        ("app.tray_words", "the tray's tooltip, menu hints and balloon copy")):
+                        ("app.tray_words", "the tray's tooltip, menu hints and balloon copy"),
+                        ("app.app_identity", "the balloons' sender: the Start-menu shortcut")):
         try:
             __import__(module)
             lines.append(f"ok      {module}  ({why})")
