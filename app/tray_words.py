@@ -114,16 +114,27 @@ FINISHED_TITLE = "Playlist finished"
 RESTARTED_TITLE = "Playlist started over"
 
 
-def finished_balloon(monitor: str, total: int, batch: int | None = None) -> tuple[str, str]:
+def finished_balloon(monitor: str, total: int, batch: int | None = None,
+                     reserve: dict | None = None) -> tuple[str, str]:
     """"Playlist finished": the numbers are the playlist's own.
 
-    The design adds that the folders swapped in "have never been used". Whether
-    the reserve still holds that many unused ones is the window's to count (it
-    lists the reserve on the wallpaper disk), not the tray's, so the clause
-    says what a run does with the batch size it was given and no more.
+    The design adds that the folders swapped in "have never been used". How
+    many the reserve still has is the window's to count (it lists the reserve
+    on the wallpaper disk), so it is said only from a fresh count the window
+    left (`reserve`, from `never_used()`); without one the clause says what a
+    run does with the batch size it was given and no more.
     """
     body = f"All {count(total)} wallpapers on {monitor} have been shown."
-    if batch:
+    if reserve is not None and batch and reserve["batch"] == batch:
+        # Counted for this batch size: with another, whether it resets differs.
+        never = reserve["never_used"]
+        if reserve["will_reset"]:
+            body += (f" Rotate to swap in {count(batch)}: only {count(never)} folders were "
+                     f"never used, so the run draws from the whole reserve again.")
+        else:
+            body += (f" Rotate to swap in {count(batch)} of the {count(never)} folders "
+                     f"that have never been used.")
+    elif batch:
         body += f" Rotate to swap in {count(batch)} folders from the reserve."
     return FINISHED_TITLE, body
 
@@ -177,3 +188,36 @@ def review_waiting() -> int | None:
         return None
     state = snapshot.ReviewState.from_json(data)
     return None if state.finished is not None else state.waiting
+
+
+# A count of the reserve older than this is not said: folders are added by hand.
+RESERVE_FRESH_SECONDS = 24 * 3600
+
+
+def never_used(now: float | None = None) -> dict | None:
+    """The reserve's last count, as the window left it (snapshot.remember_reserve),
+    when it is fresh enough to say: taken within RESERVE_FRESH_SECONDS, and no
+    rotation recorded since, since a run uses up a batch of them. None
+    otherwise, or when the file is missing or damaged; the balloon then keeps
+    its words without the number."""
+    import time
+
+    from .engines.rotator import config as rconfig
+    from .services.snapshot import RESERVE_COUNT_FILE
+    from .settings import app_data_dir
+    try:
+        data = json.loads((app_data_dir() / RESERVE_COUNT_FILE).read_text(encoding="utf-8"))
+        counted = float(data["counted_at"])
+        found = {"never_used": int(data["never_used"]), "batch": int(data["batch"]),
+                 "will_reset": bool(data["will_reset"])}
+    except (OSError, ValueError, TypeError, KeyError):
+        return None
+    if found["never_used"] < 0 or not 0 <= (time.time() if now is None else now) - counted \
+            <= RESERVE_FRESH_SECONDS:
+        return None
+    try:
+        if rconfig.HISTORY_PATH.stat().st_mtime > counted:
+            return None                 # a run since: a batch of them was used
+    except OSError:
+        pass                            # no history: no run since, either
+    return found

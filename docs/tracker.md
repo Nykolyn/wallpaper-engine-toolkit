@@ -215,9 +215,13 @@ do not fit are left out whole.
 
 - *Playlist finished* — "All 201 wallpapers on Monitor1 have been shown. Rotate
   to swap in 1 000 folders from the reserve." The second sentence is left out
-  when the Rotator's settings do not say how many folders a run moves in. (The
-  design adds "that have never been used"; the tray cannot know that without
-  listing the reserve on the wallpaper disk, so it does not say it.)
+  when the Rotator's settings do not say how many folders a run moves in. When
+  the window has counted the reserve within the last day, with no rotation
+  since and for the same batch size, it says how many have never been used:
+  "Rotate to swap in 1 000 of the 4 210 folders that have never been used", or,
+  with fewer left than a run moves, that the run draws from the whole reserve
+  again. The tray does not list the reserve itself (it is on the wallpaper
+  disk): the window leaves its count in `data/reserve_count.json`.
 - *Playlist started over* — "Monitor1 is back at wallpaper 1 of 201 without a
   rotation — Wallpaper Engine restarted or the playlist was rebuilt. The count
   starts again."

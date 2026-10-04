@@ -22,6 +22,10 @@ Every value is a `Reading`: the value, when it was read, and what went wrong
 if the last try failed — in which case the value is the one read before, so
 the UI can say "last known" and how old it is rather than show a zero.
 
+The reserve's count is also left in `data/reserve_count.json`
+(`remember_reserve`), for the tray: its balloon says how many folders were
+never used, and it may not list the reserve on the wallpaper disk itself.
+
 Refreshed when a job that changes them finishes (`JobCenter.finished`), when
 the TrackerFeed looks, and on demand (`refresh()`, "Refresh now"). One
 refresh runs at a time; asking during one queues the keys for straight after.
@@ -29,6 +33,7 @@ refresh runs at a time; asking during one queues the keys for straight after.
 from __future__ import annotations
 
 import json
+import os
 import threading
 import time
 from dataclasses import dataclass
@@ -280,6 +285,8 @@ class Snapshot(QObject):
             found = compute(keys, self.data_dir)
         except Exception as err:  # noqa: BLE001 — a worker must report, not die
             found = {key: err for key in keys}
+        if isinstance(found.get(RESERVE), ReserveCounts):
+            remember_reserve(self.data_dir, found[RESERVE])
         try:
             self._computed.emit(found, keys)
         except RuntimeError:
@@ -324,6 +331,32 @@ class Snapshot(QObject):
         if self._settings is None:
             return None
         return self._settings.get("tracker", "primary", None)
+
+
+# ---- what the tray is left -----------------------------------------------------
+
+RESERVE_COUNT_FILE = "reserve_count.json"
+
+
+def remember_reserve(data_dir: str | Path, counts: ReserveCounts,
+                     now: float | None = None) -> None:
+    """Leave the reserve's count where the tray reads it (tray_words.never_used).
+
+    `{"never_used", "folders", "batch", "will_reset", "counted_at"}`, the last
+    in seconds since the epoch; written whole under another name, then put in
+    place, so a reader never sees half of it. A count that cannot be written
+    is simply not left: the tray then says what it said before.
+    """
+    path = Path(data_dir) / RESERVE_COUNT_FILE
+    payload = {"never_used": counts.never_used, "folders": counts.folders,
+               "batch": counts.batch, "will_reset": counts.will_reset,
+               "counted_at": time.time() if now is None else now}
+    tmp = path.with_name(path.name + ".tmp")
+    try:
+        tmp.write_text(json.dumps(payload), encoding="utf-8")
+        os.replace(tmp, path)
+    except OSError:
+        pass
 
 
 # ---- what the worker reads ---------------------------------------------------

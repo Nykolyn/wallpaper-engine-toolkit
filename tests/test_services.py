@@ -647,8 +647,11 @@ check("each value carries its age", all(0 <= snap.get(k).age() < 5 for k in
 check("refreshed names the keys it brought",
       news and set(news[-1]) == {snapshot.RESERVE, snapshot.ROTATION, snapshot.LAST_RUN,
                                  snapshot.REVIEW})
-check("the counter wrote nothing", sorted(p.name for p in snap_data.iterdir() if p.is_file())
-      == ["config.json", "history.json"])
+check("the counter wrote nothing of the Rotator's, only the count it leaves for the tray",
+      sorted(p.name for p in snap_data.iterdir() if p.is_file())
+      == ["config.json", "history.json", snapshot.RESERVE_COUNT_FILE]
+      and json.loads((snap_data / snapshot.RESERVE_COUNT_FILE).read_text(encoding="utf-8"))
+      ["never_used"] == snap.get(snapshot.RESERVE).value.never_used)
 
 (snap_data / snapshot.RUN_META).write_text(json.dumps({
     "run00002": {"result": "stopped", "started": "2026-09-28T13:41:00",
