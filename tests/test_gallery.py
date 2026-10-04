@@ -528,6 +528,9 @@ check("a still preview starts no animation", "50" not in still_view._players)
 
 still_view.model_._raw["51"] = QByteArray(b"GIF89a" + b"\x00" * 20)
 still_view.model_._images["51"] = QPixmap(400, 400)
+kept_gif = still_view.loader.path_for("51")
+kept_gif.parent.mkdir(parents=True, exist_ok=True)
+kept_gif.write_bytes(b"GIF89a" + b"\x00" * 20)
 still_view._sync_players()
 check("an animated one plays without waiting for the cursor",
       "51" in still_view._players)
@@ -604,6 +607,7 @@ gif = QByteArray(animated_gif())
 frame = QImage(4, 4, QImage.Format_RGB32)
 frame.fill(0xFF808080)
 for card in many:
+    moving.loader.path_for(card.id).write_bytes(animated_gif())    # where _Fetch keeps it
     moving._image_arrived(card.id, gif, frame)
 
 check("an arriving preview does not build its player there and then",
@@ -624,7 +628,10 @@ check("and they are the ones nearest the top, where the eye is",
 from PySide6.QtCore import SIGNAL                                 # noqa: E402
 
 first = on_screen[0]
-movie = moving._players[first][0]
+movie = moving._players[first]
+check("a player reads the file the download was kept in, not a QBuffer made in Python",
+      movie.fileName() == str(moving.loader.path_for(first)) and movie.device() is not None
+      and type(movie.device()).__name__ == "QFile")
 check("a player has nothing in Python listening to its frames",
       movie.receivers(SIGNAL("frameChanged(int)")) == 0
       and movie.receivers(SIGNAL("updated(QRect)")) == 0)
@@ -661,14 +668,14 @@ check("one late tick is not enough to stop anything", not moving.resting)
 moving._pace(0.6, now + 0.1)
 check("two in a row stop the animation",
       moving.resting and all(m.state() == m.MovieState.Paused
-                             for m, _b in moving._players.values()))
+                             for m in moving._players.values()))
 moving._pace(0.0, now + 0.2)
 moving._pace(0.0, now + 0.2 + gal.CALM_SECONDS / 2)
 check("it stays stopped while the window has only just caught up", moving.resting)
 moving._pace(0.0, now + 0.3 + gal.CALM_SECONDS)
 check("and starts again once it has kept up for a while",
       not moving.resting and all(m.state() == m.MovieState.Running
-                                 for m, _b in moving._players.values()))
+                                 for m in moving._players.values()))
 
 moving.resize(700, 900)
 app.processEvents()
@@ -696,6 +703,15 @@ for card in plain:
     stills._image_arrived(card.id, QByteArray(b"\x89PNG\r\n\x1a\n"), frame)
 stills._sync_players()
 check("a still preview gets no decoder at all", stills._players == {})
+
+lost = gal.GalleryView()
+lost.resize(1200, 900)
+lost.show_items([wallpaper("700")])
+lost.model_.set_image("700", QByteArray(animated_gif()), frame)
+lost.loader.path_for("700").unlink(missing_ok=True)
+lost._sync_players()
+check("an animated preview whose file is gone stays still rather than playing from memory",
+      lost._players == {})
 
 
 # ---- Memory: only the page on screen -----------------------------------------

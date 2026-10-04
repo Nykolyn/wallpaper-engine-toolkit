@@ -569,13 +569,23 @@ check("a black frame reads as dark and a white one as light",
 check("and the threshold sits between them, so a fade-in is skipped",
       thumbs._brightness(dark) < thumbs.STILL_MIN_BRIGHTNESS < thumbs._brightness(bright))
 
-still = thumbs._still_image(encoded("#3366cc"))
+def kept(name: str, data) -> Path:
+    """Bytes where a download is kept: the still is decoded from the file."""
+    target = TMP / "still-tests" / name
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_bytes(bytes(data))
+    return target
+
+
+still = thumbs._still_image(kept("blue.img", encoded("#3366cc")))
 check("a still image is used as it is", not still.isNull()
       and thumbs._brightness(still) > 0.1)
 check("and nothing at all is not an image",
-      thumbs._still_image(QByteArray()).isNull())
+      thumbs._still_image(kept("empty.img", b"")).isNull())
 check("neither is something that is not a picture",
-      thumbs._still_image(QByteArray(b"not an image at all")).isNull())
+      thumbs._still_image(kept("text.img", b"not an image at all")).isNull())
+check("nor a file that is not there",
+      thumbs._still_image(TMP / "still-tests" / "missing.img").isNull())
 
 
 # ---- The Steamworks layer --------------------------------------------------

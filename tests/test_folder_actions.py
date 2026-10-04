@@ -414,6 +414,11 @@ preview_table.request_visible_thumbs()
 check("the GIF plays: a player, and frames drawn over its row",
       wait_for(lambda: preview_table.players() == [str(gif_folder)])
       and wait_for(lambda: preview_table.frame_tile(str(gif_folder), "row") is not None))
+playing = preview_table._players.get(str(gif_folder))
+check("it plays a copy under the thumbs folder, never the preview.gif itself, which "
+      "would keep the folder from the Recycle Bin, nor a QBuffer made in Python",
+      playing is not None and Path(playing.fileName()).is_relative_to(TMP / "thumbs")
+      and Path(playing.fileName()).read_bytes() == (gif_folder / "preview.gif").read_bytes())
 check("the JPEG does not", str(still_folder) not in preview_table.players()
       and preview_table.frame_tile(str(still_folder), "row") is None)
 first = preview_table.frame_tile(str(gif_folder), "row").toImage().pixelColor(100, 100)
@@ -431,6 +436,35 @@ app.processEvents()
 check("with motion off, nothing plays either", preview_table.players() == [])
 animations.ENABLED = True
 preview_host.hide()
+
+print("-- the copies played are kept within their budget --")
+import app.ui.kit.thumbs as thumbs_mod                                    # noqa: E402
+
+copies_root = TMP / "copies"
+copied = thumbs_mod.copy_animation(str(gif_folder), copies_root)
+check("an unchanged preview is copied once",
+      copied and thumbs_mod.copy_animation(str(gif_folder), copies_root) == copied)
+check("a still preview has no copy to play",
+      thumbs_mod.copy_animation(str(still_folder), copies_root) == "")
+one = (gif_folder / "preview.gif").stat().st_size
+budget = thumbs_mod.ANIMATION_DISK_BYTES
+thumbs_mod.ANIMATION_DISK_BYTES = 2 * one
+made = []
+for n in range(3):
+    folder = TMP / f"budget{n}"
+    folder.mkdir()
+    (folder / "preview.gif").write_bytes((gif_folder / "preview.gif").read_bytes())
+    made.append(Path(thumbs_mod.copy_animation(str(folder), copies_root)))
+    os.utime(made[-1], (1_000_000 + n, 1_000_000 + n))     # played in this order
+os.utime(copied, (999_999, 999_999))
+last = TMP / "budget3"
+last.mkdir()
+(last / "preview.gif").write_bytes((gif_folder / "preview.gif").read_bytes())
+newest = Path(thumbs_mod.copy_animation(str(last), copies_root))
+thumbs_mod.ANIMATION_DISK_BYTES = budget
+check("past the budget the least recently played copies go, the newest stay",
+      newest.exists() and made[2].exists()
+      and not made[0].exists() and not made[1].exists() and not Path(copied).exists())
 
 
 # ---- opening the window ----------------------------------------------------------------------------

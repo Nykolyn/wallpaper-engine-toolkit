@@ -16,6 +16,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   queued: only the previews already downloading arrived, and the rest stayed
   empty until switching to the list and back. The hidden list now asks for
   nothing, and asks for its rows when it is shown.
+- **The window no longer freezes for good when Review's list is switched back
+  to the grid** while previews are landing. A download worker decoded Steam's
+  preview from a buffer made in Python, which needs Python's lock, while
+  holding Qt's image lock; the grid, starting a player, held Python's lock and
+  waited for Qt's. Nothing decodes from such a buffer any more: the still is
+  read from the downloaded file, a grid player plays that file, and a table's
+  player plays a copy of the folder's `preview.gif` kept under
+  `data/thumbs/local/anim/` (256 MB at most), so a playing row never holds its
+  folder open.
 
 ## [3.17.0] - 2026-10-04
 

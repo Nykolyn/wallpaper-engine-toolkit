@@ -945,14 +945,19 @@ square thumbs ask for a still that covers the box (`request_local(…,
 cover=True)`).
 
 **Animated previews.** For the rows on screen whose preview is a GIF the
-table asks `request_animation`, which reads its bytes on the same workers
-(none over 32 MB), and plays them with a `QMovie` from memory, decoded at the
-thumb's size: `Table.MAX_PLAYERS` (8) at a time, none while the table is
-hidden or motion is off, the bytes of the last 24 kept for rows scrolled back
-to. A playing row is still a tile with the still in it; each frame is a
+table asks `request_animation`, which copies it on the same workers (none over
+32 MB) into `data/thumbs/local/anim/` (kept within 256 MB, an unchanged one
+copied once), and plays the copy with a `QMovie`, decoded at the thumb's size:
+`Table.MAX_PLAYERS` (8) at a time, none while the table is hidden or motion is
+off, the copies of the last 24 remembered for rows scrolled back to. A copy,
+not a `QBuffer` of the bytes: Qt reading a device made in Python takes the GIL
+under Qt's own image lock, which deadlocked the window (see
+[gallery.md](gallery.md#nothing-decodes-from-a-qbuffer-made-in-python)), and
+not the preview itself, whose folder an open file would keep from the Recycle
+Bin. A playing row is still a tile with the still in it; each frame is a
 rounded tile of its own drawn over it (`Table.frame_tile`), so a frame costs
 two copies rather than a row drawn again. Nothing on
-the GUI thread touches the disk; `test_kit_data.py` checks it by making every
+the GUI thread touches W: (a player reads its copy on the data folder); `test_kit_data.py` checks it by making every
 file-system call from the GUI thread fail while a table of thumbs is shown.
 
 **The log.** A `LogPanel` is fed a line at a time, `append(time, kind,
