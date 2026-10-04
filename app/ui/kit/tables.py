@@ -50,7 +50,7 @@ from dataclasses import dataclass
 from typing import Callable, Hashable, Iterable, Sequence
 
 from PySide6.QtCore import (
-    QAbstractTableModel, QBuffer, QByteArray, QEvent, QIODevice, QItemSelection,
+    QAbstractTableModel, QByteArray, QEvent, QItemSelection,
     QItemSelectionModel, QModelIndex, QPoint, QPointF, QRect, QRectF, QSize, Qt, QTimer, Signal,
 )
 from PySide6.QtGui import (
@@ -1432,7 +1432,7 @@ class Table(QTableView):
     # Animated previews playing at once. A table of 200 px thumbs shows four or
     # five rows; the gallery, thirty to a page, found eight the most worth it.
     MAX_PLAYERS = 8
-    ANIMATION_CACHE = 24            # GIFs' bytes kept, for rows scrolled back to
+    ANIMATION_CACHE = 24            # GIFs' copies remembered, for rows scrolled back to
 
     sort_changed = Signal(int, object)      # column, Qt.SortOrder
     button_clicked = Signal(int, int)       # row, column: a ButtonCell was clicked
@@ -1480,11 +1480,12 @@ class Table(QTableView):
         self._loader = loader or ThumbLoader(self)
         self._loader.local_done.connect(self._thumb_arrived)
         self._loader.animation_done.connect(self._animation_arrived)
-        # key → the GIF's bytes, empty when its preview is not animated
-        self._gifs: OrderedDict[str, QByteArray] = OrderedDict()
-        # keys whose still came from a GIF: the only ones whose bytes are asked for
+        # key → the copy of its GIF to play (thumbs.copy_animation), "" when
+        # its preview is not animated
+        self._gifs: OrderedDict[str, str] = OrderedDict()
+        # keys whose still came from a GIF: the only ones whose copies are asked for
         self._animatable: set[str] = set()
-        self._players: dict[str, tuple[QMovie, QBuffer]] = {}
+        self._players: dict[str, QMovie] = {}
         self._frames: dict[tuple[str, str], QPixmap] = {}    # (key, size) → frame tile
         self._frame_images: dict[str, QPixmap] = {}         # key → the frame playing
         self._pixmaps: OrderedDict[str, QPixmap | None] = OrderedDict()
@@ -1759,10 +1760,10 @@ class Table(QTableView):
             for key in self._rows_for_key:
                 if key not in self._animatable:
                     continue
-                data = self._gifs.get(key)
-                if data is None:
+                copy = self._gifs.get(key)
+                if copy is None:
                     self._loader.request_animation(key, key)
-                elif not data.isEmpty():
+                elif copy:
                     wanted.append(key)
         wanted = wanted[:self.MAX_PLAYERS]
         for key in [k for k in self._players if k not in wanted]:
@@ -1775,28 +1776,25 @@ class Table(QTableView):
         for key in list(self._players):
             self._stop_player(key)
 
-    def _animation_arrived(self, key: str, data) -> None:
-        self._gifs[key] = data
+    def _animation_arrived(self, key: str, copy: str) -> None:
+        self._gifs[key] = copy
         self._gifs.move_to_end(key)
         while len(self._gifs) > self.ANIMATION_CACHE:
             gone, _ = self._gifs.popitem(last=False)
             if gone in self._players:
                 self._stop_player(gone)
-        if key in self._rows_for_key and not data.isEmpty():
+        if key in self._rows_for_key and copy:
             self._play_visible()
 
     def _start_player(self, key: str) -> None:
-        buffer = QBuffer(self)
-        buffer.setData(self._gifs[key])
-        buffer.open(QIODevice.ReadOnly)
-        movie = QMovie(buffer, QByteArray(), self)
+        # From a file, never a QBuffer made in Python: a player looping on one
+        # froze the window against a worker decoding a still (thumbs' top).
+        movie = QMovie(self._gifs[key], QByteArray(), self)
         movie.setCacheMode(QMovie.CacheNone)
         if not movie.isValid() or movie.frameCount() == 1 or not movie.jumpToFrame(0):
             # one frame is a still, and the still is shown already
-            buffer.close()
             movie.deleteLater()
-            buffer.deleteLater()
-            self._gifs[key] = QByteArray()
+            self._gifs[key] = ""
             return
         model = self.model()
         column = next(c for c in model.columns if c.thumb)
@@ -1811,15 +1809,13 @@ class Table(QTableView):
             if scaled.width() < first.width():
                 movie.setScaledSize(scaled)     # decoded big, kept small
         movie.frameChanged.connect(lambda _n, k=key: self._next_frame(k))
-        self._players[key] = (movie, buffer)
+        self._players[key] = movie
         movie.start()
 
     def _stop_player(self, key: str) -> None:
-        movie, buffer = self._players.pop(key)
+        movie = self._players.pop(key)
         movie.stop()
         movie.deleteLater()
-        buffer.close()
-        buffer.deleteLater()
         self._frame_images.pop(key, None)
         for stale in [k for k in self._frames if k[0] == key]:
             del self._frames[stale]
@@ -1827,10 +1823,10 @@ class Table(QTableView):
             self._update_row(row)
 
     def _next_frame(self, key: str) -> None:
-        player = self._players.get(key)
-        if player is None:
+        movie = self._players.get(key)
+        if movie is None:
             return
-        image = player[0].currentImage()
+        image = movie.currentImage()
         if image.isNull():
             return
         frame = QPixmap.fromImage(image)

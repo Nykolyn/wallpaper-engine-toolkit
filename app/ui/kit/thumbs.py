@@ -18,9 +18,19 @@ A view asks only for the rows it shows, once scrolling settles, and calls
 `retarget_local()` first so nothing queued for rows scrolled past is read.
 
 An animated preview is played by the table that shows it (`Table`'s players,
-a few at a time): `request_animation` reads the GIF's bytes on a worker, as
-everything else on that disk, and hands them over (`animation_done`) for a
-QMovie to play from memory.
+a few at a time): `request_animation` copies the GIF on a worker, as
+everything else on that disk is read, into `data/thumbs/local/anim/`, and hands
+over the copy (`animation_done`) for a QMovie to play from there.
+
+**Nothing here decodes from a QBuffer made in Python**, on any thread. Qt
+decodes an image under one lock of its own, and reading a device made in
+Python takes the GIL (PySide asks Python whether the device's methods were
+overridden). A worker decoding Steam's bytes from a QBuffer held that lock and
+waited for the GIL, while the GUI thread held the GIL in `QMovie.start()` and
+waited for the lock: the window froze for good, switching Review's list back
+to the grid while previews were landing. A player looping on a Python QBuffer
+did the same against a worker in `QImageReader.size()`, which keeps the GIL.
+So every decoder reads a file, which Qt opens itself.
 """
 from __future__ import annotations
 
@@ -30,9 +40,7 @@ import os
 import weakref
 from pathlib import Path
 
-from PySide6.QtCore import (
-    QBuffer, QByteArray, QIODevice, QObject, QRunnable, QSize, Qt, QThreadPool, Signal,
-)
+from PySide6.QtCore import QByteArray, QObject, QRunnable, QSize, Qt, QThreadPool, Signal
 from PySide6.QtGui import QImage, QImageReader, QPainter
 
 from ... import theme
@@ -54,9 +62,13 @@ LOCAL_BOX = QSize(480, 480)
 LOCAL_QUALITY = 85
 STILL_VERSION = "b480"
 
-# An animated preview bigger than this is shown still: a QMovie keeps the file
-# in memory while it plays, and Wallpaper Engine's previews are a few MB.
+# An animated preview bigger than this is shown still: it is copied off W: to
+# be played, and Wallpaper Engine's previews are a few MB.
 MAX_ANIMATION_BYTES = 32 * 1024 * 1024
+# The copies played are kept within this, the least recently played let go
+# first: a copy let go of is made again when its row is shown again.
+ANIMATION_DISK_BYTES = 256 * 1024 * 1024
+ANIMATION_DIR = "anim"
 
 # A wallpaper folder's preview, in the order one is preferred when a folder
 # has several: the animated one is the one Wallpaper Engine shows.
@@ -107,16 +119,18 @@ class _Fetch(QRunnable):
                 data = b""
         if self.loader.stopped:
             return
-        blob = QByteArray(data)
+        # Whatever is in `data` is in `path` too: a download is kept before
+        # it counts, and the still is decoded from the file (see the top).
+        still = _still_image(path) if data else QImage()
         try:
-            self.loader.done.emit(self.item_id, blob, _still_image(blob))
+            self.loader.done.emit(self.item_id, QByteArray(data), still)
         except RuntimeError:
             # The gallery was closed while this was in flight. A preview
             # nobody is waiting for is not worth a traceback.
             pass
 
 
-def _still_image(data: QByteArray) -> QImage:
+def _still_image(path: str | os.PathLike) -> QImage:
     """One frame to stand for a preview — decoded here, off the GUI thread.
 
     Nearly half the previews in a real gallery are animated (46 of 90 in the
@@ -128,18 +142,13 @@ def _still_image(data: QByteArray) -> QImage:
 
     A `QImage`, not a `QPixmap`: pixmaps may only be made on the GUI thread,
     and decoding twenty frames there for ninety cards is a stutter.
+
+    Read from the file the download was kept in, never from its bytes in a
+    QBuffer: see the top of this module for the freeze that was.
     """
-    if data.isEmpty():
-        return QImage()
-    buffer = QBuffer()
-    buffer.setData(data)
-    buffer.open(QIODevice.ReadOnly)
-    try:
-        reader = QImageReader(buffer)
-        reader.setDecideFormatFromContent(True)
-        return _still_frame(reader)
-    finally:
-        buffer.close()
+    reader = QImageReader(os.fspath(path))
+    reader.setDecideFormatFromContent(True)
+    return _still_frame(reader)
 
 
 def _still_frame(reader: QImageReader) -> QImage:
@@ -291,17 +300,63 @@ def _keep(image: QImage, target: Path) -> None:
         pass            # a still not kept is read again next time; nothing more
 
 
-def read_animation(path: str) -> bytes:
-    """The bytes of a wallpaper folder's animated preview (its preview.gif), or
-    b"" when its preview is not one, or is too big to play. Worker threads only."""
+def copy_animation(path: str, root: Path) -> str:
+    """A copy of a wallpaper folder's animated preview (its preview.gif) under
+    `root`, to be played from; "" when its preview is not one, or is too big
+    to play. An unchanged preview is copied once. Worker threads only.
+
+    A copy, not the preview itself: a player keeps its file open, and an open
+    preview.gif would stop its folder going to the Recycle Bin."""
     found = find_preview(path)
     if found is None:
-        return b""
-    preview, _mtime, size = found
+        return ""
+    preview, mtime_ns, size = found
     if not preview.lower().endswith(".gif") or size > MAX_ANIMATION_BYTES:
-        return b""
+        return ""
+    digest = _path_digest(preview)
+    target = Path(root) / ANIMATION_DIR / digest[:2] / f"{digest}-{mtime_ns:x}-{size:x}.gif"
+    if target.exists():
+        try:
+            os.utime(target)        # played again: the last to be let go
+        except OSError:
+            pass
+        return str(target)
     with open(preview, "rb") as handle:
-        return handle.read()
+        data = handle.read()
+    try:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        partial = target.with_suffix(".part")
+        partial.write_bytes(data)
+        os.replace(partial, target)
+    except OSError:
+        return ""
+    _trim_animations(Path(root) / ANIMATION_DIR, keep=target)
+    return str(target)
+
+
+def _trim_animations(folder: Path, keep: Path) -> None:
+    """Let go of the least recently played copies past ANIMATION_DISK_BYTES."""
+    copies = []
+    try:
+        with os.scandir(folder) as subs:
+            folders = [sub.path for sub in subs if sub.is_dir()]
+        for sub in folders:
+            with os.scandir(sub) as entries:
+                for entry in entries:
+                    if entry.name.endswith(".gif") and entry.path != str(keep):
+                        st = entry.stat()
+                        copies.append((st.st_mtime, st.st_size, entry.path))
+        total = sum(size for _t, size, _p in copies) + keep.stat().st_size
+    except OSError:
+        return
+    for _mtime, size, old in sorted(copies):
+        if total <= ANIMATION_DISK_BYTES:
+            break
+        try:
+            os.remove(old)
+            total -= size
+        except OSError:
+            pass                # playing: Windows keeps it until its player stops
 
 
 class _Local(QRunnable):
@@ -332,7 +387,7 @@ class _Local(QRunnable):
 
 
 class _Animation(QRunnable):
-    """One animated preview's bytes, off the GUI thread."""
+    """One animated preview, copied to be played, off the GUI thread."""
 
     def __init__(self, loader: "ThumbLoader", key: str, path: str):
         super().__init__()
@@ -344,13 +399,13 @@ class _Animation(QRunnable):
         if self.loader.stopped:
             return
         try:
-            data = read_animation(self.path)
+            copy = copy_animation(self.path, self.loader.local_root)
         except Exception:  # noqa: BLE001 — a folder gone or unreadable plays nothing
-            data = b""
+            copy = ""
         if self.loader.stopped:
             return
         try:
-            self.loader.animation_done.emit(self.key, QByteArray(data))
+            self.loader.animation_done.emit(self.key, copy)
         except RuntimeError:
             pass
 
@@ -379,13 +434,13 @@ class ThumbLoader(QObject):
     `request_local(key, path, box)` → `local_done(key, still)`: the preview in
     a wallpaper folder (or an image file), fitted into `box` device pixels. The
     still is a null QImage when the folder has no preview.
-    `request_animation(key, path)` → `animation_done(key, bytes)`: the folder's
-    preview.gif, to play; empty when its preview is not animated.
+    `request_animation(key, path)` → `animation_done(key, file)`: a copy of the
+    folder's preview.gif, to play; "" when its preview is not animated.
     """
 
     done = Signal(str, QByteArray, QImage)
     local_done = Signal(str, QImage)
-    animation_done = Signal(str, QByteArray)
+    animation_done = Signal(str, str)
 
     def __init__(self, parent=None, threads: int = 6, *, local_root: Path | None = None):
         super().__init__(parent)
@@ -446,7 +501,7 @@ class ThumbLoader(QObject):
         return True
 
     def request_animation(self, key: str, path: str | os.PathLike | None) -> bool:
-        """Ask for the bytes of a folder's animated preview. Once per key until
+        """Ask for a playable copy of a folder's animated preview. Once per key until
         `retarget_local`; queued behind the stills asked for before it."""
         if not path or self.stopped or key in self._asked_animation:
             return False

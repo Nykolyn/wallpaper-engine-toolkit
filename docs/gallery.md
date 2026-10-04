@@ -236,6 +236,42 @@ What changed:
 - **Turning the page drops the downloads queued for the last one**, instead of
   making the page on screen wait behind them.
 
+### Nothing decodes from a QBuffer made in Python
+
+On 4 October the window froze for good when the list was switched back to the
+grid while an author's previews were landing. The stacks (taken with `gdb` on a
+reproduction) showed a lock-order deadlock between Python's GIL and a lock Qt
+holds while it works out an image's format:
+
+- a download worker was decoding Steam's bytes from a `QBuffer` created in
+  Python. Qt held its image lock and read the buffer, and reading a device made
+  in Python asks Python whether its methods were overridden, which takes the
+  GIL;
+- the GUI thread was in `QMovie.start()` for a grid player. PySide keeps the
+  GIL through that call (measured: `QImageReader.read()` gives it up,
+  `QMovie.start()` and `QImageReader.size()` do not), and it was waiting for
+  the image lock.
+
+Each waited for the other, at 0 % CPU. A player looping on a Python `QBuffer`
+deadlocks the same way against a worker in `QImageReader.size()`: eight looping
+players and two such workers froze within seconds, while the same players
+reading files ran clean.
+
+So no decoder reads a Python-made device, on any thread:
+
+- the worker decodes the still from the file the download is kept in,
+  `data/thumbs/<id>.img`;
+- a grid player plays that same file;
+- a table's player (the Tracker's, the Rotator's, the Copier's, the
+  Creator's) plays a copy of the folder's `preview.gif` under
+  `data/thumbs/local/anim/`. It plays a copy, not the preview itself, because
+  an open `preview.gif` would keep its folder from the Recycle Bin. Copies stay within 256 MB, and the least recently
+  played go first.
+
+The reproduction with thirteen 4.8 MB GIF previews froze on the first page
+before; now 24 rounds of grid → list → grid at 0, 30 and 100 ms leave the GUI
+thread at most 0.12 s behind.
+
 ### A card is a few copies
 
 The redesign (3.7.0) put more cards on screen — three to five across instead of

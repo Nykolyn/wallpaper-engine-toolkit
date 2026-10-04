@@ -6,6 +6,26 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [3.17.1] - 2026-10-04
+
+### Fixed
+
+- **Review's grid shows every preview after moving to the next author.** The
+  grid and the list share one preview loader, and the list, though hidden,
+  still answered the new author's rows 90 ms later by dropping whatever was
+  queued: only the previews already downloading arrived, and the rest stayed
+  empty until switching to the list and back. The hidden list now asks for
+  nothing, and asks for its rows when it is shown.
+- **The window no longer freezes for good when Review's list is switched back
+  to the grid** while previews are landing. A download worker decoded Steam's
+  preview from a buffer made in Python, which needs Python's lock, while
+  holding Qt's image lock; the grid, starting a player, held Python's lock and
+  waited for Qt's. Nothing decodes from such a buffer any more: the still is
+  read from the downloaded file, a grid player plays that file, and a table's
+  player plays a copy of the folder's `preview.gif` kept under
+  `data/thumbs/local/anim/` (256 MB at most), so a playing row never holds its
+  folder open.
+
 ## [3.17.0] - 2026-10-04
 
 ### Added
@@ -1447,7 +1467,8 @@ restructured yet; the tabs keep their layout and take on the new look.
   was right for one library and wrong for every other. Nothing is tagged now
   unless you ask for it.
 
-[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.17.0...HEAD
+[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.17.1...HEAD
+[3.17.1]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.17.0...v3.17.1
 [3.17.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.16.0...v3.17.0
 [3.16.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.15.0...v3.16.0
 [3.15.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.14.0...v3.15.0

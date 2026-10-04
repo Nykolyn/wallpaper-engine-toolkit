@@ -134,6 +134,9 @@ def main() -> int:
     gifs = [make_gif(i) for i in range(30)]
     for wallpaper, data in zip(wallpapers[:30], gifs):
         frame = QImage.fromData(data)
+        kept = view.loader.path_for(wallpaper.id)     # players read where _Fetch keeps it
+        kept.parent.mkdir(parents=True, exist_ok=True)
+        kept.write_bytes(data)
         view._image_arrived(wallpaper.id, QByteArray(data), frame)
     deadline = time.monotonic() + 1.0
     while time.monotonic() < deadline:

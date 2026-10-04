@@ -30,11 +30,11 @@ os.environ["WALLPAPER_TOOLKIT_DATA"] = tempfile.mkdtemp(prefix="gallery-test-")
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from PySide6.QtCore import (  # noqa: E402
-    QByteArray, QEvent, QPointF, QRect, QRectF, QSize, Qt)
+    QByteArray, QEvent, QFile, QPointF, QRect, QRectF, QSize, Qt)
 from PySide6.QtGui import (  # noqa: E402
     QColor, QImage, QKeyEvent, QMouseEvent, QPainter, QPixmap)
 from PySide6.QtWidgets import (                                              # noqa: E402
-    QApplication, QStyleOptionViewItem)
+    QApplication, QStackedWidget, QStyleOptionViewItem)
 
 app = QApplication.instance() or QApplication([])
 
@@ -528,6 +528,9 @@ check("a still preview starts no animation", "50" not in still_view._players)
 
 still_view.model_._raw["51"] = QByteArray(b"GIF89a" + b"\x00" * 20)
 still_view.model_._images["51"] = QPixmap(400, 400)
+kept_gif = still_view.loader.path_for("51")
+kept_gif.parent.mkdir(parents=True, exist_ok=True)
+kept_gif.write_bytes(b"GIF89a" + b"\x00" * 20)
 still_view._sync_players()
 check("an animated one plays without waiting for the cursor",
       "51" in still_view._players)
@@ -604,6 +607,7 @@ gif = QByteArray(animated_gif())
 frame = QImage(4, 4, QImage.Format_RGB32)
 frame.fill(0xFF808080)
 for card in many:
+    moving.loader.path_for(card.id).write_bytes(animated_gif())    # where _Fetch keeps it
     moving._image_arrived(card.id, gif, frame)
 
 check("an arriving preview does not build its player there and then",
@@ -624,7 +628,12 @@ check("and they are the ones nearest the top, where the eye is",
 from PySide6.QtCore import SIGNAL                                 # noqa: E402
 
 first = on_screen[0]
-movie = moving._players[first][0]
+movie = moving._players[first]
+# Compared as paths: on Windows Qt hands the name back with forward slashes.
+check("a player reads the file the download was kept in",
+      Path(movie.fileName()) == moving.loader.path_for(first))
+check("through a QFile Qt opened itself, not a QBuffer made in Python",
+      isinstance(movie.device(), QFile))
 check("a player has nothing in Python listening to its frames",
       movie.receivers(SIGNAL("frameChanged(int)")) == 0
       and movie.receivers(SIGNAL("updated(QRect)")) == 0)
@@ -661,14 +670,14 @@ check("one late tick is not enough to stop anything", not moving.resting)
 moving._pace(0.6, now + 0.1)
 check("two in a row stop the animation",
       moving.resting and all(m.state() == m.MovieState.Paused
-                             for m, _b in moving._players.values()))
+                             for m in moving._players.values()))
 moving._pace(0.0, now + 0.2)
 moving._pace(0.0, now + 0.2 + gal.CALM_SECONDS / 2)
 check("it stays stopped while the window has only just caught up", moving.resting)
 moving._pace(0.0, now + 0.3 + gal.CALM_SECONDS)
 check("and starts again once it has kept up for a while",
       not moving.resting and all(m.state() == m.MovieState.Running
-                                 for m, _b in moving._players.values()))
+                                 for m in moving._players.values()))
 
 moving.resize(700, 900)
 app.processEvents()
@@ -696,6 +705,15 @@ for card in plain:
     stills._image_arrived(card.id, QByteArray(b"\x89PNG\r\n\x1a\n"), frame)
 stills._sync_players()
 check("a still preview gets no decoder at all", stills._players == {})
+
+lost = gal.GalleryView()
+lost.resize(1200, 900)
+lost.show_items([wallpaper("700")])
+lost.model_.set_image("700", QByteArray(animated_gif()), frame)
+lost.loader.path_for("700").unlink(missing_ok=True)
+lost._sync_players()
+check("an animated preview whose file is gone stays still rather than playing from memory",
+      lost._players == {})
 
 
 # ---- Memory: only the page on screen -----------------------------------------
@@ -825,6 +843,35 @@ state, cover = listing.thumb_state("l0")
 check("and once one arrives it covers the row's thumb exactly",
       state == "image" and cover.deviceIndependentSize().toSize()
       == QSize(*theme.THUMB["row"][:2]))
+
+# The grid and the list share one loader, and only one of them is on screen.
+# The next author resets the model under both; the hidden list used to settle
+# 90 ms later and drop every download the grid had just queued, so most cards
+# stayed empty until the grid happened to ask again.
+shared_grid = gal.GalleryView()
+shared_list = gal.GalleryList(shared_grid)
+views = QStackedWidget()
+views.addWidget(shared_grid)
+views.addWidget(shared_list)
+views.resize(1400, 900)
+views.show()
+shared_grid.loader.stopped = True     # nothing downloads; only the asking is tested
+shared_grid.show_items([wallpaper(f"s{i}", preview="https://example.net/s.jpg")
+                        for i in range(gal.PAGE_SIZE)])
+app.processEvents()
+shared_grid._pending.timeout.disconnect()   # the grid does not get to ask twice
+shared_grid.show_items([wallpaper(f"t{i}", preview="https://example.net/t.jpg")
+                        for i in range(gal.PAGE_SIZE)])
+asked_by_grid = set(shared_grid.loader._asked)
+wait_for(lambda: False, seconds=0.4)
+check("the next author's previews stay asked for while the list is hidden",
+      len(asked_by_grid) > 0 and asked_by_grid <= shared_grid.loader._asked)
+views.setCurrentWidget(shared_list)
+check("and the list asks for its own rows once it is shown",
+      wait_for(lambda: shared_grid.loader._asked
+               and shared_grid.loader._asked < asked_by_grid, seconds=1.0))
+views.close()
+shared_grid.close_loader()
 
 
 # ---- One queue for every subscription ------------------------------------------

@@ -49,7 +49,7 @@ from dataclasses import dataclass
 from typing import Iterable
 
 from PySide6.QtCore import (
-    QAbstractListModel, QBuffer, QByteArray, QEvent, QIODevice, QModelIndex, QPointF, QRect,
+    QAbstractListModel, QByteArray, QEvent, QModelIndex, QPointF, QRect,
     QRectF, QSize, Qt, QTimer, Signal,
 )
 from PySide6.QtGui import (
@@ -916,7 +916,7 @@ class GalleryView(QListView):
 
         # One decoder per animated wallpaper on screen. A page holds thirty, so
         # this is bounded by the pagination rather than by the author's output.
-        self._players: dict[str, tuple[QMovie, QBuffer]] = {}
+        self._players: dict[str, QMovie] = {}
         self._all: list = []
         self._page = 1
         self._paged = True
@@ -1224,15 +1224,15 @@ class GalleryView(QListView):
         return cover_size(still.size(), g.width * dpr, g.preview * dpr)
 
     def _start_one(self, item_id: str) -> None:
-        data = self.model_.raw(item_id)
         still = self.model_.image(item_id)
-        if data is None or still is None:
+        kept = self.loader.path_for(item_id)
+        if self.model_.raw(item_id) is None or still is None or not kept.exists():
             return
-        buffer = QBuffer(self)
-        buffer.setData(data)
-        buffer.open(QIODevice.ReadOnly)
-        movie = QMovie(self)
-        movie.setDevice(buffer)
+        # From the file the download was kept in, not from its bytes in a
+        # QBuffer: a QBuffer made in Python is read under the GIL, and a player
+        # looping on one, or started while a worker decoded from one, froze the
+        # window for good (app/ui/kit/thumbs.py says how).
+        movie = QMovie(str(kept), QByteArray(), self)
         # CacheAll keeps every decoded frame of every player alive at once:
         # thirty previews of fifty frames is a lot of memory to hold for a
         # thumbnail. The frames are cheap to decode again as they come round.
@@ -1242,7 +1242,7 @@ class GalleryView(QListView):
         # frames a second, was a wait for the GIL whenever a download or a
         # Steam answer was being worked on.
         movie.setScaledSize(self._player_size(still))
-        self._players[item_id] = (movie, buffer)
+        self._players[item_id] = movie
         self.delegate.movies[item_id] = movie
         movie.start()
         if self.resting:
@@ -1252,7 +1252,7 @@ class GalleryView(QListView):
             self._clock.start()
 
     def _rescale_players(self) -> None:
-        for item_id, (movie, _buffer) in self._players.items():
+        for item_id, movie in self._players.items():
             still = self.model_.image(item_id)
             if still is not None:
                 movie.setScaledSize(self._player_size(still))
@@ -1269,7 +1269,7 @@ class GalleryView(QListView):
         if self.resting:
             return
         viewport = self.viewport()
-        for item_id, (movie, _buffer) in self._players.items():
+        for item_id, movie in self._players.items():
             number = movie.currentFrameNumber()
             if self._painted.get(item_id) == number:
                 continue
@@ -1300,18 +1300,15 @@ class GalleryView(QListView):
 
     def _rest(self, on: bool) -> None:
         self.resting = on
-        for movie, _buffer in self._players.values():
+        for movie in self._players.values():
             movie.setPaused(on)
 
     def _stop_one(self, item_id: str) -> None:
-        found = self._players.pop(item_id, None)
-        if found is None:
+        movie = self._players.pop(item_id, None)
+        if movie is None:
             return
-        movie, buffer = found
         movie.stop()
         movie.deleteLater()
-        buffer.close()
-        buffer.deleteLater()
         self.delegate.movies.pop(item_id, None)
         self._painted.pop(item_id, None)
         self.model_.refresh_row(item_id)
@@ -1610,6 +1607,14 @@ class GalleryList(Table):
         return "loading", None
 
     def request_visible_thumbs(self) -> None:
+        # The loader is the grid's too. A new author resets the model, which
+        # settles this list 90 ms later even while the grid is the one shown:
+        # its retarget dropped every download the grid had just queued, and
+        # the cards not already downloading stayed empty until something made
+        # the grid ask again. Hidden, the list asks for nothing; shown, it does.
+        window = self.window()
+        if window is not self and not self.isVisibleTo(window):
+            return
         # What was queued for rows scrolled past is dropped (the list of every
         # author can be a thousand rows); what arrived is in the gallery's model.
         self.gallery.loader.retarget()
@@ -1617,6 +1622,10 @@ class GalleryList(Table):
             wallpaper = self.model_.item_at(row)
             if wallpaper is not None and self.gallery.model_.image(wallpaper.id) is None:
                 self.gallery.loader.request(wallpaper.id, wallpaper.item.preview)
+
+    def showEvent(self, event) -> None:         # noqa: N802 - Qt's name
+        super().showEvent(event)
+        self._settle.start()            # what it skipped while hidden
 
     def image_arrived(self, item_id: str) -> None:
         self._covers.pop(item_id, None)
