@@ -204,7 +204,8 @@ class TrackerTray:
                 self._say_finished(p.monitor, p.total)
 
     def _say_finished(self, monitor: str, total: int):
-        title, body = words.finished_balloon(monitor, total, words.rotation_batch())
+        title, body = words.finished_balloon(monitor, total, words.rotation_batch(),
+                                             words.never_used())
         self._say(BALLOON_FINISHED, title, body, tray_icon(FINISHED, light=self.taskbar.light))
 
     def _say_restarted(self, p: Progress):

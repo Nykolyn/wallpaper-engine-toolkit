@@ -27,6 +27,7 @@ data/
 ├── authors.sqlite          the Review page's authors database
 ├── review_last.json        the last Review scan: the authors with new items, which are done
 ├── tracker.json            the live cycle per monitor, plus 40 finished ones
+├── reserve_count.json      the reserve's last count, left by the window for the tray's balloon
 ├── wallpaper_timer.json    the countdown, saved every 15 seconds
 ├── tracker.log             every tray launch, and any crash
 ├── logs/                   each tool's log, a file a day, and a file per rotation; kept 30 days

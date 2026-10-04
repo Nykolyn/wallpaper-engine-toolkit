@@ -6,6 +6,19 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [3.14.0] - 2026-10-04
+
+### Added
+
+- **"Playlist finished" says how many folders have never been used**, as the
+  design has it: "Rotate to swap in 1 000 of the 4 210 folders that have never
+  been used", or, with fewer left than a run moves, that the run draws from the
+  whole reserve again. The tray never lists the reserve (it is on the wallpaper
+  disk); the window's Snapshot, which already counts it off the GUI thread,
+  leaves the count in `data/reserve_count.json`, and the tray says it only
+  when it is under a day old, no rotation has run since, and it was counted
+  for the batch size a run now moves. Otherwise the balloon keeps its words.
+
 ## [3.13.0] - 2026-10-04
 
 ### Changed
@@ -1369,7 +1382,8 @@ restructured yet; the tabs keep their layout and take on the new look.
   was right for one library and wrong for every other. Nothing is tagged now
   unless you ask for it.
 
-[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.13.0...HEAD
+[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.14.0...HEAD
+[3.14.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.13.0...v3.14.0
 [3.13.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.12.2...v3.13.0
 [3.12.2]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.12.1...v3.12.2
 [3.12.1]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.12.0...v3.12.1

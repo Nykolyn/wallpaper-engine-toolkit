@@ -335,6 +335,17 @@ check("Playlist finished: the design's copy with the real numbers",
 check("the clause goes when the batch is not known",
       tw.finished_balloon("Monitor1", 201) == ("Playlist finished", "All 201 wallpapers on Monitor1 have been shown.")
       and tw.finished_balloon("Monitor1", 201, 0)[1] == "All 201 wallpapers on Monitor1 have been shown.")
+FRESH = {"never_used": 4210, "batch": 1000, "will_reset": False}
+check("with a fresh count of the reserve, it says how many have never been used",
+      tw.finished_balloon("Monitor1", 201, 1000, FRESH)[1]
+      == f"All 201 wallpapers on Monitor1 have been shown. Rotate to swap in 1{NB}000 of the "
+         f"4{NB}210 folders that have never been used.")
+check("and when too few are left, that the run draws from the whole reserve again",
+      tw.finished_balloon("Monitor1", 201, 1000, {**FRESH, "never_used": 640, "will_reset": True})[1]
+      == f"All 201 wallpapers on Monitor1 have been shown. Rotate to swap in 1{NB}000: only 640 "
+         f"folders were never used, so the run draws from the whole reserve again.")
+check("a count made for another batch size is not said",
+      tw.finished_balloon("Monitor1", 201, 750, FRESH)[1].endswith("750 folders from the reserve."))
 check("Playlist started over: the design's copy with the real numbers",
       tw.restarted_balloon("Monitor1", 1, 201)
       == ("Playlist started over",
@@ -408,6 +419,31 @@ check("a history that cannot be read is not guessed at", tw.next_run_number() is
 check("and is left exactly as it was (a counter does not put it right)",
       rconfig.HISTORY_PATH.read_text(encoding="utf-8") == "{broken" and not list(TMP.glob("history.unreadable*")))
 rconfig.CONFIG_PATH, rconfig.HISTORY_PATH = real_paths
+
+import time                                                                  # noqa: E402
+
+from app.services import snapshot as snap                                     # noqa: E402
+
+print("-- the reserve's count, as the window left it --")
+check("nothing left yet: not said", tw.never_used() is None)
+now = time.time()
+counted = snap.ReserveCounts(folders=9000, never_used=4210, will_reset=False, batch=1000, path="R:")
+snap.remember_reserve(TMP / "data", counted, now=now - 60)
+left = TMP / "data" / snap.RESERVE_COUNT_FILE
+check("the window leaves it whole, with when it was counted",
+      json.loads(left.read_text(encoding="utf-8"))["never_used"] == 4210
+      and not list((TMP / "data").glob("*.tmp")))
+check("a fresh count is read back", tw.never_used(now) == {"never_used": 4210, "batch": 1000,
+                                                          "will_reset": False})
+check("a day-old one is not", tw.never_used(now + tw.RESERVE_FRESH_SECONDS) is None)
+real_history = rconfig.HISTORY_PATH
+rconfig.HISTORY_PATH = TMP / "history_after.json"
+rconfig.HISTORY_PATH.write_text("{}", encoding="utf-8")
+check("nor one counted before the last rotation", tw.never_used(now) is None)
+rconfig.HISTORY_PATH = real_history
+left.write_text("{half", encoding="utf-8")
+check("and a damaged file is not guessed at", tw.never_used(now) is None)
+left.unlink()
 
 review = TMP / "data" / "review_last.json"
 check("no scan yet: nothing is waiting, as far as anyone knows", tw.review_waiting() is None)
