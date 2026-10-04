@@ -30,7 +30,7 @@ os.environ["WALLPAPER_TOOLKIT_DATA"] = tempfile.mkdtemp(prefix="gallery-test-")
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from PySide6.QtCore import (  # noqa: E402
-    QByteArray, QEvent, QPointF, QRect, QRectF, QSize, Qt)
+    QByteArray, QEvent, QFile, QPointF, QRect, QRectF, QSize, Qt)
 from PySide6.QtGui import (  # noqa: E402
     QColor, QImage, QKeyEvent, QMouseEvent, QPainter, QPixmap)
 from PySide6.QtWidgets import (                                              # noqa: E402
@@ -629,9 +629,11 @@ from PySide6.QtCore import SIGNAL                                 # noqa: E402
 
 first = on_screen[0]
 movie = moving._players[first]
-check("a player reads the file the download was kept in, not a QBuffer made in Python",
-      movie.fileName() == str(moving.loader.path_for(first)) and movie.device() is not None
-      and type(movie.device()).__name__ == "QFile")
+# Compared as paths: on Windows Qt hands the name back with forward slashes.
+check("a player reads the file the download was kept in",
+      Path(movie.fileName()) == moving.loader.path_for(first))
+check("through a QFile Qt opened itself, not a QBuffer made in Python",
+      isinstance(movie.device(), QFile))
 check("a player has nothing in Python listening to its frames",
       movie.receivers(SIGNAL("frameChanged(int)")) == 0
       and movie.receivers(SIGNAL("updated(QRect)")) == 0)
