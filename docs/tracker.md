@@ -215,10 +215,11 @@ the same on a light taskbar as on a dark one.
 
 The icon is drawn **for each size Windows asks for** — 16, 20, 24, 32, 40 and
 48 px, so 100 % to 300 % scaling — rather than one picture shrunk, and the edge
-of the fill sits on a whole pixel: at 16 px the mark is about ten pixels wide,
-so the fill moves in about ten steps there. The icon is redrawn only when the
-fill crosses a step of the largest size (31 of them), so on a 10-minute delay
-about every twenty seconds, never every second.
+of the fill sits on a whole pixel. The mark spans the icon's whole width, as
+the other icons in the tray fill theirs, so the fill moves a pixel at a time:
+16 steps at 16 px. The icon is redrawn only when the fill crosses a step of the
+largest size (48 of them), so on a 10-minute delay about every twelve seconds,
+never every second.
 
 **The tooltip** has one line per monitor, the lead one marked `▸`, each starting
 with the share of its playlist shown: `▸ 55% · Monitor1 · 81 of 192 shown ·

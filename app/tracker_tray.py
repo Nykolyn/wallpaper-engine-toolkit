@@ -63,7 +63,7 @@ RESTART_NOTICE_SECONDS = 15 * 60
 # The icon's fill is the time to the next wallpaper change, which moves by the
 # second, so the icon is redrawn only when the fill crosses one of
 # ``tray_icon.FILL_STEPS``: whole pixels of the largest size, a new icon every
-# twenty seconds or so on a 10-minute delay, never one a second.
+# twelve seconds or so on a 10-minute delay, never one a second.
 
 # What a balloon was about, for what a click on it should open.
 BALLOON_FINISHED, BALLOON_RESTARTED = "finished", "restarted"

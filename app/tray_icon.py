@@ -27,8 +27,9 @@ the same on a light taskbar as on a dark one.
 
 **Per size, not scaled.** Windows asks for 16, 20, 24, 32, 40 or 48 px
 depending on the display scale. Each is drawn on its own, and the edge of the
-fill is put on a whole pixel of that size: at 16 px the mark is about ten
-pixels wide, so the fill has about ten steps there. All of them go into one
+fill is put on a whole pixel of that size. The mark spans the icon's whole
+width, as the other icons in the tray fill theirs, so the fill has as many
+steps as the icon has pixels across: 16 at 16 px. All of them go into one
 `QIcon`; Windows picks the one that fits.
 
 **Never animated.** The tray redraws the icon only when a step is crossed
@@ -40,6 +41,7 @@ This module is the tray's: it imports Qt's gui and the theme, never the kit
 """
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 
 from PySide6.QtCore import QPointF, QRectF, Qt
@@ -57,17 +59,21 @@ SIZES = (16, 20, 24, 32, 40, 48)
 
 # The mark on the Branding page's 64-unit grid (as `BrandMark` draws it), less
 # its tile: the back frame (x, y, w, h, radius, stroke) and the front one.
-GRID = 64
 BACK = (13, 15, 25, 20, 4, 4)
 FRONT = (24, 27, 27, 22, 4, 3)
 # The fill's scale: the left edge of the back frame's stroke to the right edge
-# of the front frame's.
+# of the front frame's; and the mark's top and bottom, the same way.
 FILL_FROM = BACK[0] - BACK[5] / 2
 FILL_TO = FRONT[0] + FRONT[2] + FRONT[5] / 2
+TOP = BACK[1] - BACK[5] / 2
+BOTTOM = FRONT[1] + FRONT[3] + FRONT[5] / 2
+# The mark fills the icon's width, as the other icons in the tray fill theirs,
+# stopping this far short of each side; it is centred top to bottom.
+EDGE = 0.5
 
 # The badge: a circle in the bottom right corner, cut out of the mark by a gap.
 BADGE_CENTRE = 0.78              # of the size, both ways
-BADGE_RADIUS = 0.16
+BADGE_RADIUS = 0.2
 BADGE_GAP = 0.05
 _PAUSE = ((-0.42, -0.45, 0.28, 0.9), (0.14, -0.45, 0.28, 0.9))   # of the badge's radius
 _TICK = ((-0.48, 0.02), (-0.12, 0.38), (0.5, -0.36))
@@ -76,13 +82,26 @@ UNKNOWN_OPACITY = 0.55           # a mark that knows nothing is muted
 
 
 def scale(size: int) -> float:
-    """Pixels per grid unit at a size."""
-    return size / GRID
+    """Pixels per grid unit at a size: the mark spans the icon, less `EDGE`."""
+    return (size - 2 * EDGE) / (FILL_TO - FILL_FROM)
+
+
+def origin(size: int) -> tuple[float, float]:
+    """Where the grid's (0, 0) falls at a size, in pixels: the mark centred."""
+    k = scale(size)
+    return EDGE - FILL_FROM * k, (size - (BOTTOM - TOP) * k) / 2 - TOP * k
+
+
+def _span(size: int) -> tuple[int, int]:
+    """The whole pixels the fill's scale covers at a size: first, and one past last."""
+    k, x0 = scale(size), origin(size)[0]
+    return math.floor(x0 + FILL_FROM * k), math.ceil(x0 + FILL_TO * k)
 
 
 def fill_steps(size: int) -> int:
     """How many whole pixels the fill's scale spans at a size: its steps."""
-    return max(1, round((FILL_TO - FILL_FROM) * scale(size)))
+    first, end = _span(size)
+    return max(1, end - first)
 
 
 FILL_STEPS = fill_steps(max(SIZES))
@@ -97,9 +116,8 @@ def snap(fill: float | None, steps: int = FILL_STEPS) -> float | None:
 
 def fill_edge(size: int, fill: float | None) -> float:
     """Where the fill stops at a size, in pixels from the left, on a whole pixel."""
-    k = scale(size)
     share = snap(fill or 0.0, fill_steps(size))
-    return round(FILL_FROM * k) + share * fill_steps(size)
+    return _span(size)[0] + share * fill_steps(size)
 
 
 @dataclass(frozen=True)
@@ -126,9 +144,10 @@ def palette() -> Palette:
         "tray.frame", "tray.body", "brand.edge", "tray.badge.glyph", "tray.badge.pause")))
 
 
-def _rect(spec, k: float) -> QRectF:
+def _rect(spec, size: int) -> QRectF:
+    k, (x0, y0) = scale(size), origin(size)
     x, y, w, h = spec[:4]
-    return QRectF(x * k, y * k, w * k, h * k)
+    return QRectF(x0 + x * k, y0 + y * k, w * k, h * k)
 
 
 def _glyph_font(pixels: float) -> QFont:
@@ -153,7 +172,7 @@ def _draw_mark(painter: QPainter, size: int, colours: Palette, colour: QColor | 
     k = scale(size)
     filled = QRectF(0, 0, edge, size)
     # The back frame: an outline, grey where the fill has not reached.
-    back = _rect(BACK, k)
+    back = _rect(BACK, size)
     radius, stroke = BACK[4] * k, BACK[5] * k
     painter.setBrush(Qt.NoBrush)
     painter.setPen(QPen(colours.frame, stroke))
@@ -165,7 +184,7 @@ def _draw_mark(painter: QPainter, size: int, colours: Palette, colour: QColor | 
         painter.drawRoundedRect(back, radius, radius)
         painter.restore()
     # The front frame: a dark body over the back one, cut out of it by its edge.
-    front = _rect(FRONT, k)
+    front = _rect(FRONT, size)
     radius, stroke = FRONT[4] * k, FRONT[5] * k
     body = QPainterPath()
     body.addRoundedRect(front, radius, radius)
