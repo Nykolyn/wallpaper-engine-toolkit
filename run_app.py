@@ -121,6 +121,19 @@ def main():
     from app.engines import steam_paths
     steam_paths.find_in_background()
 
+    # Before any window: Windows takes the sender of the tray's balloons from
+    # this process's AppUserModelID and the Start-menu shortcut that carries it
+    # (see app/app_identity.py). Never worth refusing to start over.
+    if not {"--autostart", "--selfcheck"} & set(sys.argv[1:]):
+        try:
+            from app import app_identity
+            said = app_identity.claim_for_this_process()
+        except Exception as err:  # noqa: BLE001
+            said = f"app identity: {type(err).__name__}: {err}"
+        if getattr(sys, "frozen", False):
+            from app.tracker_tray import log
+            log(said)
+
     _migrate_autostart()
 
     args = sys.argv[1:]

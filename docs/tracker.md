@@ -211,6 +211,14 @@ menu, **Playlist settings**) and on the Settings page.
 2:45`, the lead marked; Windows cuts a tooltip at 128 characters, so lines that
 do not fit are left out whole.
 
+**Who they come from.** Windows names a notification's sender from the
+process's AppUserModelID and the Start-menu shortcut that carries it. The built
+exe makes sure `Toolkit.lnk` is in your Start menu (pointing at itself, with
+the app's icon and ID), and only then takes that ID, so the balloons say they
+come from **Toolkit**; `data/tracker.log` says which it did at each start. A
+source run does neither and keeps Python's name. Deleting the shortcut is
+harmless: the next start makes it again.
+
 **The balloons** are the only two the toolkit sends:
 
 - *Playlist finished* — "All 201 wallpapers on Monitor1 have been shown. Rotate
