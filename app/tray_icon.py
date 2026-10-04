@@ -28,9 +28,11 @@ the same on a light taskbar as on a dark one.
 **Per size, not scaled.** Windows asks for 16, 20, 24, 32, 40 or 48 px
 depending on the display scale. Each is drawn on its own, and the edge of the
 fill is put on a whole pixel of that size. The mark spans the icon's whole
-width, as the other icons in the tray fill theirs, so the fill has as many
-steps as the icon has pixels across: 16 at 16 px. All of them go into one
-`QIcon`; Windows picks the one that fits.
+width, as the other icons in the tray fill theirs, and the fill moves a pixel
+at a time across what can be seen filled: 14 steps at 16 px. A step shows once
+it is reached, so the frames are filled whole only the moment the next change
+is due, never with time still to go. All of them go into one `QIcon`; Windows
+picks the one that fits.
 
 **Never animated.** The tray redraws the icon only when a step is crossed
 (`FILL_STEPS`, the steps of the largest size), so a once-a-second clock never
@@ -61,10 +63,14 @@ SIZES = (16, 20, 24, 32, 40, 48)
 # its tile: the back frame (x, y, w, h, radius, stroke) and the front one.
 BACK = (13, 15, 25, 20, 4, 4)
 FRONT = (24, 27, 27, 22, 4, 3)
-# The fill's scale: the left edge of the back frame's stroke to the right edge
-# of the front frame's; and the mark's top and bottom, the same way.
+# The fill's scale: the left edge of the back frame's stroke to the right end
+# of what can be seen filled, the inside of the front frame's edge (the edge
+# itself is drawn over the fill, so a scale running on under it would look
+# full with a minute and a half of ten still to go).
 FILL_FROM = BACK[0] - BACK[5] / 2
-FILL_TO = FRONT[0] + FRONT[2] + FRONT[5] / 2
+FILL_TO = FRONT[0] + FRONT[2] - FRONT[5] / 2
+# The mark's extent: left, right, top and bottom, strokes included.
+RIGHT = FRONT[0] + FRONT[2] + FRONT[5] / 2
 TOP = BACK[1] - BACK[5] / 2
 BOTTOM = FRONT[1] + FRONT[3] + FRONT[5] / 2
 # The mark fills the icon's width, as the other icons in the tray fill theirs,
@@ -83,7 +89,7 @@ UNKNOWN_OPACITY = 0.55           # a mark that knows nothing is muted
 
 def scale(size: int) -> float:
     """Pixels per grid unit at a size: the mark spans the icon, less `EDGE`."""
-    return (size - 2 * EDGE) / (FILL_TO - FILL_FROM)
+    return (size - 2 * EDGE) / (RIGHT - FILL_FROM)
 
 
 def origin(size: int) -> tuple[float, float]:
@@ -93,31 +99,40 @@ def origin(size: int) -> tuple[float, float]:
 
 
 def _span(size: int) -> tuple[int, int]:
-    """The whole pixels the fill's scale covers at a size: first, and one past last."""
+    """The whole pixels the fill's scale covers at a size: first, and last."""
     k, x0 = scale(size), origin(size)[0]
-    return math.floor(x0 + FILL_FROM * k), math.ceil(x0 + FILL_TO * k)
+    return math.floor(x0 + FILL_FROM * k), round(x0 + FILL_TO * k)
 
 
 def fill_steps(size: int) -> int:
     """How many whole pixels the fill's scale spans at a size: its steps."""
-    first, end = _span(size)
-    return max(1, end - first)
+    first, last = _span(size)
+    return max(1, last - first)
 
 
 FILL_STEPS = fill_steps(max(SIZES))
 
 
-def snap(fill: float | None, steps: int = FILL_STEPS) -> float | None:
-    """A fill on a grid of `steps` (None stays None, the rest is clamped to 0..1)."""
+def step(fill: float | None, steps: int = FILL_STEPS) -> int | None:
+    """How many of `steps` a fill has reached (None stays None).
+
+    Rounded down: a step is shown once it has been reached, never before, so
+    the last one, the frames filled whole, is the moment the fill is 1 and
+    not a step sooner."""
     if fill is None:
         return None
-    return round(min(max(fill, 0.0), 1.0) * steps) / steps
+    if fill >= 1.0:
+        return steps
+    return min(math.floor(max(fill, 0.0) * steps), steps - 1)
 
 
 def fill_edge(size: int, fill: float | None) -> float:
-    """Where the fill stops at a size, in pixels from the left, on a whole pixel."""
-    share = snap(fill or 0.0, fill_steps(size))
-    return _span(size)[0] + share * fill_steps(size)
+    """Where the fill stops at a size, in pixels from the left, on a whole pixel.
+    A full one runs to the icon's edge, so nothing short of it is left unfilled."""
+    reached = step(fill or 0.0, fill_steps(size))
+    if reached == fill_steps(size):
+        return float(size)
+    return float(_span(size)[0] + reached)
 
 
 @dataclass(frozen=True)

@@ -6,6 +6,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [3.18.2] - 2026-10-04
+
+### Fixed
+
+- **The tray icon is full only when the next wallpaper is due.** On a
+  10-minute delay it looked full with a minute and a half still to go: the
+  fill's scale ran on to the outside of the front frame's edge, which is drawn
+  over the fill, so its last pixels could never be seen, and a step was shown
+  once it was half reached. The scale now ends where the fill can be seen to
+  end, a step shows only once it is reached, and the frames are filled whole
+  only the moment the fill is 100 %.
+
 ## [3.18.1] - 2026-10-04
 
 ### Fixed
@@ -1495,7 +1507,8 @@ restructured yet; the tabs keep their layout and take on the new look.
   was right for one library and wrong for every other. Nothing is tagged now
   unless you ask for it.
 
-[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.18.1...HEAD
+[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.18.2...HEAD
+[3.18.2]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.18.1...v3.18.2
 [3.18.1]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.18.0...v3.18.1
 [3.18.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.17.1...v3.18.0
 [3.17.1]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.17.0...v3.17.1
