@@ -572,6 +572,7 @@ for %f in (tests\test_*.py) do .venv\Scripts\python.exe %f
 | `test_creator_page.py` | skip/selection counts, tag cells, keyboard selection, playlist visibility, fixtures without drive I/O, a threaded read and subset build through JobCenter and the journal, notification and retry |
 | `test_tracker.py` | anchoring a cycle, rebuilding history, merging two writers, following the engine's deck, when to look |
 | `test_wallpaper_timer.py` | the PLPV0005 parser, the file watcher, the countdown, pause rules |
+| `test_row_tiles.py` | rows as tiles: copied while nothing changes, drawn again on a changed cell, hover, selection or a table switched off, never for a spinning row, and pixel for pixel the row drawn directly; a list's rows in one pass through `list_item` or its roles; a panel's glass once per size and tone; a caster's shadow skipped only inside its box clear of the corners |
 | `test_steam_paths.py` | Steam's folders found on a thread of their own: nothing known and nothing waited for before, the answer and `when_found` after; the Rotator's first-run settings saved only once it is in, an empty, chosen or missing destination each kept or filled as it should be; no Steam at all |
 | `test_startup.py` | a plain start of the window and of the tray with `gui_guard` on before `app.settings` is imported and Steam made up on a guarded folder that answers late: no GUI-thread call on its disk, the fields empty meanwhile, then filled in (a chosen one left alone), the Rotator's defaults saved then, the Tracker's config.json found |
 | `test_tracker_feed.py` | a real Tracker on a made-up config.json and state file, every look on the feed's worker and no file call on the window's thread (`gui_guard.watch`); the window's copy of the files and a countdown reading it; a new cycle and a rebuild answered after their look; another config.json under a look; looks asked for while one runs; a failing look said once; the worker stopping with its owner |
@@ -622,10 +623,28 @@ offscreen at 1 280 × 860, two busy threads:
 | Gallery, 1 200 wallpapers in 40 pages | 24 ms; a page turned in 2.3 ms | 12.9 / 15.7 ms a frame, eight previews playing |
 | Log at its 5 000-line cap, 200 lines a second | 10 ms to fill | 9.9 / 13.1 ms a repaint; 1.7 ms a line |
 
-The playlist and the author list paint each row afresh, about forty Qt calls a
-row; under contention that is the cost. Drawing whole rows into tiles, as the
-gallery and the console do, is the way down
-([#36](https://github.com/Nykolyn/wallpaper-engine-toolkit/issues/36)).
+**Since 3.13.0 rows are tiles.** The table's rows and the lists' rows are
+drawn once into a pixmap (`RowTiles`, keyed by everything that decides a row's
+look: its cells, the columns and where they sit, its ground, hover and button
+looks, its thumb, the pixel ratio) and copied after; a row with a spinner is
+drawn each time. The Table and `RowList` paint their visible rows in one pass,
+asking Qt once per paint for what every row needs, so a cached row is one call.
+A scroll step also repaints what is behind the list: the window's gradient and
+a GlassPanel's glass are now pixmaps drawn once per size, and the kit skips a
+caster's shadow when what repaints lies inside its box, clear of its corners.
+Measured on a different machine from the table above (its own `main`,
+offscreen, two busy threads), scroll steps p50 / p95:
+
+| List | 3.12.2 | 3.13.0 |
+|---|---|---|
+| Tracker playlist, 1 400 rows | 40 / 53 ms | 10–12 / 15–17 ms |
+| Review's authors, 450 | 47 / 68 ms | 7–9 / 13–15 ms |
+| Reserve, 33 421 folders | 26 / 36 ms | 12 / 17 ms |
+| Log, console repaints | 7.3 / 14 ms | 6.5 / 13.4 ms |
+
+Copied tiles are the rows drawn directly, pixel for pixel, onto the same
+ground; on the window, text edges in rows differ slightly from text drawn
+straight onto the glass, as in the gallery and the console.
 
 ### Opt-in live checks
 

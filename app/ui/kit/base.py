@@ -460,7 +460,7 @@ def refresh(caster: QWidget) -> None:
         region += last
     if surface.isAncestorOf(caster) and caster.isVisibleTo(surface):
         now = _area(caster, surface)
-        caster._kit_area = now
+        _keep(caster, now)
         region += now
     if not region.isEmpty():
         surface.update(region)
@@ -475,21 +475,59 @@ def follow(caster: QWidget) -> None:
         refresh(caster)
 
 
+def _edges(rect: QRect) -> tuple[int, int, int, int]:
+    return rect.left(), rect.top(), rect.right(), rect.bottom()
+
+
+def _misses(caster: QWidget, clip: tuple[int, int, int, int]) -> bool:
+    """Whether the caster's area as last seen leaves `clip` alone: apart from
+    it, or round it with `clip` inside the box clear of the corners (`_keep`).
+    Plain Python on numbers kept from then: each call into Qt can wait for the
+    GIL, and every caster on a surface is asked on every repaint of it. The
+    area kept is current, because a caster that moves repaints, and `follow`
+    then refreshes it."""
+    kept = getattr(caster, "_kit_edges", None)
+    if kept is None or getattr(caster, "_kit_area", None) is None:
+        return False
+    (left, top, right, bottom), bands = kept
+    x0, y0, x1, y1 = clip
+    if x1 < left or x0 > right or y1 < top or y0 > bottom:
+        return True
+    return any(l <= x0 and t <= y0 and x1 <= r and y1 <= b for l, t, r, b in bands)
+
+
+def _keep(caster: QWidget, area: QRect) -> None:
+    """Remember where the caster draws, and the parts of its box clear of its
+    corners: shadows and focus rings are drawn outside the box, but rounded
+    corners leave room for some inside its rectangle. No corner is rounder than
+    R_XL, or than half the box's shorter side (a pill), and 2 px more is clear
+    of it. A table scrolling inside a panel repaints only there, and skipping
+    the panel's shadow saves a dozen calls into Qt on every step."""
+    caster._kit_area = area
+    box = area.marginsRemoved(caster.outside_margins())
+    corner = math.ceil(min(theme.R_XL, min(box.width(), box.height()) / 2)) + 2
+    caster._kit_edges = (_edges(area), (_edges(box.adjusted(0, corner, 0, -corner)),
+                                        _edges(box.adjusted(corner, 0, -corner, 0))))
+
+
 def paint(painter: QPainter, surface: QWidget, rect=None) -> None:
     """Draw the outside parts of every caster on this surface that meets `rect`."""
     casters = _casters(surface)
     if not casters:
         return
     clip = QRect(rect) if rect is not None else surface.rect()
+    edges = _edges(clip)
     live = [ref for ref in casters if alive(ref())]
     casters[:] = live
     for ref in live:
         caster = ref()
+        if _misses(caster, edges):
+            continue
         if not surface.isAncestorOf(caster) or not caster.isVisibleTo(surface):
             continue
         area = _area(caster, surface)
-        caster._kit_area = area
-        if not area.intersects(clip):
+        _keep(caster, area)
+        if _misses(caster, edges):
             continue
         painter.save()
         painter.setRenderHint(QPainter.Antialiasing)

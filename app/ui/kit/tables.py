@@ -45,7 +45,7 @@ from dataclasses import dataclass
 from typing import Callable, Hashable, Iterable, Sequence
 
 from PySide6.QtCore import (
-    QAbstractTableModel, QEvent, QItemSelection, QItemSelectionModel, QModelIndex,
+    QAbstractTableModel, QEvent, QItemSelection, QItemSelectionModel, QModelIndex, QPoint,
     QPointF, QRect, QRectF, QSize, Qt, QTimer, Signal,
 )
 from PySide6.QtGui import QCursor, QFont, QFontMetricsF, QPainter, QPainterPath, QPen, QPixmap
@@ -818,6 +818,59 @@ class TableModel(QAbstractTableModel):
 
 # ---- painting a row -----------------------------------------------------------------------------
 
+class RowTiles:
+    """Rows drawn once into a pixmap and copied after, newest kept, up to a
+    budget of pixels rather than a count: a row's tile is as wide as the view.
+
+    Drawing a row is about forty calls into Qt, and PySide gives the GIL up on
+    every one, so with other Python threads busy each call can wait for it:
+    measured with two busy threads (tests/perf_pages.py), the Tracker's
+    playlist scrolled at 40 ms a step and Review's authors at 47, against 6
+    and 3 uncontended. A copy is one call. The key is everything that decides
+    how the row looks, so a tile is never stale, only unused.
+    """
+
+    BUDGET = 24 * 1024 * 1024       # bytes: about three screens of rows at 2x
+
+    def __init__(self, budget: int = BUDGET):
+        self.budget = budget
+        self._tiles: OrderedDict[Hashable, QPixmap] = OrderedDict()
+        self._bytes = 0
+        self.drawn = 0              # tiles made, for tests and measurements
+
+    def get(self, key: Hashable, width: int, height: int, dpr: float,
+            draw: Callable[[QPainter], None]) -> QPixmap:
+        tile = self._tiles.get(key)
+        if tile is not None:
+            self._tiles.move_to_end(key)
+            return tile
+        tile = QPixmap(max(1, round(width * dpr)), max(1, round(height * dpr)))
+        tile.setDevicePixelRatio(dpr)
+        tile.fill(Qt.transparent)
+        painter = QPainter(tile)
+        try:
+            draw(painter)
+        finally:
+            painter.end()
+        self.drawn += 1
+        self._tiles[key] = tile
+        self._bytes += tile.width() * tile.height() * 4
+        while self._bytes > self.budget and len(self._tiles) > 1:
+            _, old = self._tiles.popitem(last=False)
+            self._bytes -= old.width() * old.height() * 4
+        return tile
+
+    def clear(self) -> None:
+        self._tiles.clear()
+        self._bytes = 0
+
+    def __len__(self) -> int:
+        return len(self._tiles)
+
+
+_UNSET = object()
+
+
 class _Fonts:
     """Fonts and their metrics, made once per type token."""
 
@@ -904,6 +957,7 @@ class RowDelegate(QStyledItemDelegate):
         self._font = None
         self._dpr = 1.0
         self._row = -1
+        self.tiles = RowTiles()
 
     def begin(self, dpr: float) -> None:
         """A new pass, with a new painter: forget which font it holds."""
@@ -941,35 +995,93 @@ class RowDelegate(QStyledItemDelegate):
 
     def paint_row(self, painter: QPainter, rect: QRect, row: int, *, selected: bool,
                   hovered: bool, focused: bool, spans: Sequence[tuple[float, float]]) -> None:
-        model: TableModel = self._table.model()
+        """One whole row into `rect` (the Table's own paint goes to `paint_row_at`)."""
+        self.paint_row_at(painter, self._table.model(), rect.x(), rect.y(), rect.width(),
+                          rect.height(), row, selected=selected, hovered=hovered,
+                          focused=focused, spans=spans,
+                          spans_key=(tuple(spans), tuple(self._table.model().columns)),
+                          enabled=self._table.isEnabled())
+
+    def paint_row_at(self, painter: QPainter, model: "TableModel", x: int, y: int, width: int,
+                     height: int, row: int, *, selected: bool, hovered: bool, focused: bool,
+                     spans: Sequence[tuple[float, float]], spans_key: tuple,
+                     enabled: bool) -> None:
+        """One whole row, as a tile copied to (x, y). Everything here bar the copy
+        is Python: under contention it is the calls into Qt that wait (`RowTiles`)."""
         item = model.item_at(row)
         if item is None:
-            self.paint_group(painter, QRectF(rect), model.group_at(row), model.group_note(row))
+            group, note = model.group_at(row), model.group_note(row)
+            if group is None:
+                return
+            tile = self.tiles.get(("group", group, note, width, height, self._dpr), width,
+                                  height, self._dpr, lambda p: self._paint_group_tile(
+                                      p, width, height, group, note))
+            painter.drawPixmap(x, y, tile)
             return
         self._row = row
+        table = self._table
         tone = None if selected else model.row_tone(item)
         fill = ("accent.soft" if selected else f"{tone}.soft" if tone
                 else "surface.raised" if hovered
                 else "surface.zebra" if model.zebra(row) else None)
+        edge = (tone or "accent") if selected or tone else None
+        faded = (theme.DISABLED_FIELD_OPACITY if not enabled
+                 else theme.DIM_OPACITY if model.row_dimmed(item) else None)
+        columns = model.columns
+        values = tuple(model.cell(item, c) for c in range(len(columns)))
+        if table.spins(row):
+            # A spinner or a sweeping bar moves every frame: no tile would last.
+            self._paint_whole(painter, QRect(x, y, width, height), model, item, values, spans,
+                              fill, edge, focused, faded)
+            return
+        looks = tuple(self._look(row, c, value) for c, value in enumerate(values)
+                      if isinstance(value, (ButtonCell, ButtonsCell)))
+        thumbs = tuple(table.thumb_key(model.thumb_source(item), table.thumb_size(column))
+                       for column in columns if column.thumb)
+        key = (values, looks, thumbs, spans_key, width, height, self._dpr, fill, edge,
+               focused, faded)
+        tile = self.tiles.get(key, width, height, self._dpr, lambda p: self._paint_whole(
+            p, QRect(0, 0, width, height), model, item, values, spans, fill, edge, focused,
+            faded))
+        painter.drawPixmap(x, y, tile)
+
+    def _look(self, row: int, c: int, value):
+        """How a cell that answers the pointer looks on this row now: part of its key."""
+        if isinstance(value, ButtonCell):
+            return self._table.button_look(row, c, value)
+        return tuple(self._table.action_look(row, c, button)
+                     if button is not None and not button.mark else None
+                     for button in value.buttons)
+
+    def _paint_group_tile(self, painter: QPainter, width: int, height: int, group: Group,
+                          note: str) -> None:
+        self._font = None
+        self.paint_group(painter, QRectF(0, 0, width, height), group, note)
+        self._font = None
+
+    def _paint_whole(self, painter: QPainter, rect: QRect, model: TableModel, item,
+                     values: Sequence, spans, fill, edge, focused: bool, faded) -> None:
+        """The row as it always was drawn: its ground, then each cell."""
+        self._font = None               # a tile is a painter of its own
         if fill:
             painter.fillRect(rect, self.colour(fill))
-        if selected or tone:
+        if edge:
             painter.fillRect(rect.x(), rect.y(), theme.TABLE_SELECT_EDGE, rect.height(),
-                             self.colour(tone or "accent"))
+                             self.colour(edge))
         if focused:
             paint_row_ground(painter, QRectF(rect), focused=True)
             self._font = None
-        faded = (theme.DISABLED_FIELD_OPACITY if not self._table.isEnabled()
-                 else theme.DIM_OPACITY if model.row_dimmed(item) else None)
         if faded is not None:
             painter.setOpacity(faded)
         top, height = rect.y(), rect.height()
         for c, column in enumerate(model.columns):
             left, width = spans[c]
             if width > 0:
-                self.paint_cell(painter, left, top, width, height, model, item, c, column)
+                self.paint_cell(painter, left, top, width, height, model, item, c, column,
+                                values[c])
         if faded is not None:
             painter.setOpacity(1.0)
+        self._font = None
 
     def paint_group(self, painter: QPainter, rect: QRectF, group: Group | None, note: str) -> None:
         if group is None:
@@ -1002,8 +1114,10 @@ class RowDelegate(QStyledItemDelegate):
         model.setData(index, editor.value(), Qt.EditRole)
 
     def paint_cell(self, painter: QPainter, left: float, top: float, width: float,
-                   height: float, model: TableModel, item, c: int, column: Column) -> None:
-        value = model.cell(item, c)
+                   height: float, model: TableModel, item, c: int, column: Column,
+                   value=_UNSET) -> None:
+        if value is _UNSET:
+            value = model.cell(item, c)
         x, right = left, left + width
         middle = top + height / 2
         if column.thumb:
@@ -1323,6 +1437,9 @@ class Table(QTableView):
         self._loader.local_done.connect(self._thumb_arrived)
         self._pixmaps: OrderedDict[str, QPixmap | None] = OrderedDict()
         self._tiles: dict[tuple[str, str], QPixmap] = {}
+        self._thumb_gen: dict[str, int] = {}    # pictures arrived per source: part of a row's key
+        # Read on every row painted, so kept here rather than asked of Qt each time.
+        self._enabled = True
         self._rows_for_key: dict[str, list[int]] = {}
         self._settle = QTimer(self)
         self._settle.setSingleShot(True)
@@ -1536,6 +1653,13 @@ class Table(QTableView):
             return ("image", pixmap) if pixmap is not None else ("placeholder", None)
         return "loading", None
 
+    def thumb_key(self, source, size: str | None) -> tuple:
+        """What decides how a row's thumb looks, for its tile's key: the source,
+        the size, and the state of its picture with how many times it came."""
+        key = str(source) if source else None
+        state = self.thumb_state(source)[0]
+        return key, size, state, self._thumb_gen.get(key, 0) if state == "image" else 0
+
     def thumb_tile(self, source, size: str) -> QPixmap:
         """The row's thumb as a tile ready to copy: its picture, or the empty
         well while it loads, or the placeholder when it has none."""
@@ -1584,6 +1708,7 @@ class Table(QTableView):
             pixmap.setDevicePixelRatio(self.devicePixelRatioF())
         self._pixmaps[key] = pixmap
         self._pixmaps.move_to_end(key)
+        self._thumb_gen[key] = self._thumb_gen.get(key, 0) + 1
         for stale in [k for k in self._tiles if k[0] == key]:
             del self._tiles[stale]
         while len(self._pixmaps) > self.THUMB_CACHE:
@@ -1661,7 +1786,7 @@ class Table(QTableView):
         """(variant, state) a ButtonCell is drawn in: its hot variant on the row
         under the pointer, hover under the pointer, pressed while held."""
         variant = value.hot if value.hot and row == self._hover else value.variant
-        if not self.isEnabled():
+        if not self._enabled:
             return variant, "disabled"
         here = (row, column, None)
         if self._pressed_button == here:
@@ -1672,7 +1797,7 @@ class Table(QTableView):
         """(state, ink) a ButtonsCell button is drawn in: its glyph in text.lo
         at rest, the IconButton's own look on the row under the pointer, hover
         under the pointer, pressed while held, faded when off."""
-        if not self.isEnabled() or not button.enabled:
+        if not self._enabled or not button.enabled:
             return "disabled", None
         here = (row, column, button.key)
         if self._pressed_button == here:
@@ -1823,6 +1948,11 @@ class Table(QTableView):
 
     # -- painting
 
+    def changeEvent(self, event) -> None:       # noqa: N802 - Qt's name
+        if event.type() == QEvent.EnabledChange:
+            self._enabled = self.isEnabled()
+        super().changeEvent(event)
+
     def paintEvent(self, event) -> None:        # noqa: N802 - Qt's name
         model = self.model()
         if not isinstance(model, TableModel):
@@ -1835,17 +1965,29 @@ class Table(QTableView):
         last = self.rowAt(area.bottom())
         if last < 0:
             last = model.rowCount() - 1
+        # What every row needs from Qt, asked once: each call gives the GIL up,
+        # and the rows are then a copy each (RowTiles).
         spans = self.column_spans()
-        selection = self.selectionModel()
-        root = QModelIndex()
+        # Where each column is and what it is: with the cells, all a row's look.
+        spans_key = (tuple(spans), tuple(model.columns))
+        selected = {index.row() for index in self.selectionModel().selectedRows()}
         current = self.currentIndex().row() if self.focus_visible() else -1
         width = self.viewport().width()
-        self._delegate.begin(self.devicePixelRatioF())
+        header = self.verticalHeader()
+        normal, group = header.defaultSectionSize(), self.group_row_height()
+        groups = set(model.group_rows())
+        y = self.rowViewportPosition(first)
+        delegate = self._delegate
+        delegate.begin(self.devicePixelRatioF())
+        enabled = self._enabled = self.isEnabled()
+        hover = self._hover
         for row in range(first, last + 1):
-            rect = QRect(0, self.rowViewportPosition(row), width, self.rowHeight(row))
-            self._delegate.paint_row(
-                painter, rect, row, selected=selection.isRowSelected(row, root),
-                hovered=row == self._hover, focused=row == current, spans=spans)
+            height = group if row in groups else normal
+            delegate.paint_row_at(painter, model, 0, y, width, height, row,
+                                  selected=row in selected, hovered=row == hover,
+                                  focused=row == current, spans=spans, spans_key=spans_key,
+                                  enabled=enabled)
+            y += height
 
 
 # ---- the bars round a table -------------------------------------------------------------
@@ -2119,7 +2261,12 @@ def paint_list_row(painter: QPainter, rect: QRectF, row: ListRow, state: str = "
 class ListRowDelegate(QStyledItemDelegate):
     """Draws a list view's rows from `LIST_ROW_ROLE` (a ListRow) and
     `LIST_PIXMAP_ROLE` (its thumb). Hover, selection and keyboard focus come
-    from the view."""
+    from the view. Each row is drawn once into a tile (`RowTiles`) and copied
+    after, keyed by the row, its state, its size and its thumb."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.tiles = RowTiles()
 
     def sizeHint(self, option, index) -> QSize:     # noqa: N802 - Qt's name
         row = index.data(LIST_ROW_ROLE)
@@ -2146,8 +2293,18 @@ class ListRowDelegate(QStyledItemDelegate):
         if forced in LIST_ROW_STATES:
             state = forced
         pixmap = index.data(LIST_PIXMAP_ROLE)
-        paint_list_row(painter, QRectF(option.rect), row, state,
-                       pixmap=pixmap if isinstance(pixmap, QPixmap) else None)
+        rect = option.rect
+        self.paint_row_at(painter, rect.x(), rect.y(), rect.width(), rect.height(), row, state,
+                          pixmap if isinstance(pixmap, QPixmap) else None,
+                          painter.device().devicePixelRatioF())
+
+    def paint_row_at(self, painter: QPainter, x: int, y: int, width: int, height: int,
+                     row: ListRow, state: str, pixmap: QPixmap | None, dpr: float) -> None:
+        """One row, as a tile (`RowTiles`) copied to (x, y)."""
+        key = (row, state, width, height, dpr, pixmap.cacheKey() if pixmap is not None else 0)
+        tile = self.tiles.get(key, width, height, dpr, lambda p: paint_list_row(
+            p, QRectF(0, 0, width, height), row, state, pixmap=pixmap, dpr=dpr))
+        painter.drawPixmap(x, y, tile)
 
 
 class SkeletonRows(QWidget):
@@ -2228,11 +2385,20 @@ class SkeletonRows(QWidget):
 class RowList(QListView):
     """A list of ListRows: the author list, recent activity. The rows paint
     their own ground on the card the list sits on; hover is the pointer's
-    row, and the focus ring shows when the keyboard moved it."""
+    row, and the focus ring shows when the keyboard moved it.
+
+    It paints its visible rows itself, in one pass, rather than having Qt call
+    the delegate once a row: every call from Qt into Python has to win the GIL
+    back, and with other threads busy that wait was most of a scroll step. A
+    model can hand its rows over without a call into Qt each by having
+    `list_item(row) -> (ListRow | None, QPixmap | None, forced state | None)`;
+    any other model is read through its roles."""
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
-        self.setItemDelegate(ListRowDelegate(self))
+        self._delegate = ListRowDelegate(self)
+        self.setItemDelegate(self._delegate)
+        self._hover = -1
         self.setFrameShape(QListView.NoFrame)
         self.setMouseTracking(True)
         self.setUniformItemSizes(True)
@@ -2256,3 +2422,71 @@ class RowList(QListView):
         if event.reason() in (Qt.TabFocusReason, Qt.BacktabFocusReason):
             self._keyboard = True
         super().focusInEvent(event)
+
+    # -- painting the rows in one pass
+
+    def hovered_row(self) -> int:
+        return self._hover
+
+    def _hover_to(self, row: int) -> None:
+        if row == self._hover:
+            return
+        old, self._hover = self._hover, row
+        model = self.model()
+        for r in (old, row):
+            if model is not None and 0 <= r < model.rowCount():
+                self.viewport().update(self.visualRect(model.index(r, 0)))
+
+    def viewportEvent(self, event) -> bool:     # noqa: N802 - Qt's name
+        kind = event.type()
+        if kind in (QEvent.HoverEnter, QEvent.HoverMove):
+            self._hover_to(self.indexAt(event.position().toPoint()).row())
+        elif kind in (QEvent.HoverLeave, QEvent.Leave):
+            self._hover_to(-1)
+        return super().viewportEvent(event)
+
+    def _item(self, model, row: int) -> tuple:
+        fast = getattr(model, "list_item", None)
+        if fast is not None:
+            return fast(row)
+        index = model.index(row, 0)
+        found, pixmap, forced = (index.data(LIST_ROW_ROLE), index.data(LIST_PIXMAP_ROLE),
+                                 index.data(LIST_STATE_ROLE))
+        return (found if isinstance(found, ListRow) else None,
+                pixmap if isinstance(pixmap, QPixmap) else None, forced)
+
+    def paintEvent(self, event) -> None:        # noqa: N802 - Qt's name
+        model = self.model()
+        if model is None:
+            return
+        count = model.rowCount()
+        if count == 0:
+            return
+        area = event.rect()
+        first = self.indexAt(QPoint(0, area.top())).row()
+        if first < 0:
+            # Not on a row: above the first one, or past the last.
+            first = 0 if area.top() < self.visualRect(model.index(0, 0)).top() else count
+        if first >= count:
+            return
+        box = self.visualRect(model.index(first, 0))
+        x, y, width, height = box.x(), box.y(), box.width(), box.height()
+        bottom = area.bottom()
+        selected = {index.row() for index in self.selectionModel().selectedIndexes()}
+        enabled = self.isEnabled()
+        current = self.currentIndex().row() if self.focus_visible() else -1
+        dpr = self.devicePixelRatioF()
+        painter = QPainter(self.viewport())
+        delegate = self._delegate
+        for r in range(first, count):
+            if y > bottom:
+                break
+            row, pixmap, forced = self._item(model, r)
+            if row is not None:
+                state = ("disabled" if not enabled else "selected" if r in selected
+                         else "focus" if r == current else "hover" if r == self._hover
+                         else "default")
+                if forced in LIST_ROW_STATES:
+                    state = forced
+                delegate.paint_row_at(painter, x, y, width, height, row, state, pixmap, dpr)
+            y += height

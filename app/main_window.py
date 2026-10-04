@@ -21,8 +21,8 @@ import json
 from datetime import datetime
 from pathlib import Path
 
-from PySide6.QtCore import QEvent, QObject, QSize, Qt, QTimer
-from PySide6.QtGui import QKeySequence, QPainter, QShortcut
+from PySide6.QtCore import QEvent, QObject, QRectF, QSize, Qt, QTimer
+from PySide6.QtGui import QKeySequence, QPainter, QPixmap, QShortcut
 from PySide6.QtWidgets import QHBoxLayout, QMainWindow, QStackedWidget, QVBoxLayout, QWidget
 
 from . import animations, services, theme
@@ -65,19 +65,38 @@ class Backdrop(QWidget):
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
-        self._brush = None
+        self._ground: QPixmap | None = None
         kit_base.declare(self)
 
     def resizeEvent(self, event) -> None:       # noqa: N802 - Qt's name
-        self._brush = theme.app_background(self.rect())
+        self._ground = None
         super().resizeEvent(event)
 
+    def _drawn(self) -> QPixmap:
+        """The gradient for this size, drawn once. Filling with it on every
+        repaint (under every child that repaints, a scrolled table's every
+        step) took 5 ms a time with two busy threads (tests/perf_pages.py);
+        copying the part a repaint needs is one call."""
+        dpr = self.devicePixelRatioF()
+        if self._ground is None or self._ground.devicePixelRatio() != dpr:
+            size = self.size()
+            ground = QPixmap(max(1, round(size.width() * dpr)), max(1, round(size.height() * dpr)))
+            ground.setDevicePixelRatio(dpr)
+            painter = QPainter(ground)
+            painter.fillRect(QRectF(0, 0, size.width(), size.height()),
+                             theme.app_background(self.rect()))
+            painter.end()
+            self._ground = ground
+        return self._ground
+
     def paintEvent(self, event) -> None:        # noqa: N802 - Qt's name
-        if self._brush is None:
-            self._brush = theme.app_background(self.rect())
         painter = QPainter(self)
-        painter.fillRect(event.rect(), self._brush)
-        kit_base.paint(painter, self, event.rect())
+        area = event.rect()
+        ground = self._drawn()
+        dpr = ground.devicePixelRatio()
+        x, y, w, h = area.x(), area.y(), area.width(), area.height()
+        painter.drawPixmap(QRectF(x, y, w, h), ground, QRectF(x * dpr, y * dpr, w * dpr, h * dpr))
+        kit_base.paint(painter, self, area)
 
 
 # ---- the status line, bound to the JobCenter --------------------------------------------

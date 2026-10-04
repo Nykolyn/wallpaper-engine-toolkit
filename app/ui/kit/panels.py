@@ -29,7 +29,7 @@ from __future__ import annotations
 import os
 
 from PySide6.QtCore import QMargins, QPointF, QRectF, QSize, Qt, Signal
-from PySide6.QtGui import QBrush, QFontMetricsF, QPainter, QPainterPath, QPen
+from PySide6.QtGui import QBrush, QFontMetricsF, QPainter, QPainterPath, QPen, QPixmap
 from PySide6.QtWidgets import (
     QFrame, QHBoxLayout, QLabel, QSizePolicy, QVBoxLayout, QWidget,
 )
@@ -64,6 +64,7 @@ class GlassPanel(Caster, QFrame):
             raise KeyError(f"a GlassPanel sits at elev.0, elev.1, elev.2 or elev.3, not {elevation!r}")
         base.declare(self)
         self._elevation = elevation
+        self._tile: tuple[tuple, QPixmap] | None = None
         self._tone: str | None = None
         self.set_tone(tone)
         self.set_padding(padding)
@@ -93,18 +94,40 @@ class GlassPanel(Caster, QFrame):
         if any(theme.shadow_reach(self._elevation)):
             theme.paint_shadow(painter, QRectF(self.rect()), self._elevation, theme.R_LG)
 
+    def _ground(self) -> QPixmap:
+        """The glass, its sheen and its edge, drawn once per size and tone.
+
+        A panel repaints under every child that does, a scrolled table's every
+        step among them; the gradient, the sheen and the rounded edge drawn
+        afresh each time came to 8 ms a step with two busy threads
+        (tests/perf_pages.py), a copy to one call.
+        """
+        dpr = self.devicePixelRatioF()
+        width, height = self.width(), self.height()
+        key = (width, height, dpr, self._tone, self._elevation)
+        if self._tile is None or self._tile[0] != key:
+            tile = QPixmap(max(1, round(width * dpr)), max(1, round(height * dpr)))
+            tile.setDevicePixelRatio(dpr)
+            tile.fill(Qt.transparent)
+            painter = QPainter(tile)
+            painter.setRenderHint(QPainter.Antialiasing)
+            box = QRectF(0, 0, width, height)
+            path = QPainterPath()
+            path.addRoundedRect(box, theme.R_LG, theme.R_LG)
+            painter.fillPath(path, QBrush(theme.gradient("surface.glass", box)))
+            theme.paint_sheen(painter, box, theme.R_LG, self._elevation)
+            painter.setPen(QPen(theme.color(PANEL_TONES[self._tone]), 1))
+            painter.setBrush(Qt.NoBrush)
+            painter.drawRoundedRect(box.adjusted(0.5, 0.5, -0.5, -0.5), theme.R_LG - 0.5,
+                                    theme.R_LG - 0.5)
+            painter.end()
+            self._tile = (key, tile)
+        return self._tile[1]
+
     def paintEvent(self, event) -> None:        # noqa: N802 - Qt's name
         follow(self)
         painter = QPainter(self)
-        painter.setRenderHint(QPainter.Antialiasing)
-        box = QRectF(self.rect())
-        path = QPainterPath()
-        path.addRoundedRect(box, theme.R_LG, theme.R_LG)
-        painter.fillPath(path, QBrush(theme.gradient("surface.glass", box)))
-        theme.paint_sheen(painter, box, theme.R_LG, self._elevation)
-        painter.setPen(QPen(theme.color(PANEL_TONES[self._tone]), 1))
-        painter.setBrush(Qt.NoBrush)
-        painter.drawRoundedRect(box.adjusted(0.5, 0.5, -0.5, -0.5), theme.R_LG - 0.5, theme.R_LG - 0.5)
+        painter.drawPixmap(0, 0, self._ground())
         # what the controls on it draw outside themselves
         base.paint(painter, self, event.rect())
 
