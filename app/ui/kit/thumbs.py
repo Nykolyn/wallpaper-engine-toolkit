@@ -24,8 +24,10 @@ QMovie to play from memory.
 """
 from __future__ import annotations
 
+import atexit
 import hashlib
 import os
+import weakref
 from pathlib import Path
 
 from PySide6.QtCore import (
@@ -64,6 +66,10 @@ IMAGE_SUFFIXES = (".gif", ".jpg", ".jpeg", ".png", ".webp", ".bmp")
 # Two readers at most: the previews sit on a hard disk, where more readers
 # mean more seeking rather than more reading.
 LOCAL_THREADS = 2
+
+# The still's text key that names the preview it was taken from: a table asks
+# for the bytes of an animated one only when this says it is a GIF.
+PREVIEW_KEY = "preview"
 
 
 # ---- Steam previews (the Review gallery) -----------------------------------------------
@@ -220,7 +226,7 @@ def read_local(path: str, root: Path, box: QSize = LOCAL_BOX, cover: bool = Fals
     """The still for a wallpaper folder or preview file, from the cache when
     the preview has not changed, else decoded and cached. A null image when
     there is no preview. `cover`: sized to cover `box` rather than fit in it.
-    Worker threads only."""
+    The still's text under PREVIEW_KEY is the preview file. Worker threads only."""
     found = find_preview(path)
     if found is None:
         return QImage()
@@ -238,7 +244,9 @@ def read_local(path: str, root: Path, box: QSize = LOCAL_BOX, cover: bool = Fals
         if image.isNull():
             return image
         _keep(image, cached)
-    return _fit(image, box, cover)
+    image = _fit(image, box, cover)
+    image.setText(PREVIEW_KEY, preview)
+    return image
 
 
 def _decode(preview: str) -> QImage:
@@ -349,6 +357,21 @@ class _Animation(QRunnable):
 
 # ---- the loader ---------------------------------------------------------------------------
 
+# Every loader there is, to be drained before Python shuts down: a worker still
+# reading a preview while the interpreter tears down takes the process with it
+# (a test that passed every check exited non-zero on Windows).
+_loaders: "weakref.WeakSet[ThumbLoader]" = weakref.WeakSet()
+
+
+@atexit.register
+def _drain() -> None:
+    for loader in list(_loaders):
+        try:
+            loader.stop()
+        except RuntimeError:
+            pass                # its Qt half is gone already, and its pools with it
+
+
 class ThumbLoader(QObject):
     """Preview images, fetched or read once and kept on disk.
 
@@ -374,6 +397,7 @@ class ThumbLoader(QObject):
         self._asked: set[str] = set()
         self._asked_local: set[str] = set()
         self._asked_animation: set[str] = set()
+        _loaders.add(self)
         # Downloads outlive the widget that wanted them, so they have to be
         # told when nobody is listening any more.
         self.stopped = False

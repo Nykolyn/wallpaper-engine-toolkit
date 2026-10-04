@@ -67,7 +67,7 @@ from .base import label
 from .buttons import button_pixmap, button_size, icon_button_pixmap
 from .chips import chip_pixmap, chip_size
 from .inputs import SpinBox
-from .thumbs import ThumbLoader, shared as shared_loader
+from .thumbs import PREVIEW_KEY, ThumbLoader, shared as shared_loader
 
 ALIGNMENTS = {"left": Qt.AlignLeft, "right": Qt.AlignRight, "center": Qt.AlignHCenter}
 
@@ -1482,6 +1482,8 @@ class Table(QTableView):
         self._loader.animation_done.connect(self._animation_arrived)
         # key → the GIF's bytes, empty when its preview is not animated
         self._gifs: OrderedDict[str, QByteArray] = OrderedDict()
+        # keys whose still came from a GIF: the only ones whose bytes are asked for
+        self._animatable: set[str] = set()
         self._players: dict[str, tuple[QMovie, QBuffer]] = {}
         self._frames: dict[tuple[str, str], QPixmap] = {}    # (key, size) → frame tile
         self._frame_images: dict[str, QPixmap] = {}         # key → the frame playing
@@ -1755,6 +1757,8 @@ class Table(QTableView):
         wanted: list[str] = []
         if self._animates():
             for key in self._rows_for_key:
+                if key not in self._animatable:
+                    continue
                 data = self._gifs.get(key)
                 if data is None:
                     self._loader.request_animation(key, key)
@@ -1882,6 +1886,10 @@ class Table(QTableView):
 
     def _thumb_arrived(self, key: str, image) -> None:
         pixmap = None
+        if image.text(PREVIEW_KEY).lower().endswith(".gif"):
+            self._animatable.add(key)
+            if key in self._rows_for_key:
+                self._play_visible()
         if not image.isNull():
             pixmap = QPixmap.fromImage(image)
             pixmap.setDevicePixelRatio(self.devicePixelRatioF())
