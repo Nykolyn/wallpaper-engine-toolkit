@@ -16,11 +16,18 @@ One loader, two sources:
 
 A view asks only for the rows it shows, once scrolling settles, and calls
 `retarget_local()` first so nothing queued for rows scrolled past is read.
+
+An animated preview is played by the table that shows it (`Table`'s players,
+a few at a time): `request_animation` reads the GIF's bytes on a worker, as
+everything else on that disk, and hands them over (`animation_done`) for a
+QMovie to play from memory.
 """
 from __future__ import annotations
 
+import atexit
 import hashlib
 import os
+import weakref
 from pathlib import Path
 
 from PySide6.QtCore import (
@@ -38,11 +45,18 @@ LOCAL_DIR = THUMB_DIR / "local"
 MAX_STILL_FRAMES = 24
 STILL_MIN_BRIGHTNESS = 0.06
 
-# The still kept on disk fits in this box. It is the largest thumb the screens
-# draw (a MonitorCard's 298 × 84 preview) at 150 %, with room to spare, and at
-# JPEG quality 85 it is a few tens of KB, which 33 000 folders can afford.
-LOCAL_BOX = QSize(480, 270)
+# The still kept on disk fits in this box. It covers the largest thumbs the
+# screens draw at 150 % with room to spare — a MonitorCard's 298 × 84 preview,
+# a table's square 200 × 200 — and at JPEG quality 85 it is a few tens of KB,
+# which 33 000 folders can afford. Stills kept for the old 480 × 270 box are
+# named without the box, so they are read again once and replaced.
+LOCAL_BOX = QSize(480, 480)
 LOCAL_QUALITY = 85
+STILL_VERSION = "b480"
+
+# An animated preview bigger than this is shown still: a QMovie keeps the file
+# in memory while it plays, and Wallpaper Engine's previews are a few MB.
+MAX_ANIMATION_BYTES = 32 * 1024 * 1024
 
 # A wallpaper folder's preview, in the order one is preferred when a folder
 # has several: the animated one is the one Wallpaper Engine shows.
@@ -52,6 +66,10 @@ IMAGE_SUFFIXES = (".gif", ".jpg", ".jpeg", ".png", ".webp", ".bmp")
 # Two readers at most: the previews sit on a hard disk, where more readers
 # mean more seeking rather than more reading.
 LOCAL_THREADS = 2
+
+# The still's text key that names the preview it was taken from: a table asks
+# for the bytes of an animated one only when this says it is a GIF.
+PREVIEW_KEY = "preview"
 
 
 # ---- Steam previews (the Review gallery) -----------------------------------------------
@@ -184,23 +202,31 @@ def cache_file(root: Path, preview: str, mtime_ns: int, size: int) -> Path:
     """Where the still of this preview, as it is now, is kept. The name holds
     the time and size, so a preview that changed misses its old still."""
     digest = _path_digest(preview)
-    return Path(root) / digest[:2] / f"{digest}-{mtime_ns:x}-{size:x}.jpg"
+    return Path(root) / digest[:2] / f"{digest}-{mtime_ns:x}-{size:x}-{STILL_VERSION}.jpg"
 
 
 def _path_digest(preview: str) -> str:
     return hashlib.sha1(os.path.normcase(preview).encode("utf-8")).hexdigest()[:20]
 
 
-def _fit(image: QImage, box: QSize) -> QImage:
+def _fit(image: QImage, box: QSize, cover: bool = False) -> QImage:
+    """The image no bigger than it needs to be for `box`: inside it, or with
+    `cover` covering it (to be cropped when drawn)."""
+    if cover:
+        scaled = image.size().scaled(box, Qt.KeepAspectRatioByExpanding)
+        if scaled.width() >= image.width():
+            return image
+        return image.scaled(scaled, Qt.IgnoreAspectRatio, Qt.SmoothTransformation)
     if image.width() <= box.width() and image.height() <= box.height():
         return image
     return image.scaled(box, Qt.KeepAspectRatio, Qt.SmoothTransformation)
 
 
-def read_local(path: str, root: Path, box: QSize = LOCAL_BOX) -> QImage:
+def read_local(path: str, root: Path, box: QSize = LOCAL_BOX, cover: bool = False) -> QImage:
     """The still for a wallpaper folder or preview file, from the cache when
     the preview has not changed, else decoded and cached. A null image when
-    there is no preview. Worker threads only."""
+    there is no preview. `cover`: sized to cover `box` rather than fit in it.
+    The still's text under PREVIEW_KEY is the preview file. Worker threads only."""
     found = find_preview(path)
     if found is None:
         return QImage()
@@ -218,7 +244,9 @@ def read_local(path: str, root: Path, box: QSize = LOCAL_BOX) -> QImage:
         if image.isNull():
             return image
         _keep(image, cached)
-    return _fit(image, box)
+    image = _fit(image, box, cover)
+    image.setText(PREVIEW_KEY, preview)
+    return image
 
 
 def _decode(preview: str) -> QImage:
@@ -263,21 +291,36 @@ def _keep(image: QImage, target: Path) -> None:
         pass            # a still not kept is read again next time; nothing more
 
 
+def read_animation(path: str) -> bytes:
+    """The bytes of a wallpaper folder's animated preview (its preview.gif), or
+    b"" when its preview is not one, or is too big to play. Worker threads only."""
+    found = find_preview(path)
+    if found is None:
+        return b""
+    preview, _mtime, size = found
+    if not preview.lower().endswith(".gif") or size > MAX_ANIMATION_BYTES:
+        return b""
+    with open(preview, "rb") as handle:
+        return handle.read()
+
+
 class _Local(QRunnable):
     """One local preview, off the GUI thread."""
 
-    def __init__(self, loader: "ThumbLoader", key: str, path: str, box: QSize):
+    def __init__(self, loader: "ThumbLoader", key: str, path: str, box: QSize,
+                 cover: bool = False):
         super().__init__()
         self.loader = loader
         self.key = key
         self.path = path
         self.box = box
+        self.cover = cover
 
     def run(self) -> None:
         if self.loader.stopped:
             return
         try:
-            image = read_local(self.path, self.loader.local_root, self.box)
+            image = read_local(self.path, self.loader.local_root, self.box, self.cover)
         except Exception:  # noqa: BLE001 — a folder gone or unreadable has no preview
             image = QImage()
         if self.loader.stopped:
@@ -288,7 +331,46 @@ class _Local(QRunnable):
             pass        # the loader went while this was being read
 
 
+class _Animation(QRunnable):
+    """One animated preview's bytes, off the GUI thread."""
+
+    def __init__(self, loader: "ThumbLoader", key: str, path: str):
+        super().__init__()
+        self.loader = loader
+        self.key = key
+        self.path = path
+
+    def run(self) -> None:
+        if self.loader.stopped:
+            return
+        try:
+            data = read_animation(self.path)
+        except Exception:  # noqa: BLE001 — a folder gone or unreadable plays nothing
+            data = b""
+        if self.loader.stopped:
+            return
+        try:
+            self.loader.animation_done.emit(self.key, QByteArray(data))
+        except RuntimeError:
+            pass
+
+
 # ---- the loader ---------------------------------------------------------------------------
+
+# Every loader there is, to be drained before Python shuts down: a worker still
+# reading a preview while the interpreter tears down takes the process with it
+# (a test that passed every check exited non-zero on Windows).
+_loaders: "weakref.WeakSet[ThumbLoader]" = weakref.WeakSet()
+
+
+@atexit.register
+def _drain() -> None:
+    for loader in list(_loaders):
+        try:
+            loader.stop()
+        except RuntimeError:
+            pass                # its Qt half is gone already, and its pools with it
+
 
 class ThumbLoader(QObject):
     """Preview images, fetched or read once and kept on disk.
@@ -297,10 +379,13 @@ class ThumbLoader(QObject):
     `request_local(key, path, box)` → `local_done(key, still)`: the preview in
     a wallpaper folder (or an image file), fitted into `box` device pixels. The
     still is a null QImage when the folder has no preview.
+    `request_animation(key, path)` → `animation_done(key, bytes)`: the folder's
+    preview.gif, to play; empty when its preview is not animated.
     """
 
     done = Signal(str, QByteArray, QImage)
     local_done = Signal(str, QImage)
+    animation_done = Signal(str, QByteArray)
 
     def __init__(self, parent=None, threads: int = 6, *, local_root: Path | None = None):
         super().__init__(parent)
@@ -311,6 +396,8 @@ class ThumbLoader(QObject):
         self.local_root = Path(local_root) if local_root is not None else LOCAL_DIR
         self._asked: set[str] = set()
         self._asked_local: set[str] = set()
+        self._asked_animation: set[str] = set()
+        _loaders.add(self)
         # Downloads outlive the widget that wanted them, so they have to be
         # told when nobody is listening any more.
         self.stopped = False
@@ -347,13 +434,24 @@ class ThumbLoader(QObject):
     # -- local previews
 
     def request_local(self, key: str, path: str | os.PathLike | None,
-                      box: QSize | None = None) -> bool:
-        """Ask for the still of a wallpaper folder's preview. Once per key until
-        `retarget_local` or `forget_local`; returns whether it was queued."""
+                      box: QSize | None = None, cover: bool = False) -> bool:
+        """Ask for the still of a wallpaper folder's preview, fitted in `box`
+        (or, with `cover`, covering it). Once per key until `retarget_local` or
+        `forget_local`; returns whether it was queued."""
         if not path or self.stopped or key in self._asked_local:
             return False
         self._asked_local.add(key)
-        self.local_pool.start(_Local(self, key, os.fspath(path), QSize(box or LOCAL_BOX)))
+        self.local_pool.start(_Local(self, key, os.fspath(path), QSize(box or LOCAL_BOX),
+                                     cover))
+        return True
+
+    def request_animation(self, key: str, path: str | os.PathLike | None) -> bool:
+        """Ask for the bytes of a folder's animated preview. Once per key until
+        `retarget_local`; queued behind the stills asked for before it."""
+        if not path or self.stopped or key in self._asked_animation:
+            return False
+        self._asked_animation.add(key)
+        self.local_pool.start(_Animation(self, key, os.fspath(path)))
         return True
 
     def asked_local(self) -> frozenset[str]:
@@ -365,6 +463,7 @@ class ThumbLoader(QObject):
         Reads already running finish and land in the cache."""
         self.local_pool.clear()
         self._asked_local.clear()
+        self._asked_animation.clear()
 
     def forget_local(self, key: str) -> None:
         self._asked_local.discard(key)

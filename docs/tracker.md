@@ -88,21 +88,30 @@ need it — see [cycles](#cycles).
   one on screen at the top and selected; then the *Queue*. The columns:
   - **#**: the place in the queue of a sorted playlist. A random one has no
     queue (see [what comes next](#what-comes-next)), so its rows keep the
-    playlist's own order and **#** is the place in the playlist.
-  - **WALLPAPER**, **AUTHOR**, **TYPE**.
+    playlist's own order and **#** is the place in the playlist. Clicking
+    **#** undoes whatever sort another column's title put the table in, back
+    to the order above; its title is lit while nothing else sorts.
+  - **WALLPAPER**: a square 200 × 200 preview and the title. A GIF preview
+    plays, for the rows on screen (eight at most, and none with Windows'
+    animations off). A window too narrow to leave the title room draws the
+    preview at 120 or 72 instead.
+  - **TYPE**.
+  - **SIZE**: the wallpaper's folder, measured after the titles are read
+    (blank until then, and for a folder that is gone).
   - **SHOWN**: how long it stayed up — until the next one came up, in real
     time, like the pace.
   - **STATE**: on screen, the time it came up, or queued.
-  - Two small buttons at the end of each row, quiet until the pointer is on
-    the row, each saying what it does in its tool tip: **Send to Copier** and
-    **Mark [protected]** (see [a row's actions](#a-rows-actions)).
+  - Three small buttons at the end of each row, quiet until the pointer is on
+    the row, each saying what it does in its tool tip: **Send to Copier**,
+    **Mark [protected]** and **Delete** (see [a row's
+    actions](#a-rows-actions)).
 
   `~` marks a time rebuilt from file times or Wallpaper Engine's record.
-  Filter by title or author, pick an author, jump to *Shown* or *Queue*.
+  Filter by title, jump to *Shown* or *Queue*.
   Clicking a row opens Explorer on that wallpaper (see [watch out
   for](#watch-out-for)).
 - **Refresh now** looks at Wallpaper Engine at once and reads the list again;
-  the table's ↻ reads the titles and authors again.
+  the table's ↻ reads the titles, the authors and the sizes again.
 
 ### A row's actions
 
@@ -120,7 +129,21 @@ showing the rename. Workshop (subscribed) folders are never offered it, and a
 folder that is protected already shows a blue lock instead. There is no
 "unprotect": rename the folder back in Explorer.
 
-**Wallpaper Engine's playlist is not touched.** Its entry for that wallpaper
+**Delete** sends the wallpaper's folder to the Recycle Bin, after asking. A
+Workshop (subscribed) one — a folder under Steam's
+`workshop\content\431960` — is unsubscribed first, through the running Steam
+client, as Review subscribes: deleting its folder alone would only have Steam
+download it again. If Steam is not running or will not drop the subscription,
+nothing is deleted and a red toast says why. A folder in myprojects is your own
+copy, whatever its `project.json` says, and unsubscribes nothing. The row
+leaves the table at once; the playlist still lists the wallpaper until the next
+rotation rebuilds it, and the count leaves it out from the next look. The work
+runs off the window's thread, the button off meanwhile; while a rotation runs,
+Delete only says to wait for it. The one on screen can usually not be moved
+while Wallpaper Engine shows it: the question warns of it, and the toast says
+so if Windows refuses.
+
+**Wallpaper Engine's playlist is not touched** by Mark [protected]. Its entry for that wallpaper
 keeps the old name, so it stops working until the next rotation rebuilds the
 playlist. The question says so before you agree, the toast says so after, and
 the row keeps saying it: the lock turns amber and the title gets a line under

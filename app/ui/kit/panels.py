@@ -219,7 +219,10 @@ class CardTitle(QWidget):
         words.setSpacing(theme.SP_10)
         self._title = label(title, "type.h3", "hi")
         self._subtitle = label(subtitle, "type.label", "mid")
-        self._subtitle.setVisible(bool(subtitle))
+        if not subtitle:
+            # hide(), never setVisible(True): shown before it has a parent, a
+            # label is a window of its own for a moment, a flash on screen
+            self._subtitle.hide()
         # the two sit on one line, bottoms together, which is near enough their baselines
         words.addWidget(self._title, 0, Qt.AlignBottom)
         words.addWidget(self._subtitle, 0, Qt.AlignBottom)
@@ -281,11 +284,13 @@ class Callout(QFrame):
         words.setSpacing(theme.SP_2)
         self._title = label(title, "type.labelStrong", "hi")
         self._title.setWordWrap(True)
-        self._title.setVisible(bool(title))
+        if not title:
+            self._title.hide()          # never shown while it has no parent (see CardTitle)
         self._body = label(body, "type.caption", body_tone)
         self._body.setWordWrap(True)
         self._body.setTextInteractionFlags(Qt.TextSelectableByMouse)
-        self._body.setVisible(bool(body))       # a title alone says it all
+        if not body:
+            self._body.hide()           # a title alone says it all
         words.addWidget(self._title)
         words.addWidget(self._body)
         row.addLayout(words, 1)

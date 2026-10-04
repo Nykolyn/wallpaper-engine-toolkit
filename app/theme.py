@@ -733,15 +733,21 @@ THUMB: dict[str, tuple[int, int, int]] = {
     "sm": (40, 23, 4),
     "md": (64, 36, 5),
     "card": (72, 41, 5),     # a compact MonitorCard (Overview)
-    "row": (120, 68, 6),     # a table's thumb column
+    "row": (200, 200, 8),    # a table's thumb column: square, as Wallpaper Engine's browser
+    "rowsm": (120, 120, 6),  # the same, in a table too narrow for it (THUMB_NARROWER)
+    "rowxs": (72, 72, 5),    # and narrower still
     "wide": (298, 84, 5),    # a detailed MonitorCard's preview (Tracker)
     "grid": (160, 90, 6),    # 16:9 in a grid; the width follows the cell
 }
+# Sizes that fill their box, the picture cropped about its middle, rather than
+# letterboxed in it: a square well around a 16:9 picture is mostly empty.
+THUMB_COVER = frozenset({"row", "rowsm", "rowxs"})
 THUMB_GAP = 9            # a thumb to the text beside it
 # A table's stretched thumb column too narrow to leave its words this much (about a
-# dozen characters) draws the next thumb down. Measured: at 1 200 px the Tracker's
-# playlist had 114 px for a 120 px thumb, and no title at all.
-THUMB_NARROWER = {"row": "md"}
+# dozen characters) draws the next thumb down, as far down as it must. Measured: at
+# 1 280 px the Tracker's playlist has 199 px for a thumb and its title, the Rotator's
+# reserve 157; from about 1 400 px both draw the whole 200.
+THUMB_NARROWER = {"row": "rowsm", "rowsm": "rowxs"}
 TABLE_WORDS_MIN = 80
 
 PROGRESS_HEIGHTS = (3, 4, 5, 6, 8)
@@ -922,6 +928,12 @@ TITLE_MARK = 16
 CAPTION_BUTTON = (42, 32)     # minimise, maximise, close
 CAPTION_GLYPH = 10
 RESIZE_BORDER = 6             # how close to the edge the pointer resizes the window
+# Opening (main_window.LoadingCover): the mark it shows, how long after its first
+# paint the pages start being made (a frame, so that paint is on screen first), and
+# how long the window waits for that paint before making them anyway.
+LOADING_MARK = 48
+LOADING_SETTLE = 16
+LOADING_FALLBACK = 1500
 
 SIDEBAR_PAD = (12, 10)        # vertical, horizontal
 SIDEBAR_ITEMS = 246           # the items' width
@@ -978,12 +990,12 @@ PACE_GAP = 10                 # its overline, figure, rule, sentence and notes
 PACE_ICON = 14                # the clock before the finish sentence
 PACE_FIGURE_GAP = 8           # the figure to the words after it
 TRACKER_FILTER = 184          # the filter over the playlist (the design's 168 cuts its words)
-TRACKER_AUTHORS = 140         # the author list, at the least
 # the playlist's fixed columns; the wallpaper's takes the rest (SHOWN is wider than the
-# design's 52 px, which cuts "1 h 10 min"). The last holds a row's two glyph buttons,
-# Send to Copier and Mark [protected]: two text buttons left WALLPAPER no room at 1 040.
-TRACKER_COLUMNS = {"number": 32, "author": 88, "type": 48, "shown": 64, "state": 64,
-                   "actions": 2 * ICON_BUTTON["sm"][0] + TABLE_BUTTONS_GAP}
+# design's 52 px, which cuts "1 h 10 min"; SIZE fits "1023 MB"). The last holds a row's
+# three glyph buttons, Send to Copier, Mark [protected] and Delete: text buttons left
+# WALLPAPER no room at 1 040.
+TRACKER_COLUMNS = {"number": 32, "type": 48, "size": 60, "shown": 64, "state": 64,
+                   "actions": 3 * ICON_BUTTON["sm"][0] + 2 * TABLE_BUTTONS_GAP}
 
 # -- Creator (reading, scanned, building, done)
 
@@ -1016,7 +1028,9 @@ RUN_FACT_ICON = 13            # the lock before "2 [protected] folders stay"
 ROTATOR_FILTER = 184          # the filter over the tables (as the Tracker's)
 # the reserve's fixed columns (the design's grid, LAST USED wider so its title
 # fits on one line, and "3 Jul 2025" too); the folder's takes the rest
-ROTATOR_COLUMNS = {"author": 80, "type": 44, "size": 56, "used": 70}
+ROTATOR_COLUMNS = {"author": 80, "type": 44, "size": 56, "used": 70,
+                   # a row's Send to Copier and Delete, as the Tracker's glyph buttons
+                   "actions": 2 * ICON_BUTTON["sm"][0] + TABLE_BUTTONS_GAP}
 # the history's (RUN · STARTED · TOOK · MOVED · RETURNED · DUPES); RESULT takes the rest
 # The history's fixed columns, as wide as their longest value or title: STARTED
 # "26 Sep 2025 09:02", the counts five digits under RETURNED's title. RESULT takes

@@ -65,7 +65,7 @@ class QueueModel(TableModel):
     def __init__(self, page):
         self.page = page
         widths = theme.COPIER_COLUMNS
-        columns = [Column("JOB", widths[0], thumb="xs", sortable=False),
+        columns = [Column("JOB", widths[0], thumb="row", sortable=False),
                    Column("COPIES", widths[1], sortable=False),
                    Column("SIZE", widths[2], mono=True, sortable=False),
                    Column("DESTINATION", widths[3], mono=True, elide="left", sortable=False),

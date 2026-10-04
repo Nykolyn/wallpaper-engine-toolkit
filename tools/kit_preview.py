@@ -1472,7 +1472,7 @@ def tables_section() -> Section:
     column.setContentsMargins(0, 0, 0, 0)
     column.setSpacing(0)
     bar = TableBar()
-    search = TextInput(placeholder="Filter by title or author…", search=True)
+    search = TextInput(placeholder="Filter by title…", search=True)
     search.setFixedWidth(200)
     authors = Dropdown()
     authors.add_item("All authors")
