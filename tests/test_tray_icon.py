@@ -69,12 +69,13 @@ def painted(img: QImage, colour: str, box=None, slack=40) -> int:
                for x in range(x0, x1) for y in range(y0, y1))
 
 
-# At 32 px a grid unit is half a pixel: the back frame's left stroke runs down
-# x = 6, its top-right corner is clear of the front frame at (19, 10), the front
-# frame's body spans x = 13..24 (its right side clear of the badge at y = 17),
-# and the badge sits round (25, 25).
-BACK_LEFT, BACK_RIGHT, FRONT_LEFT, FRONT_RIGHT = (6, 12), (19, 10), (14, 19), (21, 17)
-BADGE = (int(25 - 0.16 * 32), int(25 - 0.16 * 32), 32, 32)
+# At 32 px the mark spans the icon less half a pixel each side: the back
+# frame's left stroke runs down x = 1, its top-right corner is clear of the
+# front frame at (20, 8), the front frame's body spans x = 11..29 (its right
+# side clear of the badge at y = 14), and the badge sits round (25, 25).
+BACK_LEFT, BACK_RIGHT, FRONT_LEFT, FRONT_RIGHT = (1, 10), (20, 8), (13, 20), (27, 14)
+FRONT_INSIDE = (12, 14, 29, 18)          # the front body inside its edge, above the badge
+BADGE = (int(25 - 0.2 * 32), int(25 - 0.2 * 32), 32, 32)
 FILL = "tray.fill.running"
 
 
@@ -84,8 +85,11 @@ def at(img: QImage, xy) -> QColor:
 
 print("-- geometry --")
 check("every size Windows may ask for is drawn", ti.SIZES == (16, 20, 24, 32, 40, 48))
-check("at 16 px the mark is about ten pixels wide: about ten steps",
-      ti.fill_steps(16) == 10 and ti.fill_steps(32) == 21 and ti.FILL_STEPS == ti.fill_steps(48) == 31)
+check("the mark spans the icon's width, as the tray's other icons do: a step a pixel",
+      [ti.fill_steps(s) for s in ti.SIZES] == list(ti.SIZES) and ti.FILL_STEPS == 48)
+check("and is centred top to bottom",
+      all(abs(ti.origin(s)[1] + ti.TOP * ti.scale(s)
+              - (s - ti.origin(s)[1] - ti.BOTTOM * ti.scale(s))) < 1e-9 for s in ti.SIZES))
 check("the scale runs from the back frame's left edge to the front frame's right edge",
       (ti.FILL_FROM, ti.FILL_TO) == (11.0, 52.5))
 check("a fill is snapped to its steps, clamped to 0..1",
@@ -129,9 +133,9 @@ check("more time gone is more colour",
 check("both frames filled whole is 100 %: nothing grey or dark is left",
       near(at(full, BACK_LEFT), FILL) and near(at(full, BACK_RIGHT), FILL)
       and near(at(full, FRONT_LEFT), FILL) and near(at(full, FRONT_RIGHT), FILL)
-      and painted(full, "tray.body", slack=6) == 0)
+      and painted(full, "tray.body", FRONT_INSIDE, slack=6) == 0)
 check("anything short of it leaves some unfilled",
-      painted(image(ti.RUNNING, 32, fill=0.8), "tray.body", slack=6) > 0)
+      painted(image(ti.RUNNING, 32, fill=0.8), "tray.body", FRONT_INSIDE, slack=6) > 0)
 check("the same step draws the same icon",
       image(ti.RUNNING, 16, fill=0.501) == image(ti.RUNNING, 16, fill=0.5))
 check("another step draws another",
