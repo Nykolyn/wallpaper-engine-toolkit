@@ -34,7 +34,7 @@ from PySide6.QtCore import (  # noqa: E402
 from PySide6.QtGui import (  # noqa: E402
     QColor, QImage, QKeyEvent, QMouseEvent, QPainter, QPixmap)
 from PySide6.QtWidgets import (                                              # noqa: E402
-    QApplication, QStyleOptionViewItem)
+    QApplication, QStackedWidget, QStyleOptionViewItem)
 
 app = QApplication.instance() or QApplication([])
 
@@ -825,6 +825,35 @@ state, cover = listing.thumb_state("l0")
 check("and once one arrives it covers the row's thumb exactly",
       state == "image" and cover.deviceIndependentSize().toSize()
       == QSize(*theme.THUMB["row"][:2]))
+
+# The grid and the list share one loader, and only one of them is on screen.
+# The next author resets the model under both; the hidden list used to settle
+# 90 ms later and drop every download the grid had just queued, so most cards
+# stayed empty until the grid happened to ask again.
+shared_grid = gal.GalleryView()
+shared_list = gal.GalleryList(shared_grid)
+views = QStackedWidget()
+views.addWidget(shared_grid)
+views.addWidget(shared_list)
+views.resize(1400, 900)
+views.show()
+shared_grid.loader.stopped = True     # nothing downloads; only the asking is tested
+shared_grid.show_items([wallpaper(f"s{i}", preview="https://example.net/s.jpg")
+                        for i in range(gal.PAGE_SIZE)])
+app.processEvents()
+shared_grid._pending.timeout.disconnect()   # the grid does not get to ask twice
+shared_grid.show_items([wallpaper(f"t{i}", preview="https://example.net/t.jpg")
+                        for i in range(gal.PAGE_SIZE)])
+asked_by_grid = set(shared_grid.loader._asked)
+wait_for(lambda: False, seconds=0.4)
+check("the next author's previews stay asked for while the list is hidden",
+      len(asked_by_grid) > 0 and asked_by_grid <= shared_grid.loader._asked)
+views.setCurrentWidget(shared_list)
+check("and the list asks for its own rows once it is shown",
+      wait_for(lambda: shared_grid.loader._asked
+               and shared_grid.loader._asked < asked_by_grid, seconds=1.0))
+views.close()
+shared_grid.close_loader()
 
 
 # ---- One queue for every subscription ------------------------------------------

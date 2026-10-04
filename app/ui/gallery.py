@@ -1610,6 +1610,14 @@ class GalleryList(Table):
         return "loading", None
 
     def request_visible_thumbs(self) -> None:
+        # The loader is the grid's too. A new author resets the model, which
+        # settles this list 90 ms later even while the grid is the one shown:
+        # its retarget dropped every download the grid had just queued, and
+        # the cards not already downloading stayed empty until something made
+        # the grid ask again. Hidden, the list asks for nothing; shown, it does.
+        window = self.window()
+        if window is not self and not self.isVisibleTo(window):
+            return
         # What was queued for rows scrolled past is dropped (the list of every
         # author can be a thousand rows); what arrived is in the gallery's model.
         self.gallery.loader.retarget()
@@ -1617,6 +1625,10 @@ class GalleryList(Table):
             wallpaper = self.model_.item_at(row)
             if wallpaper is not None and self.gallery.model_.image(wallpaper.id) is None:
                 self.gallery.loader.request(wallpaper.id, wallpaper.item.preview)
+
+    def showEvent(self, event) -> None:         # noqa: N802 - Qt's name
+        super().showEvent(event)
+        self._settle.start()            # what it skipped while hidden
 
     def image_arrived(self, item_id: str) -> None:
         self._covers.pop(item_id, None)

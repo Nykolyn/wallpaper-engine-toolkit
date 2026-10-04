@@ -6,6 +6,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [3.17.1] - 2026-10-04
+
+### Fixed
+
+- **Review's grid shows every preview after moving to the next author.** The
+  grid and the list share one preview loader, and the list, though hidden,
+  still answered the new author's rows 90 ms later by dropping whatever was
+  queued: only the previews already downloading arrived, and the rest stayed
+  empty until switching to the list and back. The hidden list now asks for
+  nothing, and asks for its rows when it is shown.
+
 ## [3.17.0] - 2026-10-04
 
 ### Added
@@ -1447,7 +1458,8 @@ restructured yet; the tabs keep their layout and take on the new look.
   was right for one library and wrong for every other. Nothing is tagged now
   unless you ask for it.
 
-[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.17.0...HEAD
+[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.17.1...HEAD
+[3.17.1]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.17.0...v3.17.1
 [3.17.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.16.0...v3.17.0
 [3.16.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.15.0...v3.16.0
 [3.15.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.14.0...v3.15.0
