@@ -28,9 +28,9 @@
                              {"name": "Author K", "new": 4, "done": false},
                              {"name": "Author L", "new": 2, "done": false}]},
       "monitors": [
-        {"monitor": "Monitor1", "seen": 4, "total": 201, "current_title": "Paper Lanterns at Dusk",
+        {"monitor": "Monitor1", "resolution": "2560×1440", "author": "Marlow", "seen": 4, "total": 201, "current_title": "Paper Lanterns at Dusk",
          "current_since": "2026-09-19 13:30:00", "live": true},
-        {"monitor": "Monitor2", "seen": 2, "total": 201, "current_title": "Tram Window, Late Rain",
+        {"monitor": "Monitor2", "resolution": "1920×1080", "author": "tidewright", "seen": 2, "total": 201, "current_title": "Tram Window, Late Rain",
          "current_since": "2026-09-19 13:41:00", "live": true}
       ],
       "activity": [
@@ -68,9 +68,9 @@
       "review": {"scanned": "2026-09-18T09:10:00", "scope": "new", "since": "2026-09-13",
                  "items": 89, "finished": null, "authors": 12},
       "monitors": [
-        {"monitor": "Monitor1", "seen": 4, "total": 201, "current_title": "Paper Lanterns at Dusk",
+        {"monitor": "Monitor1", "resolution": "2560×1440", "author": "Marlow", "seen": 4, "total": 201, "current_title": "Paper Lanterns at Dusk",
          "current_since": "2026-09-19 13:30:00", "live": true},
-        {"monitor": "Monitor2", "seen": 2, "total": 201, "current_title": "Tram Window, Late Rain",
+        {"monitor": "Monitor2", "resolution": "1920×1080", "author": "tidewright", "seen": 2, "total": 201, "current_title": "Tram Window, Late Rain",
          "current_since": "2026-09-19 13:41:00", "live": true}
       ],
       "activity": [
@@ -111,9 +111,9 @@
       "review": {"scanned": "2026-09-18T09:10:00", "scope": "new", "since": "2026-09-13",
                  "items": 89, "finished": null, "authors": 12},
       "monitors": [
-        {"monitor": "Monitor1", "seen": 4, "total": 201, "current_title": "Paper Lanterns at Dusk",
+        {"monitor": "Monitor1", "resolution": "2560×1440", "author": "Marlow", "seen": 4, "total": 201, "current_title": "Paper Lanterns at Dusk",
          "current_since": "2026-09-19 13:30:00", "live": false},
-        {"monitor": "Monitor2", "seen": 2, "total": 201, "current_title": "Tram Window, Late Rain",
+        {"monitor": "Monitor2", "resolution": "1920×1080", "author": "tidewright", "seen": 2, "total": 201, "current_title": "Tram Window, Late Rain",
          "current_since": "2026-09-19 13:41:00", "live": false}
       ],
       "activity": [

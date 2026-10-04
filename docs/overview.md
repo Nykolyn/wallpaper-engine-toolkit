@@ -73,7 +73,11 @@ seen while it was open. On a fresh install it says *Nothing has happened yet*.
 On the right, a card for each monitor the [Tracker](tracker.md) counts, the
 leading one first and marked **LEADING** (the **Lead monitor** in
 [Settings](settings.md#tracker-and-tray) chooses it; Automatic picks the
-playlist a rotation built): what it is showing, for how long, and its count.
+playlist a rotation built): its display's size, what it is showing, who made
+it, for how long, and its count. The size comes from Windows' list of displays
+and the author from the wallpaper's `project.json` and Review's caches, read
+off the window's thread as the Tracker page reads them; each is left out until
+it is known.
 With Wallpaper Engine not running they show the last known wallpaper and
 count, and say so. A playlist shown to its end turns its card green. The
 [Tracker](tracker.md#the-page) page has the leading one in detail.

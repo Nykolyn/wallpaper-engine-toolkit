@@ -36,6 +36,8 @@ from PySide6.QtWidgets import QHBoxLayout, QStackedLayout, QVBoxLayout, QWidget
 
 from .. import theme
 from ..engines.tracker import pick_primary
+from ..engines.wallpaper_meta import MetaCache
+from ..engines.wallpaper_timer import monitor_resolutions
 from ..services.activity import TOOLS
 from ..services.logstore import LogTail
 from ..services.snapshot import (
@@ -49,6 +51,7 @@ from ..ui.kit import (
 from ..ui.kit.chips import VARIANTS as CHIP_VARIANTS
 from ..ui.kit.tables import LIST_ROW_ROLE
 from .base import Page
+from .tracker import ListReader
 
 ACTIVITY_ROWS = 8           # entries in "Recent activity"
 LOG_LINES = 300             # the newest lines of a log the panel holds
@@ -320,9 +323,11 @@ def _time(text) -> datetime | None:
         return None
 
 
-def monitor_view(p, leading: bool, now: datetime) -> MonitorView:
-    """One monitor's card, from the tracker's Progress. Not live, it shows the
-    last known wallpaper and count, and says so."""
+def monitor_view(p, leading: bool, now: datetime, *, author: str = "",
+                 resolution: str = "") -> MonitorView:
+    """One monitor's card, from the tracker's Progress, with its display's size
+    and the wallpaper's author when they are known (left out while they are
+    not). Not live, it shows the last known wallpaper and count, and says so."""
     since = _time(p.current_since) if p.live else None
     shown = (now - since).total_seconds() if since is not None and now >= since else None
     if p.live:
@@ -333,17 +338,24 @@ def monitor_view(p, leading: bool, now: datetime) -> MonitorView:
         note = "last known · nothing from the playlist on screen"
     folder = os.path.dirname(p.current.replace("/", "\\")) if p.current else None
     return MonitorView(p.monitor, "leading" if leading else "summary",
-                       title=p.current_title or "", position=p.seen, total=p.total,
-                       shown_for=shown, preview=folder or None, note=note)
+                       resolution=resolution, title=p.current_title or "", author=author,
+                       position=p.seen, total=p.total, shown_for=shown,
+                       preview=folder or None, note=note)
 
 
-def monitor_views(results, preferred: str | None, now: datetime) -> list[MonitorView]:
-    """Every monitor the tracker counts, the leading one first."""
+def monitor_views(results, preferred: str | None, now: datetime, *,
+                  authors: dict[str, str] | None = None,
+                  resolutions: dict[str, str] | None = None) -> list[MonitorView]:
+    """Every monitor the tracker counts, the leading one first. `authors` is by
+    wallpaper (what is on screen), `resolutions` by monitor."""
     results = list(results or [])
     lead = pick_primary(results, preferred)
     if lead is None:
         return []
-    return [monitor_view(p, p is lead, now) for p in [lead, *[r for r in results if r is not lead]]]
+    authors, resolutions = authors or {}, resolutions or {}
+    return [monitor_view(p, p is lead, now, author=authors.get(p.current or "", ""),
+                         resolution=resolutions.get(p.monitor, ""))
+            for p in [lead, *[r for r in results if r is not lead]]]
 
 
 # ---- the page ---------------------------------------------------------------------------
@@ -367,6 +379,14 @@ class OverviewPage(Page):
         self._log_path: Path | None = None
         self._log_tail: LogTail | None = None
         self._running_jobs: frozenset = frozenset()
+        # What is known of the wallpapers on screen, read on a thread of the
+        # reader's own (the Tracker page's ListReader and MetaCache).
+        self._described: dict = {}
+        self._asked: set[str] = set()
+        self._reader = ListReader(MetaCache(), parent=self)
+        self._reader.described.connect(self._items_described)
+        self._resolution_key = None
+        self._resolution_cache: dict[str, str] = {}
 
         body = QVBoxLayout(self)
         body.setContentsMargins(theme.BODY_PAD[1], theme.BODY_PAD[0],
@@ -640,9 +660,13 @@ class OverviewPage(Page):
         now = self._now()
         if self._fixture is not None:
             results = [_FixtureProgress(**m) for m in self._fixture.get("monitors", [])]
+            authors = {p.current or "": p.author for p in results}
+            resolutions = {p.monitor: p.resolution for p in results}
         else:
             results = list(getattr(self._feed, "results", None) or [])
-        views = monitor_views(results, self._preferred(), now)
+            authors, resolutions = self._authors(results), self._resolutions()
+        views = monitor_views(results, self._preferred(), now, authors=authors,
+                              resolutions=resolutions)
         while len(self.monitor_cards) > len(views):
             card = self.monitor_cards.pop()
             self._monitor_column.removeWidget(card)
@@ -654,6 +678,35 @@ class OverviewPage(Page):
         for card, view in zip(self.monitor_cards, views):
             card.set_view(view, now)
         self.no_monitors.setVisible(not views)
+
+    def _authors(self, results) -> dict[str, str]:
+        """The authors known of what is on screen; the rest asked for on the
+        reader's thread (project.json and Review's caches are on disk), and
+        the cards drawn again when they come."""
+        wanted = [p.current for p in results
+                  if p.current and p.current not in self._described and p.current not in self._asked]
+        if wanted:
+            self._asked.update(wanted)
+            self._reader.read_items(wanted)
+        return {item: d.author for item, d in self._described.items() if d.author}
+
+    def _items_described(self, found: dict) -> None:
+        self._described.update(found)
+        self._render_monitors()
+
+    def _resolutions(self) -> dict[str, str]:
+        """Each monitor's display size, worked out again only for another
+        config.json or after the feed has looked again (displays come and go)."""
+        config = getattr(getattr(self._feed, "files", None), "config", None)
+        # Each look hands over a new results list: that is "after a look".
+        key = (id(config), id(getattr(self._feed, "results", None)))
+        if key != self._resolution_key:
+            self._resolution_key = key
+            try:
+                self._resolution_cache = monitor_resolutions(config)
+            except Exception:           # noqa: BLE001 — Windows' list of displays; left out
+                self._resolution_cache = {}
+        return self._resolution_cache
 
     # -- recent activity
 
@@ -807,6 +860,8 @@ class _FixtureProgress:
     from_engine: bool = True
     anchor: str = ""
     from_rotation: bool = False
+    resolution: str = ""                # what the live page reads from Windows
+    author: str = ""                    # and from the wallpaper's metadata
 
 
 def _fixture_value(key: str, value):

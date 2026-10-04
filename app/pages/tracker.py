@@ -852,12 +852,9 @@ class Countdowns(QObject):
 
     def resolution(self, monitor: str) -> str:
         """"2560×1440", when Windows says which display is MonitorN."""
+        from ..engines.wallpaper_timer import resolution_of
         rects = getattr(self._timer, "rects", None) or {}
-        rect = rects.get(monitor)
-        if not rect:
-            return ""
-        left, top, right, bottom = rect
-        return f"{right - left}×{bottom - top}"
+        return resolution_of(rects.get(monitor))
 
 
 # ---- the page ---------------------------------------------------------------------------------------
