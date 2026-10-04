@@ -537,9 +537,38 @@ for second in range(1, 4):
 check("the number follows Wallpaper Engine's to the fraction",
       abs(out["Monitor1"].remaining - 497.0) < 1e-4)
 check("a timer that moves is not paused", not out["Monitor1"].paused)
-for _ in range(3):
+
+# Wallpaper Engine does not move its number on every second of ours: read once
+# a second, a running timer stands still now and then, and must not flicker to
+# paused (it did, about every third second).
+seen_paused = False
+for second in range(1, 31):
+    now["t"] += 1
+    if second % 3:                      # moves on two reads of three, by 1.5 s
+        process.poke_timer(name_at, 103.0 + 1.5 * (second - second // 3))
+    out = exact.tick()
+    seen_paused = seen_paused or out["Monitor1"].paused
+check("a running timer that skips a read now and then is never shown as paused", not seen_paused)
+seen_paused = False
+for second in range(1, 13):
+    now["t"] += 1
+    if second % 4 == 0:                 # moves in bursts, every four seconds
+        process.poke_timer(name_at, 133.0 + second)
+    out = exact.tick()
+    seen_paused = seen_paused or out["Monitor1"].paused
+check("nor one that moves in bursts a few seconds apart", not seen_paused)
+process.poke_timer(name_at, 103.0)
+now["t"] += 1
+out = exact.tick()
+check("a timer that drops back (a new wallpaper) is running, not paused",
+      not out["Monitor1"].paused and abs(out["Monitor1"].remaining - 497.0) < 1e-4)
+for _ in range(int(wt.STILL_SECONDS) - 1):
     now["t"] += 1
     out = exact.tick()
+check("a timer that has stood still for a few seconds is not paused yet",
+      not out["Monitor1"].paused)
+now["t"] += 1
+out = exact.tick()
 check("a timer that stands still is shown as paused, with no window rules involved",
       out["Monitor1"].paused and abs(out["Monitor1"].remaining - 497.0) < 1e-4)
 check("and it is never marked approximate", "≈" not in out["Monitor1"].describe())

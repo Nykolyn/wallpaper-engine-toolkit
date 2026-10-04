@@ -641,6 +641,13 @@ it checks the timer about once a second, so it changes at anywhere from 599 to
 601 s. If the object cannot be found — a 32-bit build, or an update that moved
 the fields — the tray says so in `data/tracker.log` and uses the estimate.
 
+A timer read this way is **paused** when it has not moved for five seconds
+(`STILL_SECONDS`), not when one read matches the one before: Wallpaper Engine
+does not move its number on every second of the tray's, so a running timer read
+once a second stands still now and then, and the icon used to flick to paused
+about every third second while the wallpaper played on. A real pause shows
+within five seconds.
+
 What cannot be known is said, not guessed. Until the tray has seen a change the
 ring is empty, because the state file does not say when the wallpaper on screen
 came up. The first change after Wallpaper Engine starts is marked approximate

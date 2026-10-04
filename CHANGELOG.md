@@ -17,6 +17,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   once it was half reached. The scale now ends where the fill can be seen to
   end, a step shows only once it is reached, and the frames are filled whole
   only the moment the fill is 100 %.
+- **The tray icon no longer flicks to paused while the wallpaper plays.** A
+  timer read out of Wallpaper Engine was judged paused whenever one read
+  matched the one a second before, and Wallpaper Engine does not move its
+  number on every second of ours, so the icon went grey with a pause badge
+  about every third second. It is now paused only when the timer has not moved
+  for five seconds.
 
 ## [3.18.1] - 2026-10-04
 

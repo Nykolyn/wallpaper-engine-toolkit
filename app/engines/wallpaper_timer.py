@@ -83,8 +83,13 @@ LOCATE_MAX = 1800.0
 # it into the object where it stands. A found object whose number disagrees with
 # the state file is given this long to agree again before it is looked for afresh.
 INSTANCE_GRACE = 90.0
-# Below this share of real time a timer that was read twice has not been running.
-PAUSED_RATE = 0.25
+# A timer read out of Wallpaper Engine that has not moved for this long is
+# paused. Two reads a second apart cannot tell: Wallpaper Engine does not move
+# its number on every second of ours, so a running timer read once a second
+# stands still now and then (the tray went "paused" about every third second
+# while the wallpaper played on). Longer than any such gap, short enough that a
+# real pause shows within seconds.
+STILL_SECONDS = 5.0
 # How often the running totals are written down, so a restarted tray resumes.
 SAVE_EVERY = 15.0
 SAVE_PATH = app_data_dir() / "wallpaper_timer.json"
@@ -811,7 +816,7 @@ class WallpaperTimer:
         self._memory: "we_memory.Memory | None" = None
         self._memory_pid: int | None = None
         self._objects: dict[str, int] = {}            # monitor -> address of its object
-        self._last_read: dict[str, tuple[float, float]] = {}   # monitor -> (value, when)
+        self._last_read: dict[str, tuple[float, float]] = {}   # monitor -> (value, moved at)
         self._mismatch: dict[str, float] = {}         # monitor -> when its number first differed
         self._probed: set[str] = set()                # monitors whose old address was tried
         self._hints: dict[str, "we_memory.Hint"] = self._saved_hints()
@@ -1074,15 +1079,15 @@ class WallpaperTimer:
             screen = screens.get(monitor, ScreenState())
             active = bool(engine) and settings.counts_down
             if monitor in read:
-                # Wallpaper Engine's own number. Paused is simply "it did not move";
-                # the outside estimate is kept in step so a lost object resumes from
+                # Wallpaper Engine's own number. Paused is "it has not moved for
+                # STILL_SECONDS", never one read that matched the one before; the
+                # outside estimate is kept in step so a lost object resumes from
                 # an exact count rather than from wherever the estimate had drifted.
                 value = read[monitor]
                 last = self._last_read.get(monitor)
-                paused = False
-                if last is not None and now - last[1] >= 0.5 and value >= last[0]:
-                    paused = (value - last[0]) < PAUSED_RATE * (now - last[1])
-                self._last_read[monitor] = (value, now)
+                moved_at = now if last is None or value != last[0] else last[1]
+                paused = now - moved_at >= STILL_SECONDS
+                self._last_read[monitor] = (value, moved_at)
                 clock.running, clock.known, clock.approximate = value, True, False
                 out[monitor] = Countdown(monitor=monitor, delay=settings.delay, running=value,
                                          known=True, paused=paused, active=active, exact=True)
