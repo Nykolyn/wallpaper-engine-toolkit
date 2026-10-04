@@ -6,6 +6,20 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [3.13.0] - 2026-10-04
+
+### Changed
+
+- **The Tracker's playlist, Review's authors and the Rotator's tables scroll
+  smoothly while other work runs.** Each row is now drawn once into a tile and
+  copied after, the table and the lists paint their visible rows in one pass,
+  and what sits behind a scrolled list (the window's gradient, a glass panel,
+  its shadow) is no longer drawn afresh on every step. With two busy threads,
+  a scroll step went from 40 / 53 ms (p50 / p95) to 10–12 / 15–17 ms on the
+  playlist, 47 / 68 to 7–9 / 13–15 on the authors, and 26 / 36 to 12 / 17 on
+  the reserve. `tests/test_row_tiles.py` checks that a tile is never stale and
+  copies to the same pixels as the row drawn directly.
+
 ## [3.12.2] - 2026-10-03
 
 ### Fixed
@@ -1355,7 +1369,8 @@ restructured yet; the tabs keep their layout and take on the new look.
   was right for one library and wrong for every other. Nothing is tagged now
   unless you ask for it.
 
-[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.12.2...HEAD
+[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.13.0...HEAD
+[3.13.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.12.2...v3.13.0
 [3.12.2]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.12.1...v3.12.2
 [3.12.1]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.12.0...v3.12.1
 [3.12.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.11.0...v3.12.0

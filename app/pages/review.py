@@ -499,6 +499,10 @@ class AuthorModel(QAbstractListModel):
             return " · ".join(bit for bit in (row.title, row.title_note, row.meta) if bit)
         return None
 
+    def list_item(self, row: int) -> tuple:
+        """What RowList paints for a row, without a call into Qt for it."""
+        return self._rows[self._ids[row]], None, None
+
     def set_rows(self, rows: list[tuple[str, ListRow]]) -> None:
         self.beginResetModel()
         self._ids = [author_id for author_id, _ in rows]

@@ -668,15 +668,15 @@ table_host.column.addWidget(table)
 table_host.show()
 QApplication.processEvents()
 painted_rows: list = []
-real_paint = table._delegate.paint_row
+real_paint = table._delegate.paint_row_at
 
 
-def counting(painter, rect, row, **flags):
+def counting(painter, model, x, y, width, height, row, **flags):
     painted_rows.append(row)
-    real_paint(painter, rect, row, **flags)
+    real_paint(painter, model, x, y, width, height, row, **flags)
 
 
-table._delegate.paint_row = counting
+table._delegate.paint_row_at = counting
 table.viewport().repaint()
 visible = table.visible_rows()
 check(f"a full repaint paints the rows on screen and no others ({len(painted_rows)} rows)",
@@ -691,7 +691,7 @@ table.verticalScrollBar().setValue(table.verticalScrollBar().maximum() // 2)
 table.viewport().repaint()
 check("in the middle of 33 000 rows, the same few", len(painted_rows) == len(table.visible_rows())
       and len(painted_rows) < 40)
-table._delegate.paint_row = real_paint
+table._delegate.paint_row_at = real_paint
 updated: list = []
 real_update = table._update_row
 table._update_row = lambda row: updated.append(row) if row >= 0 else None
