@@ -2,8 +2,9 @@
 
 The playlist advances whether or not the toolkit window is open, so the count is
 only trustworthy if something keeps polling. This is that something: a tray
-icon drawn as a ring (`tray_icon`), a tooltip with the per-monitor count, a menu
-that says in words what the ring says (`tray_menu`, `tray_words`), and a balloon
+icon drawn as the app's mark filling up to the next wallpaper change
+(`tray_icon`), a tooltip with the per-monitor count, a menu
+that says in words what the icon says (`tray_menu`, `tray_words`), and a balloon
 the moment a playlist has been shown end to end — which is the cue to run the
 next rotation. Clicking the icon opens the toolkit window on its Tracker page —
 as a program of its own, so the tray keeps counting whatever the window does,
@@ -39,8 +40,7 @@ from .engines.tracker import FALLBACK_SECONDS, TIME_FMT, Progress, app_data_dir,
 from .engines.wallpaper_timer import Countdown, WallpaperTimer
 from .settings import Settings
 from .tracker_feed import TRAY_MUTEX, TrackerFeed, heartbeat_setting
-from .tray_icon import (
-    FINISHED, RING_STEPS, RUNNING, TaskbarTheme, tray_icon, UNKNOWN)
+from .tray_icon import FILL_STEPS, FINISHED, UNKNOWN, tray_icon
 from .tray_menu import OPEN, QUIT, REVIEW, ROTATE, SETTINGS, TrayMenu, build_model
 
 
@@ -55,16 +55,15 @@ LOG_KEEP_LINES = 300
 TRAY_WAIT_SECONDS = 120
 TRAY_POLL_SECONDS = 2
 
-# The countdown ring moves once a second. The playlist count is looked at when
+# The countdown moves once a second. The playlist count is looked at when
 # Wallpaper Engine rewrites its files — see TrackerFeed.
 CLOCK_TICK_MS = 1000
 # A restart found later than this (the tray was not running) is not news any more.
 RESTART_NOTICE_SECONDS = 15 * 60
-# The ring is what ``tray_icon.RING_STEPS`` says: 2-degree steps. The design
-# (gate G5 B) would redraw the icon once a minute, on a playlist change; gate G5
-# A keeps the ring as the time left on the current wallpaper, which does move by
-# the second, so the redraws are instead made only when a step is crossed: on a
-# 10-minute delay that is a new icon every few seconds, never one a second.
+# The icon's fill is the time to the next wallpaper change, which moves by the
+# second, so the icon is redrawn only when the fill crosses one of
+# ``tray_icon.FILL_STEPS``: whole pixels of the largest size, a new icon every
+# twenty seconds or so on a 10-minute delay, never one a second.
 
 # What a balloon was about, for what a click on it should open.
 BALLOON_FINISHED, BALLOON_RESTARTED = "finished", "restarted"
@@ -118,13 +117,7 @@ class TrackerTray:
         self.feed.failed.connect(log)
         self._build_clock()
 
-        # Which colours the icon wears depends on the taskbar's, which Windows
-        # can change under a running tray (and does, at sunset, for some).
-        self.taskbar = TaskbarTheme()
-        self.taskbar.changed.connect(self._taskbar_changed)
-        self.taskbar.listen(app)
-
-        self.icon = QSystemTrayIcon(tray_icon(UNKNOWN, light=self.taskbar.light))
+        self.icon = QSystemTrayIcon(tray_icon(UNKNOWN))
         self.icon.setToolTip(DISPLAY_NAME)
         self.icon.activated.connect(self._on_activated)
         self.icon.messageClicked.connect(self._on_message_clicked)
@@ -172,13 +165,8 @@ class TrackerTray:
             # that ever fails the playlist count must carry on regardless.
             if not self._clock_failed:
                 self._clock_failed = True
-                log("countdown failed, ring disabled:\n" + traceback.format_exc())
+                log("countdown failed, fill disabled:\n" + traceback.format_exc())
             self.countdowns = {}
-        self.taskbar.poll()
-        self._render_icon()
-
-    def _taskbar_changed(self, _light: bool):
-        self._icon_key = None
         self._render_icon()
 
     def _announce_completions(self):
@@ -206,13 +194,12 @@ class TrackerTray:
     def _say_finished(self, monitor: str, total: int):
         title, body = words.finished_balloon(monitor, total, words.rotation_batch(),
                                              words.never_used())
-        self._say(BALLOON_FINISHED, title, body, tray_icon(FINISHED, light=self.taskbar.light))
+        self._say(BALLOON_FINISHED, title, body, tray_icon(FINISHED))
 
     def _say_restarted(self, p: Progress):
         title, body = words.restarted_balloon(p.monitor, p.seen, p.total)
-        share = p.seen / p.total if p.total else None
-        self._say(BALLOON_RESTARTED, title, body,
-                  tray_icon(RUNNING, share, p.percent, light=self.taskbar.light))
+        # Back at the start: the time to the next change is not known yet.
+        self._say(BALLOON_RESTARTED, title, body, tray_icon(UNKNOWN))
 
     def _say(self, kind: str, title: str, body: str, icon):
         """One of the two balloons; a click on it opens the page it is about."""
@@ -226,7 +213,8 @@ class TrackerTray:
         return pick_primary(self.results, self.settings.get("tracker", "primary", None))
 
     def _reading(self) -> tuple[Progress | None, str, float | None, int | None]:
-        """The lead monitor, and what the icon shows of it: state, ring, number."""
+        """The lead monitor, and what the icon shows of it: state, fill, and the
+        playlist's percentage (for the menu)."""
         primary = self._primary()
         countdown = self.countdowns.get(primary.monitor) if primary else None
         state, fraction = words.icon_state(primary, countdown)
@@ -234,15 +222,14 @@ class TrackerTray:
 
     def _render_icon(self):
         """The icon and its tooltip: cheap enough to run every tick."""
-        primary, state, fraction, number = self._reading()
-        step = None if fraction is None else round(fraction * RING_STEPS)
-        light = self.taskbar.light
-        key = (state, step, number, light)
+        primary, state, fill, _number = self._reading()
+        step = None if fill is None else round(fill * FILL_STEPS)
+        key = (state, step)
         if key != self._icon_key:
             self._icon_key = key
-            self.icon.setIcon(tray_icon(state, fraction, number, light=light))
+            self.icon.setIcon(tray_icon(state, fill))
         # Windows truncates a tray tooltip at 128 characters, so it gets one
-        # short line per monitor and nothing else; the detail is in the menu
+        # short line per monitor (the playlist's percentage first) and nothing else; the detail is in the menu
         # and in the window a click opens.
         tooltip = words.tooltip(self.results, primary, self.countdowns,
                                 self.feed.error or "")

@@ -125,20 +125,17 @@ TOKENS: dict[str, str] = {
     "console.rowAlt": "rgba(255,255,255,.035)",
     "console.selection": "rgba(76,141,255,.28)",
 
-    # The tray icon follows Windows, not the glass: its own pair of palettes,
-    # one per taskbar (`Tray and Notifications`). Ring = the live state's
-    # colour; track = the empty part of the ring; glyph = the pause bars, the
-    # tick, the "?" and the number.
-    "tray.dark.ring": "#6FA5FF",
-    "tray.dark.paused": "#B7C0D0",
-    "tray.dark.ok": "#3DD68C",
-    "tray.dark.glyph": "#FFFFFF",
-    "tray.dark.track": "rgba(255,255,255,.22)",
-    "tray.light.ring": "#2C6BD8",
-    "tray.light.paused": "#5A6270",
-    "tray.light.ok": "#0F8A4F",
-    "tray.light.glyph": "#1A1A1A",
-    "tray.light.track": "rgba(0,0,0,.22)",
+    # The tray icon (`Tray: fill icon`): the mark's two frames fill with the
+    # state's colour; frame and body are what the fill has not reached. The
+    # frames are dark in any Windows theme, so one set serves both taskbars.
+    "tray.fill.running": "#4C8DFF",
+    "tray.fill.paused": "#7C879C",
+    "tray.fill.ok": "#3DD68C",
+    "tray.fill.unknown": "#E8A33D",
+    "tray.frame": "#4A5468",
+    "tray.body": "#2B3345",
+    "tray.badge.glyph": "#151A24",
+    "tray.badge.pause": "#FFFFFF",
 
     # The app's mark (Branding): a grey outline and an accent fill on a dark
     # tile (`brand.tile`); the fill is cut out of the outline by this edge.

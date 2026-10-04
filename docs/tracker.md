@@ -30,8 +30,9 @@ Open the Tracker page (Ctrl+3), or run the tray-only tracker:
 python run_app.py --tracker
 ```
 
-…or `run_tracker.cmd`. The tray icon is a ring with the percent of the playlist
-shown in the middle; the tooltip says `4 of 201 shown` per monitor, and a balloon
+…or `run_tracker.cmd`. The tray icon is the app's mark, filling with colour as
+the next wallpaper change nears; the tooltip says `2% · Monitor1 · 4 of 201
+shown` per monitor, and a balloon
 fires once a playlist has been shown end to end — that is the cue to rotate.
 See [The tray](#the-tray).
 
@@ -191,27 +192,38 @@ in Settings), no monitor plays a playlist, or Wallpaper Engine is not running.
 
 ## The tray
 
-The tray icon is the one part of the toolkit that lives outside its window, so
-it follows Windows rather than the window's look.
+The tray icon is the one part of the toolkit that lives outside its window.
 
-**The icon** is a ring, in four states, and it never animates:
+**The icon** is the app's mark (the two frames of the Branding page, without
+the tile), and its frames fill with colour **from left to right** as the next
+wallpaper change nears: empty just after a change, full the moment the next one
+is due. The scale runs from the left edge of the back frame to the right edge
+of the front one, so both frames filled whole is 100 % and anything less is
+less. The playlist's progress is not in the icon: the tooltip and the window
+say it. Four states, and it never animates:
 
 | State | Looks like | When |
 |---|---|---|
-| running | accent ring, filled to the time left on the current wallpaper; the percentage of the playlist shown in the middle | Wallpaper Engine's timer is being followed |
-| paused | the same ring in grey, with a pause glyph | the wallpaper is paused |
-| unknown | a dotted empty track; the percentage in the middle while the count is known, a **?** when it is not | no timer reading yet, Wallpaper Engine is not running, or there is no playlist |
-| finished | a full green ring and a tick | every wallpaper of the playlist has been shown |
+| running | the fill in the accent, `#4C8DFF` | Wallpaper Engine's timer is being followed |
+| paused | the fill stops and goes cold grey, `#7C879C`, with a pause badge | the wallpaper is paused |
+| unknown | no fill, the mark muted, an amber **?** badge (`#E8A33D`) | no timer reading yet, Wallpaper Engine is not running, or there is no playlist |
+| finished | both frames green, `#3DD68C`, with a tick badge | every wallpaper of the playlist has been shown |
 
-The ring is drawn **for each size Windows asks for** — 16, 20, 24, 32, 40 and
-48 px, so 100 % to 300 % scaling — rather than one picture shrunk: the stroke is
-2.5 px at 16, 3 at 24, 3.5 at 32. The percentage is drawn from 24 px up; below
-that the middle carries a dot. On a **light taskbar** (`SystemUsesLightTheme`
-in the registry) the ring is `#2C6BD8` and the glyphs `#1A1A1A`; the tray hears
-Windows change it and also reads it again every minute.
+The badge in the bottom right corner is only for the three states that are not
+the usual one. The frames stay dark in any Windows theme, so the colours are
+the same on a light taskbar as on a dark one.
 
-The ring moves in 2° steps, so on a 10-minute delay the icon is redrawn every
-few seconds, not every second.
+The icon is drawn **for each size Windows asks for** — 16, 20, 24, 32, 40 and
+48 px, so 100 % to 300 % scaling — rather than one picture shrunk, and the edge
+of the fill sits on a whole pixel: at 16 px the mark is about ten pixels wide,
+so the fill moves in about ten steps there. The icon is redrawn only when the
+fill crosses a step of the largest size (31 of them), so on a 10-minute delay
+about every twenty seconds, never every second.
+
+**The tooltip** has one line per monitor, the lead one marked `▸`, each starting
+with the share of its playlist shown: `▸ 55% · Monitor1 · 81 of 192 shown ·
+next in 4:29`, `… (paused)` while paused, and `100% · Monitor1 · 192 of 192
+shown · finished` once it is done.
 
 **The menu** (right-click) opens with the icon in words — `tracking · 4 of 201
 shown`, `paused · …`, `timer unknown · …`, `finished · all 201 shown` — then:

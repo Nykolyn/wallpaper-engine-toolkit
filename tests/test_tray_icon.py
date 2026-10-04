@@ -1,16 +1,14 @@
-"""The tray: its ring, its words, its menu and its two balloons.
+"""The tray: its icon, its words, its menu and its two balloons.
 
     .venv\\Scripts\\python.exe tests\\test_tray_icon.py
 
 The tray is a separate process the logon task starts, so what is checked here
-is what it can be checked on without one: the ring drawn per state and size
-(the arc by sampling pixels along the circle), the taskbar's colour, the
-copy with a number known and not, the menu's composition and what each row
-asks the window for, and that none of it needs the kit. Run offscreen.
+is what it can be checked on without one: the mark drawn per state and size
+(its fill by sampling pixels of the two frames), the copy with a number
+known and not, the menu's composition and what each row asks the window for, and that none of it needs the kit. Run offscreen.
 """
 from __future__ import annotations
 
-import ctypes
 import json
 import os
 import subprocess
@@ -28,8 +26,6 @@ os.environ["WALLPAPER_TOOLKIT_DATA"] = str(TMP / "data")     # before any app mo
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 # CI's console is cp1252; a label with a character outside it must not crash print.
 sys.stdout.reconfigure(errors="replace")
-
-import math                                           # noqa: E402
 
 from PySide6.QtCore import QPoint                     # noqa: E402
 from PySide6.QtGui import QColor, QImage              # noqa: E402
@@ -52,7 +48,7 @@ def check(label: str, condition: bool) -> None:
 
 
 def image(state, size, **kw) -> QImage:
-    return ti.ring_pixmap(state, size, **kw).toImage().convertToFormat(QImage.Format_ARGB32)
+    return ti.mark_pixmap(state, size, **kw).toImage().convertToFormat(QImage.Format_ARGB32)
 
 
 def near(got: QColor, want: str, slack=40) -> bool:
@@ -61,200 +57,114 @@ def near(got: QColor, want: str, slack=40) -> bool:
             and abs(got.green() - w.green()) <= slack and abs(got.blue() - w.blue()) <= slack)
 
 
-def on_ring(img: QImage, size: int, degrees: float) -> QColor:
-    """The pixel on the ring's centre line, `degrees` clockwise from twelve."""
-    r, c = ti.ring_radius(size), size / 2
-    a = math.radians(degrees)
-    return img.pixelColor(int(c + r * math.sin(a)), int(c - r * math.cos(a)))
-
-
-def lit(img: QImage, size: int, colour: str, step=5) -> float:
-    """The share of the ring (sampled every `step` degrees) in a colour."""
-    angles = [d + step / 2 for d in range(0, 360, step)]
-    return sum(near(on_ring(img, size, d), colour) for d in angles) / len(angles)
-
-
 def solid(img: QImage) -> int:
     return sum(img.pixelColor(x, y).alpha() > 0
                for x in range(img.width()) for y in range(img.height()))
 
 
+def painted(img: QImage, colour: str, box=None, slack=40) -> int:
+    """How many pixels (in `box`, x0, y0, x1, y1) are in a colour."""
+    x0, y0, x1, y1 = box or (0, 0, img.width(), img.height())
+    return sum(near(img.pixelColor(x, y), colour, slack)
+               for x in range(x0, x1) for y in range(y0, y1))
+
+
+# At 32 px a grid unit is half a pixel: the back frame's left stroke runs down
+# x = 6, its top-right corner is clear of the front frame at (19, 10), the front
+# frame's body spans x = 13..24 (its right side clear of the badge at y = 17),
+# and the badge sits round (25, 25).
+BACK_LEFT, BACK_RIGHT, FRONT_LEFT, FRONT_RIGHT = (6, 12), (19, 10), (14, 19), (21, 17)
+BADGE = (int(25 - 0.16 * 32), int(25 - 0.16 * 32), 32, 32)
+FILL = "tray.fill.running"
+
+
+def at(img: QImage, xy) -> QColor:
+    return img.pixelColor(*xy)
+
+
 print("-- geometry --")
-check("the stroke is the design's: 2.5 at 16, 3 at 24, 3.5 at 32",
-      [ti.stroke_width(s) for s in (16, 24, 32)] == [2.5, 3.0, 3.5])
-check("and interpolated, half a pixel to eight: 20, 40 and 48",
-      [ti.stroke_width(s) for s in (20, 40, 48)] == [2.75, 4.0, 4.5])
-check("the ring's radius leaves half a pixel at the edge: 6.25, 10, 13.75",
-      [ti.ring_radius(s) for s in (16, 24, 32)] == [6.25, 10.0, 13.75])
 check("every size Windows may ask for is drawn", ti.SIZES == (16, 20, 24, 32, 40, 48))
-check("a tick's stroke is the design's at 16, 24 and 32",
-      [ti.tick_width(s) for s in (16, 24, 32)] == [1.9, 2.0, 2.4])
-check("and grows with the size beyond it", ti.tick_width(48) > ti.tick_width(32) > ti.tick_width(20))
-check("the ring is snapped to 2 degrees, clamped to 0..1",
-      ti.snap(0.5004) == 0.5 and ti.snap(1.4) == 1.0 and ti.snap(-1) == 0.0
-      and ti.snap(None) is None and ti.snap(1 / 180) == 1 / 180)
+check("at 16 px the mark is about ten pixels wide: about ten steps",
+      ti.fill_steps(16) == 10 and ti.fill_steps(32) == 21 and ti.FILL_STEPS == ti.fill_steps(48) == 31)
+check("the scale runs from the back frame's left edge to the front frame's right edge",
+      (ti.FILL_FROM, ti.FILL_TO) == (11.0, 52.5))
+check("a fill is snapped to its steps, clamped to 0..1",
+      ti.snap(0.5004, 10) == 0.5 and ti.snap(1.4) == 1.0 and ti.snap(-1) == 0.0
+      and ti.snap(None) is None)
+check("the fill's edge is on a whole pixel",
+      all(float(ti.fill_edge(s, f)).is_integer() for s in ti.SIZES for f in (0, 0.13, 0.5, 0.77, 1)))
 
 print("-- each state at each size --")
 for state in ti.STATES:
     ok = True
     for size in ti.SIZES:
-        pix = ti.ring_pixmap(state, size, fraction=0.62, number=62)
+        pix = ti.mark_pixmap(state, size, fill=0.62)
         img = pix.toImage().convertToFormat(QImage.Format_ARGB32)
         ok = ok and (pix.width(), pix.height()) == (size, size) and solid(img) > size \
-            and img.pixelColor(0, 0).alpha() == 0 and img.pixelColor(size - 1, size - 1).alpha() == 0
+            and img.pixelColor(0, 0).alpha() == 0 and img.pixelColor(size - 1, 0).alpha() == 0
     check(f"{state}: drawn at every size, the right size, with clear corners", ok)
-icon = ti.tray_icon(ti.RUNNING, 0.5, 50)
+icon = ti.tray_icon(ti.RUNNING, 0.5)
 check("one QIcon holds them all, so Windows can pick at 150 percent",
       sorted(s.width() for s in icon.availableSizes()) == list(ti.SIZES))
 check("and asking it for 24 gets the 24 that was drawn",
       icon.pixmap(24, 24).size().width() == 24 and not icon.pixmap(24, 24).isNull())
 try:
-    ti.ring_pixmap("sleepy", 16)
+    ti.mark_pixmap("sleepy", 16)
     check("a state that is none is refused", False)
 except ValueError:
     check("a state that is none is refused", True)
 
-print("-- the arc --")
-quarter, half, three = (image(ti.RUNNING, 32, fraction=f) for f in (0.25, 0.5, 0.75))
-check("a quarter ring covers about a quarter (the round caps add a little)",
-      abs(lit(quarter, 32, "tray.dark.ring") - 0.25) < 0.08)
-check("half covers half", abs(lit(half, 32, "tray.dark.ring") - 0.5) < 0.08)
-check("three quarters cover three quarters", abs(lit(three, 32, "tray.dark.ring") - 0.75) < 0.08)
-check("it runs clockwise from twelve: half is the right side, not the left",
-      near(on_ring(half, 32, 90), "tray.dark.ring") and not near(on_ring(half, 32, 270), "tray.dark.ring"))
-check("a quarter ends before three o'clock's far side",
-      near(on_ring(quarter, 32, 45), "tray.dark.ring") and not near(on_ring(quarter, 32, 135), "tray.dark.ring"))
-check("what is not filled is the track, dimmer",
-      0 < on_ring(half, 32, 270).alpha() < 120)
-check("an empty ring is track only", lit(image(ti.RUNNING, 32, fraction=0.0), 32, "tray.dark.ring") == 0)
-check("a ring drawn at 16 covers its fraction too",
-      abs(lit(image(ti.RUNNING, 16, fraction=0.5), 16, "tray.dark.ring") - 0.5) < 0.12)
-check("the same step draws the same ring",
-      image(ti.RUNNING, 24, fraction=0.5001) == image(ti.RUNNING, 24, fraction=0.5))
+print("-- the fill --")
+empty, fifth, half, most, full = (image(ti.RUNNING, 32, fill=f) for f in (0.0, 0.2, 0.5, 0.75, 1.0))
+check("empty: no colour, the frames grey and the front body dark",
+      painted(empty, FILL) == 0 and near(at(empty, BACK_LEFT), "tray.frame")
+      and near(at(empty, FRONT_RIGHT), "tray.body"))
+check("it fills from the left: at 20 % the back frame's left edge, not the front frame",
+      near(at(fifth, BACK_LEFT), FILL) and not near(at(fifth, FRONT_LEFT), FILL)
+      and near(at(fifth, FRONT_RIGHT), "tray.body"))
+check("at half it has reached into the front frame, not across it",
+      near(at(half, FRONT_LEFT), FILL) and near(at(half, FRONT_RIGHT), "tray.body"))
+check("more time gone is more colour",
+      0 < painted(fifth, FILL) < painted(half, FILL) < painted(most, FILL) < painted(full, FILL))
+check("both frames filled whole is 100 %: nothing grey or dark is left",
+      near(at(full, BACK_LEFT), FILL) and near(at(full, BACK_RIGHT), FILL)
+      and near(at(full, FRONT_LEFT), FILL) and near(at(full, FRONT_RIGHT), FILL)
+      and painted(full, "tray.body", slack=6) == 0)
+check("anything short of it leaves some unfilled",
+      painted(image(ti.RUNNING, 32, fill=0.8), "tray.body", slack=6) > 0)
+check("the same step draws the same icon",
+      image(ti.RUNNING, 16, fill=0.501) == image(ti.RUNNING, 16, fill=0.5))
 check("another step draws another",
-      image(ti.RUNNING, 24, fraction=0.51) != image(ti.RUNNING, 24, fraction=0.5))
-paused = image(ti.PAUSED, 32, fraction=0.5)
-check("a paused ring is the same arc in grey",
-      abs(lit(paused, 32, "tray.dark.paused") - 0.5) < 0.08 and lit(paused, 32, "tray.dark.ring") == 0)
-finished = image(ti.FINISHED, 32, fraction=0.1)
-check("a finished ring is full and green, whatever it was told",
-      lit(finished, 32, "tray.dark.ok") > 0.97)
-unknown = image(ti.UNKNOWN, 32)
-dashes = [on_ring(unknown, 32, d).alpha() > 20 for d in range(0, 360, 3)]
-check("an unknown ring is a dotted track: dashes and gaps, no fill",
-      lit(unknown, 32, "tray.dark.ring") == 0 and 0.35 < sum(dashes) / len(dashes) < 0.65
-      and sum(1 for a, b in zip(dashes, dashes[1:]) if a != b) >= 12)
+      image(ti.RUNNING, 16, fill=0.6) != image(ti.RUNNING, 16, fill=0.5))
+check("running has no badge", painted(half, "tray.fill.paused", BADGE) == 0
+      and painted(half, "tray.fill.unknown", BADGE) == 0 and painted(half, "tray.fill.ok", BADGE) == 0)
 
-print("-- the middle --")
-for size in (24, 32, 40, 48):
-    with_n = image(ti.RUNNING, size, fraction=0.5, number=62)
-    check(f"{size} px carries the percentage",
-          with_n != image(ti.RUNNING, size, fraction=0.5)
-          and sum(near(with_n.pixelColor(x, y), "tray.dark.glyph", 60)
-                  for x in range(size) for y in range(size)) > size // 2)
-for size in (16, 20):
-    plain = image(ti.RUNNING, size, fraction=0.5)
-    check(f"{size} px has no room for it: the number is left out",
-          image(ti.RUNNING, size, fraction=0.5, number=62) == plain)
-    c = size // 2
-    check(f"and a dot marks the centre at {size}",
-          near(plain.pixelColor(c, c), "tray.dark.glyph", 30) or near(plain.pixelColor(c - 1, c - 1), "tray.dark.glyph", 30))
-big = image(ti.RUNNING, 32, fraction=0.5, number=100)
-inner = ti.ring_radius(32) - ti.stroke_width(32) / 2 + 1
-check("three digits still fit inside the ring",
-      any(near(big.pixelColor(x, y), "tray.dark.glyph", 60) for x in range(32) for y in range(32))
-      and all(math.hypot(x + 0.5 - 16, y + 0.5 - 16) <= inner
-              for x in range(32) for y in range(32) if near(big.pixelColor(x, y), "tray.dark.glyph", 60)))
-check("a running ring with no count at 32 has the dot, not a blank",
-      near(image(ti.RUNNING, 32, fraction=0.5).pixelColor(16, 16), "tray.dark.glyph", 30)
-      or near(image(ti.RUNNING, 32, fraction=0.5).pixelColor(15, 15), "tray.dark.glyph", 30))
-pause = image(ti.PAUSED, 32, fraction=0.5)
-check("paused has two bars in the middle", near(pause.pixelColor(14, 16), "tray.dark.glyph", 30)
-      and near(pause.pixelColor(18, 16), "tray.dark.glyph", 30) and pause.pixelColor(16, 16).alpha() < 20)
-tick = image(ti.FINISHED, 32)
-check("finished has a tick in the middle",
-      near(tick.pixelColor(14, 21), "tray.dark.glyph", 60) or near(tick.pixelColor(14, 20), "tray.dark.glyph", 60))
-check("an unknown ring with a count still says it; without one it asks",
-      image(ti.UNKNOWN, 32, number=40) != image(ti.UNKNOWN, 32)
-      and image(ti.UNKNOWN, 16, number=40) != image(ti.UNKNOWN, 16))
+print("-- the other states --")
+paused = image(ti.PAUSED, 32, fill=0.5)
+check("paused keeps the fill where it was, in cold grey",
+      painted(paused, FILL) == 0 and near(at(paused, FRONT_LEFT), "tray.fill.paused")
+      and near(at(paused, FRONT_RIGHT), "tray.body"))
+check("with a grey pause badge", painted(paused, "tray.fill.paused", BADGE) > 20
+      and painted(paused, "tray.badge.pause", BADGE, slack=60) > 4)
+unknown = image(ti.UNKNOWN, 32, fill=0.5)
+check("unknown has no fill, whatever it was told, and is muted",
+      painted(unknown, FILL) == 0 and painted(unknown, "tray.fill.paused") == 0
+      and 0 < at(unknown, BACK_LEFT).alpha() < 200)
+check("with an amber ? badge", painted(unknown, "tray.fill.unknown", BADGE) > 20
+      and painted(unknown, "tray.badge.glyph", BADGE, slack=60) > 2)
+finished = image(ti.FINISHED, 32, fill=0.1)
+check("finished is both frames green, whatever it was told",
+      near(at(finished, BACK_LEFT), "tray.fill.ok") and near(at(finished, BACK_RIGHT), "tray.fill.ok")
+      and near(at(finished, FRONT_LEFT), "tray.fill.ok"))
+check("with a green tick badge", painted(finished, "tray.badge.glyph", BADGE, slack=60) > 2)
+check("the badge reads at 16 px too", painted(image(ti.UNKNOWN, 16), "tray.fill.unknown") > 4
+      and painted(image(ti.PAUSED, 16, fill=0.5), "tray.fill.paused") > 4)
+check("the colours are the design's",
+      [theme.color(f"tray.fill.{n}").name().upper() for n in ("running", "paused", "ok", "unknown")]
+      == ["#4C8DFF", "#7C879C", "#3DD68C", "#E8A33D"])
+check("the palette is the theme's", ti.palette().running == theme.color(FILL)
+      and ti.palette().fill(ti.FINISHED) == theme.color("tray.fill.ok"))
 
-print("-- a light taskbar --")
-light = image(ti.RUNNING, 32, fraction=0.5, light=True)
-check("the ring is #2C6BD8", near(on_ring(light, 32, 90), "tray.light.ring", 10)
-      and theme.color("tray.light.ring").name().upper() == "#2C6BD8")
-check("and not the dark taskbar's", not near(on_ring(light, 32, 90), "tray.dark.ring", 10))
-check("the glyphs are #1A1A1A", theme.color("tray.light.glyph").name().upper() == "#1A1A1A"
-      and near(image(ti.FINISHED, 32, light=True).pixelColor(14, 21), "tray.light.glyph", 60)
-      or near(image(ti.FINISHED, 32, light=True).pixelColor(14, 20), "tray.light.glyph", 60))
-check("the track goes dark on light", on_ring(light, 32, 270).red() < 40
-      and 0 < on_ring(light, 32, 270).alpha() < 120)
-check("paused and finished have their light colours",
-      near(on_ring(image(ti.PAUSED, 32, fraction=0.5, light=True), 32, 90), "tray.light.paused", 10)
-      and near(on_ring(image(ti.FINISHED, 32, light=True), 32, 90), "tray.light.ok", 10))
-check("a light icon is a different picture", light != image(ti.RUNNING, 32, fraction=0.5))
-p = ti.palette(True)
-check("the palette is the theme's", p.ring == theme.color("tray.light.ring")
-      and ti.palette(False).ring == theme.color("tray.dark.ring"))
-
-
-def reading(value):
-    return lambda: value
-
-
-check("SystemUsesLightTheme = 1 is a light taskbar", ti.taskbar_is_light(reading(1)))
-check("0 is dark", not ti.taskbar_is_light(reading(0)))
-check("a machine that cannot be asked is taken to be dark", not ti.taskbar_is_light(reading(None)))
-check("the real switch reads without failing", ti.taskbar_is_light() in (True, False))
-
-print("-- hearing Windows change it --")
-state = {"value": 0}
-watch = ti.TaskbarTheme(lambda: state["value"])
-flips: list[bool] = []
-watch.changed.connect(flips.append)
-check("it starts as the switch says", watch.light is False)
-check("reading it again unchanged says nothing", watch.refresh() is False and flips == [])
-state["value"] = 1
-check("a change is noticed and announced once", watch.refresh() and flips == [True] and watch.light)
-check("and not again", not watch.refresh() and flips == [True])
-state["value"] = 0
-watch.poll(ti.RECHECK_SECONDS - 1)
-check("polled before its time it does not read", watch.light is True)
-watch.poll(1)
-check("polled on time it does, so a message that never came is caught",
-      watch.light is False and flips == [True, False])
-
-
-def lparam(text):
-    buffer = ctypes.create_unicode_buffer(text)
-    lparam.keep = buffer
-    return ctypes.addressof(buffer)
-
-
-check("Windows' theme message is a colour message", ti.is_colour_message(ti.WM_THEMECHANGED, 0))
-check("so is a settings change for ImmersiveColorSet",
-      ti.is_colour_message(ti.WM_SETTINGCHANGE, lparam("ImmersiveColorSet")))
-check("a settings change for anything else is not",
-      not ti.is_colour_message(ti.WM_SETTINGCHANGE, lparam("intl"))
-      and not ti.is_colour_message(ti.WM_SETTINGCHANGE, 0) and not ti.is_colour_message(0x0001, 0))
-state["value"] = 1
-watch.hear(ti.WM_SETTINGCHANGE, lparam("ImmersiveColorSet"))
-app.processEvents()
-check("hearing one refreshes", watch.light is True and flips[-1] is True)
-state["value"] = 0
-watch.hear(ti.WM_SETTINGCHANGE, lparam("intl"))
-app.processEvents()
-check("hearing another does not", watch.light is True)
-watch.listen(app)
-check("it listens through a window that exists and is never shown",
-      watch._window is not None and not watch._window.isVisible())
-if os.name == "nt":
-    from ctypes import wintypes
-    msg = wintypes.MSG()
-    msg.message, msg.lParam = ti.WM_THEMECHANGED, 0
-    handled = watch.nativeEventFilter(b"windows_generic_MSG", ctypes.addressof(msg))
-    app.processEvents()
-    check("Qt's native event filter passes a window message on and never swallows it",
-          handled == (False, 0) and watch.light is False)
 
 print("-- what the icon is, from the tracker's reading --")
 _n = [0]
@@ -276,10 +186,13 @@ def countdown(**kw) -> Countdown:
     return Countdown(**base)
 
 
-check("a counting timer is running, with the share left",
-      tw.icon_state(progress(), countdown()) == (ti.RUNNING, 0.75))
-check("a paused one is paused, the share kept",
-      tw.icon_state(progress(), countdown(paused=True)) == (ti.PAUSED, 0.75))
+check("a counting timer is running, filled with the share of the delay gone",
+      tw.icon_state(progress(), countdown()) == (ti.RUNNING, 0.25))
+check("empty just after a change, full the moment the next is due",
+      tw.icon_state(progress(), countdown(running=0.0)) == (ti.RUNNING, 0.0)
+      and tw.icon_state(progress(), countdown(running=600.0)) == (ti.RUNNING, 1.0))
+check("a paused one is paused, the fill kept",
+      tw.icon_state(progress(), countdown(paused=True)) == (ti.PAUSED, 0.25))
 check("no timer reading is unknown",
       tw.icon_state(progress(), None) == (ti.UNKNOWN, None)
       and tw.icon_state(progress(), countdown(known=False)) == (ti.UNKNOWN, None)
@@ -312,11 +225,15 @@ a, b = progress(monitor="Monitor1"), progress(monitor="Monitor2", seen=201)
 counts = {"Monitor1": countdown(running=435.0), "Monitor2": countdown(monitor="Monitor2")}
 text = tw.tooltip([a, b], a, counts)
 lines = text.split("\n")
-check("one line per monitor, the lead marked", len(lines) == 2 and lines[0].startswith("▸ Monitor1")
-      and lines[1].startswith("  Monitor2"))
-check("with the count and when the next change is",
-      lines[0] == "▸ Monitor1 · 4 of 201 shown · next in 2:45")
-check("a finished playlist has no next change", lines[1] == "  Monitor2 · all 201 shown")
+check("one line per monitor, the lead marked", len(lines) == 2 and lines[0].startswith("▸ 2%")
+      and lines[1].startswith("  100%"))
+check("the playlist's percentage first, then the count and when the next change is",
+      lines[0] == "▸ 2% · Monitor1 · 4 of 201 shown · next in 2:45")
+check("a finished playlist is 100 % and says so, with no next change",
+      lines[1] == "  100% · Monitor2 · 201 of 201 shown · finished")
+check("the design's example", tw.tooltip_line(
+      progress(monitor="Monitor1", seen=81, total=192), countdown(running=600 - 269.0), lead=True)
+      == "▸ 42% · Monitor1 · 81 of 192 shown · next in 4:29")
 check("a paused timer says so", "(paused)" in tw.tooltip([a], a, {"Monitor1": countdown(paused=True)}))
 check("it fits what Windows shows", len(text) <= tw.TOOLTIP_LIMIT)
 many = [progress(monitor=f"Monitor{n}") for n in range(1, 9)]
@@ -594,27 +511,23 @@ finally:
 tray.clock_timer.stop()
 shell = tray.icon
 check("it starts as unknown, in the display name", len(shell.icons) == 1 and shell.tip == "Toolkit")
-# The real switch is whatever this machine says (a CI runner may well be light):
-# the rest of this section starts from a dark taskbar of its own.
-tray.taskbar._read = lambda: 0
-tray.taskbar.refresh()
 
 lead = progress()
 tray.feed.results = [lead]
 tray._on_update()                       # the feed has looked: the tray takes the reading
-check("before the timer is read the ring is unknown, with the count in it",
-      tray._icon_key[0] == ti.UNKNOWN and tray._icon_key[2] == 2
-      and shell.tip == "▸ Monitor1 · 4 of 201 shown")
+check("before the timer is read the icon is unknown; the tooltip has the playlist",
+      tray._icon_key == (ti.UNKNOWN, None)
+      and shell.tip == "▸ 2% · Monitor1 · 4 of 201 shown")
 drawn = len(shell.icons)
 clock.now = {"Monitor1": countdown(running=150.0)}
 tray._tick_clock()
-check("a counting playlist draws the ring and says where it is",
-      len(shell.icons) == drawn + 1 and tray._icon_key[0] == ti.RUNNING
-      and shell.tip == "▸ Monitor1 · 4 of 201 shown · next in 7:30")
+check("a counting playlist fills the icon and says where it is",
+      len(shell.icons) == drawn + 1 and tray._icon_key == (ti.RUNNING, round(0.25 * ti.FILL_STEPS))
+      and shell.tip == "▸ 2% · Monitor1 · 4 of 201 shown · next in 7:30")
 drawn = len(shell.icons)
 clock.now = {"Monitor1": countdown(running=151.0)}
 tray._tick_clock()
-check("a second further on is the same 2-degree step: no new icon", len(shell.icons) == drawn)
+check("a second further on is the same step: no new icon", len(shell.icons) == drawn)
 clock.now = {"Monitor1": countdown(running=170.0)}
 tray._tick_clock()
 check("a few seconds further on crosses a step: a new icon, and the tooltip moves",
@@ -622,15 +535,8 @@ check("a few seconds further on crosses a step: a new icon, and the tooltip move
 drawn = len(shell.icons)
 clock.now = {"Monitor1": countdown(running=170.0, paused=True)}
 tray._tick_clock()
-check("pausing draws the grey ring", len(shell.icons) == drawn + 1
+check("pausing draws the grey fill", len(shell.icons) == drawn + 1
       and tray._icon_key[0] == ti.PAUSED and shell.tip.endswith("(paused)"))
-drawn = len(shell.icons)
-tray.taskbar._read = lambda: 1
-tray.taskbar.refresh()
-check("Windows going light redraws the icon in its light colours",
-      len(shell.icons) == drawn + 1 and tray._icon_key[-1] is True)
-tray.taskbar._read = lambda: 0
-tray.taskbar.refresh()
 
 tray._rebuild_menu()
 check("the menu is built when it opens, with the numbers read then",
@@ -649,7 +555,7 @@ check("choosing Rotate now… asks the window for the Rotator's question",
 lead.seen = 201
 tray.feed.results = [lead]
 tray._on_update()
-check("when the last wallpaper is shown there is one balloon, with the ring as its picture",
+check("when the last wallpaper is shown there is one balloon, with the icon as its picture",
       len(shell.messages) == 1 and shell.messages[0][0] == "Playlist finished"
       and shell.messages[0][1] == f"All 201 wallpapers on Monitor1 have been shown. "
                                   f"Rotate to swap in 1{NB}000 folders from the reserve."
@@ -678,7 +584,6 @@ tray._on_update()
 tray._tick_clock()
 check("with no playlist the tooltip is the tracker's error and the icon asks",
       shell.tip == "config.json not found" and tray._icon_key[0] == ti.UNKNOWN)
-tray.taskbar.changed.disconnect()
 tw.rotation_batch, tw.next_run_number, tw.review_waiting = real[3:]
 
 print("-- the tray stays light --")
