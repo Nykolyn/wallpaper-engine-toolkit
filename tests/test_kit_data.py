@@ -646,6 +646,27 @@ tag_table.setModel(tag_rows)
 tag_table.resize(330, 170)
 check("a table paints tag pills, NeedsTags and selection checkboxes", drawn(tag_table))
 
+# The Tracker's playlist: one more wallpaper shown moves the queue's header a
+# row down, and the row count stays as it was. Rows taller than a header (a
+# thumb's), so a row sized as one shows.
+QUEUE_GROUPS = [Group("shown", "Shown"), Group("queue", "Queue")]
+moving = Rows(COLUMNS, rows, groups=QUEUE_GROUPS,
+              group_of=lambda r: "shown" if r[0] < 4 else "queue")
+moving_table = Table()
+moving_table.setModel(moving)
+moving_table.set_row_height(Table.group_row_height() + 40)
+for seen in (5, 6, 7):
+    moving.set_rows(rows, groups=QUEUE_GROUPS,
+                    group_of=lambda r, seen=seen: "shown" if r[0] < seen else "queue")
+moving_header = moving_table.verticalHeader()
+moving_groups = set(moving.group_rows())
+moving_wrong = [r for r in range(moving.rowCount()) if moving_header.sectionSize(r)
+                != (Table.group_row_height() if r in moving_groups
+                    else moving_header.defaultSectionSize())]
+check(f"a header that moves leaves no row behind sized as a header ({moving_wrong})",
+      moving.group_rows() == [0, 8] and moving.rowCount() == len(rows) + 2
+      and moving_wrong == [])
+
 # 33 000 rows, as the reserve has
 BIG = 33_000
 big_rows = [(i, f"Wallpaper {i}", ("Marlow", "tidewright", "orbit_lab")[i % 3], i * 7 % 3600)

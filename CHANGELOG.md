@@ -6,6 +6,20 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [3.18.3] - 2026-10-09
+
+### Fixed
+
+- **The Tracker's playlist stays in one piece to its end.** Each wallpaper
+  shown moves the Queue's header a row down, and the row it left kept a
+  header's height: Qt keeps its rows' sizes when a list is read again with as
+  many rows as before. The rows were then painted taller than Qt had them, so
+  under the first such row everything was drawn off its place, more so with
+  every wallpaper shown: rows overlapped, flickered as previews played, and
+  near the end of a pass the last few queued ones could not be seen or clicked.
+  A row that stops being a header is made a full row again, in every table
+  with groups.
+
 ## [3.18.2] - 2026-10-04
 
 ### Fixed
@@ -1513,7 +1527,8 @@ restructured yet; the tabs keep their layout and take on the new look.
   was right for one library and wrong for every other. Nothing is tagged now
   unless you ask for it.
 
-[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.18.2...HEAD
+[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.18.3...HEAD
+[3.18.3]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.18.2...v3.18.3
 [3.18.2]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.18.1...v3.18.2
 [3.18.1]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.18.0...v3.18.1
 [3.18.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.17.1...v3.18.0
