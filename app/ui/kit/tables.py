@@ -1464,6 +1464,7 @@ class Table(QTableView):
         self.horizontalHeader().geometriesChanged.connect(self._spans_changed)
 
         self._row_height: int | None = None
+        self._short_rows: set[int] = set()      # the rows sized as group headers
         # The size the stretched thumb column draws while too narrow for its own
         # (theme.THUMB_NARROWER); None draws its own.
         self._narrow: str | None = None
@@ -1611,9 +1612,18 @@ class Table(QTableView):
         header = self.verticalHeader()
         header.setDefaultSectionSize(self.row_height())
         model: TableModel = self.model()
-        group = self.group_row_height()
-        for row in model.group_rows():
+        group, normal = self.group_row_height(), header.defaultSectionSize()
+        groups = model.group_rows()
+        # A reset that leaves the row count as it was leaves the rows' sizes as
+        # they were (QHeaderView keeps its sections), so a row that was a header
+        # and shows an item now is made tall again. Left short, it drew a whole
+        # row into a header's height, and every row under it was painted off
+        # where Qt has it: the Tracker's queue, one header moved per wallpaper.
+        for row in self._short_rows.difference(groups):
+            header.resizeSection(row, normal)
+        for row in groups:
             header.resizeSection(row, group)
+        self._short_rows = set(groups)
 
     # -- sizes
 
