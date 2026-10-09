@@ -6,6 +6,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [3.19.1] - 2026-10-10
+
+### Fixed
+
+- **The installer no longer misses a copy that is still starting.** A window
+  or tray tracker takes its "running" mark a few seconds after it starts, and
+  hears the request to quit only from then on. An uninstall or update in those
+  seconds — right after an update had started the tracker again — saw nothing
+  running, went ahead, and could not remove the tracker's program file, which
+  it was still running from. The installer now waits for a starting copy to
+  come up, then asks it to quit as usual.
+
 ## [3.19.0] - 2026-10-10
 
 ### Added
@@ -1588,7 +1600,8 @@ restructured yet; the tabs keep their layout and take on the new look.
   was right for one library and wrong for every other. Nothing is tagged now
   unless you ask for it.
 
-[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.19.0...HEAD
+[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.19.1...HEAD
+[3.19.1]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.19.0...v3.19.1
 [3.19.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.18.4...v3.19.0
 [3.18.4]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.18.3...v3.18.4
 [3.18.3]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.18.2...v3.18.3

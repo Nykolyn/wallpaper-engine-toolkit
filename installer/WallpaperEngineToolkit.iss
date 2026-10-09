@@ -358,9 +358,43 @@ end;
 
 { ---- running copies -------------------------------------------------------- }
 
+{ Whether a WallpaperEngineToolkit.exe process exists, from any folder. }
+function ProgramRunning: Boolean;
+var
+  Locator, Service, Found: Variant;
+begin
+  Result := False;
+  try
+    Locator := CreateOleObject('WbemScripting.SWbemLocator');
+    Service := Locator.ConnectServer('.', 'root\CIMV2');
+    Found := Service.ExecQuery('SELECT ProcessId FROM Win32_Process WHERE Name = ''{#ExeName}''');
+    Result := Found.Count > 0;
+  except
+    Result := False;
+  end;
+end;
+
+{ A window or a tracker holds its mutex from soon after it starts until it
+  ends, and listens for the request to quit while it does. A process of the
+  toolkit runs for a few seconds before it takes its mutex, though: one just
+  started, or the tracker an update has just started again. }
 function AnythingRunning: Boolean;
 begin
-  Result := CheckForMutexes('{#Mutexes}');
+  Result := CheckForMutexes('{#Mutexes}') or ProgramRunning;
+end;
+
+{ Give a copy that is still starting the time to come up and take its mutex,
+  so that it is asked to quit rather than missed. }
+procedure WaitWhileStarting;
+var
+  I: Integer;
+begin
+  for I := 1 to 20 * 4 do
+  begin
+    if CheckForMutexes('{#Mutexes}') or not ProgramRunning then
+      exit;
+    Sleep(250);
+  end;
 end;
 
 function WaitUntilGone(Seconds: Integer): Boolean;
@@ -387,6 +421,7 @@ var
 begin
   Result := '';
   repeat
+    WaitWhileStarting;
     if not AnythingRunning then
       exit;
     if (Exe <> '') and FileExists(Exe) then
