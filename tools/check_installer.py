@@ -81,13 +81,11 @@ def digests(folder: Path) -> dict[str, str]:
 
 
 def task_program() -> str:
-    done = subprocess.run(["schtasks", "/query", "/tn", TASK, "/xml", "ONE"],
-                          capture_output=True)
-    if done.returncode != 0:
-        return ""
-    text = done.stdout.decode("utf-16", errors="replace")
-    start, end = text.find("<Command>"), text.find("</Command>")
-    return text[start + len("<Command>"):end].strip() if start >= 0 else ""
+    """What the logon task starts, read the way the app reads it: schtasks hands
+    its XML over in UTF-16 or not, with a BOM or not."""
+    sys.path.insert(0, str(ROOT))
+    from app.autostart import _task_command, export_task
+    return _task_command(export_task(TASK))
 
 
 def registered() -> bool:
@@ -111,6 +109,9 @@ def uninstall(log: Path) -> bool:
     %TEMP% and exits at once, so the end is when Windows forgets the install."""
     uninstaller = INSTALL_DIR / "unins000.exe"
     print(f"-- {uninstaller}", flush=True)
+    if not uninstaller.is_file():
+        print("   (not installed)")
+        return False
     subprocess.run([str(uninstaller), "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART",
                     f"/LOG={log}"], timeout=300)
     return wait_for(lambda: not registered(), 300)
@@ -120,7 +121,9 @@ def show_log(log: Path) -> None:
     if log.exists():
         print(f"---- {log.name} (the app's steps) ----")
         for line in log.read_text(encoding="utf-8", errors="replace").splitlines():
-            if "--" in line or "Toolkit" in line or "rror" in line:
+            if any(word in line for word in ("--quit", "--adopt-data", "--backup-data",
+                                             "--autostart", "still running", "Prepare",
+                                             "rror")):
                 print("   ", line)
 
 

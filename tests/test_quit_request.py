@@ -90,6 +90,33 @@ while not asked and time.monotonic() < until:
     time.sleep(0.02)
 check("a quit request reaches it, and only that one does", asked == [True])
 
+# A tracker started before the notification area exists waits for it, up to
+# two minutes, holding its mutex all along: it must hear the request then too.
+# (CI's Windows has no notification area, and that is how this was found.)
+from types import SimpleNamespace                                        # noqa: E402
+from app import tracker_tray                                             # noqa: E402
+
+real_tray_icon = tracker_tray.QSystemTrayIcon
+tracker_tray.QSystemTrayIcon = SimpleNamespace(isSystemTrayAvailable=lambda: False)
+name = f"WallpaperEngineToolkit.tracker-wait-test.{os.getpid()}"
+# Its own listener: the one above stays alive, as a tracker's does.
+waiting_listener = qr.QuitListener(name)
+heard: list[bool] = []
+waiting_listener.requested.connect(lambda: heard.append(True))
+# The request, from a second process as the installer's would come.
+asker = __import__("subprocess").Popen(
+    [sys.executable, "-c",
+     "import sys, time; sys.path.insert(0, sys.argv[1]); time.sleep(0.5);"
+     "from PySide6.QtCore import QCoreApplication; a = QCoreApplication([]);"
+     "from app import window_instance as wi; wi.send('quit:', wait=5, name=sys.argv[2])",
+     str(Path(__file__).resolve().parent.parent), name])
+started = time.monotonic()
+found = tracker_tray._wait_for_tray(app, lambda: bool(heard))
+asker.wait(10)
+tracker_tray.QSystemTrayIcon = real_tray_icon
+check("a tracker still waiting for the notification area hears the request, and stops waiting",
+      not found and heard == [True] and time.monotonic() - started < 10)
+
 print()
 print("PASSED %d/%d" % (sum(results), len(results)))
 sys.exit(0 if all(results) else 1)
