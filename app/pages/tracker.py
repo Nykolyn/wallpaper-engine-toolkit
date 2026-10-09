@@ -294,6 +294,11 @@ def provenance(p, now: datetime) -> list[tuple[str, str]]:
     if p.gone:
         warn.append(f"{fmt.counted(p.gone, 'wallpaper')} deleted since the playlist was built, "
                     f"not counted.")
+    passed = getattr(p, "passed", 0)
+    if passed:
+        warn.append(f"{fmt.counted(passed, 'wallpaper')} dealt while Wallpaper Engine was "
+                    f"closed and passed over as it started — never on screen, so not "
+                    f"counted, and out of this pass.")
     if getattr(p, "from_engine", False):
         neutral.append("Read from Wallpaper Engine's own record of the pass.")
         if p.inferred:
@@ -392,7 +397,10 @@ def playlist_rows(cycle: Cycle | None, now: datetime, *, live: bool = True,
             shown_for=took, shown_approx=took is not None and (item in inferred or end_inferred),
             on_screen=item == on_screen))
 
-    waiting = {i for i in cycle.items if i not in seen and i not in gone}
+    # Passed over as Wallpaper Engine started: not shown, and not to come
+    # in this pass either.
+    passed = cycle.passed_over
+    waiting = {i for i in cycle.items if i not in seen and i not in gone and i not in passed}
     after = cycle.current
     if after not in number and seen:
         after = max(seen, key=lambda i: seen[i] or datetime.min)

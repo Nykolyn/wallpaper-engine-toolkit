@@ -263,6 +263,7 @@ class TrackerFeed(QObject):
             try:
                 schedule.looked()
                 results = tracker.poll()
+                schedule.again_in(tracker.recheck_in)
             except Exception:           # noqa: BLE001 — the next look tries again
                 report("a look")
                 return

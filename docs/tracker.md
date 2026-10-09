@@ -429,6 +429,16 @@ A rotation that [rebuilds the playlist](rotator.md#wallpaper-engines-playlist)
 also starts the monitor's pass over, so the new cycle begins the moment
 Wallpaper Engine comes back and deals the first wallpaper of the new set.
 
+Nothing is on screen while Wallpaper Engine is closed, so a rotation made with
+it closed counts nothing until it starts: the wallpaper the rotation dealt
+waits in the queue. Started after a while closed, Wallpaper Engine moves every
+monitor on to a new wallpaper within seconds — and that one is the cycle's
+first. The one it moved on from was never shown, and Wallpaper Engine's pass is
+done with it, so it is held out of the total and the queue, and the card says
+so: "1 wallpaper dealt while Wallpaper Engine was closed and passed over as it
+started". Kept for a minute instead, it counts as shown from the moment
+Wallpaper Engine started.
+
 ### Time nobody was watching
 
 A pass followed through Wallpaper Engine's record needs none of this section:

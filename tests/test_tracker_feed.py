@@ -88,8 +88,9 @@ CFG = WE / "config.json"
 STATE = WE / "bin" / "playliststate.bin"
 LIBRARY = TMP / "myprojects"
 tr.STATE_PATH = TMP / "data" / "tracker.json"
-# The tracker asks for Wallpaper Engine's process when it follows the state file.
-tr.wallpaper_engine_process = lambda: None
+# The tracker asks for Wallpaper Engine's process when it follows the state file:
+# one running for an hour, since nothing is on screen while it is closed.
+tr.wallpaper_engine_process = lambda: (4242, time.time() - 3600)
 
 
 def make_items(folder: Path, n: int) -> list[str]:
@@ -269,6 +270,7 @@ class StandIn:
         self.files = EngineFiles(self.config_path)
         self.atime_ok = False
         self.error = None
+        self.recheck_in = None
         self.looks = 0
         self.held = threading.Event()
         self.held.set()
