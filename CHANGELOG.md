@@ -17,6 +17,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   running, went ahead, and could not remove the tracker's program file, which
   it was still running from. The installer now waits for a starting copy to
   come up, then asks it to quit as usual.
+- **A copy installed where only an administrator can write — under Program
+  Files, with the installer run as administrator — is told so up front.** An
+  update or uninstall run without administrator rights now says at once that it
+  needs them, and changes nothing, instead of closing Toolkit and then failing
+  on the files. Choosing such a folder without those rights is caught on the
+  folder page.
 
 ## [3.19.0] - 2026-10-10
 
