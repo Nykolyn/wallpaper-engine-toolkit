@@ -1588,7 +1588,8 @@ restructured yet; the tabs keep their layout and take on the new look.
   was right for one library and wrong for every other. Nothing is tagged now
   unless you ask for it.
 
-[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.18.4...HEAD
+[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.19.0...HEAD
+[3.19.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.18.4...v3.19.0
 [3.18.4]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.18.3...v3.18.4
 [3.18.3]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.18.2...v3.18.3
 [3.18.2]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.18.1...v3.18.2
