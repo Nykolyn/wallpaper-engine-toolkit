@@ -6,6 +6,25 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [3.18.4] - 2026-10-09
+
+### Fixed
+
+- **A rotation made with Wallpaper Engine closed no longer counts a wallpaper
+  nobody saw.** The rotation deals the new pass's first wallpaper into
+  Wallpaper Engine's record, and the Tracker counted it at once, while
+  Wallpaper Engine was still closed — dated by its file's last access, a year
+  and a half earlier, so its row said it had been shown for 540 days. Started
+  later, Wallpaper Engine moved on to another within seconds, as it does on
+  every start after a while closed, and that one came up as the second.
+  Nothing is on screen while Wallpaper Engine is closed now: the dealt
+  wallpaper waits, and counts from the start if Wallpaper Engine keeps it for
+  a minute; if it moves on, the first wallpaper is the one it moved on to. The
+  one passed over was never shown and is out of Wallpaper Engine's pass, so it
+  is held out of the count and the queue: the pass still runs to its end, and
+  the card says why it is one shorter. A wallpaper a rotation moved in is also
+  never dated from a file time older than the rotation.
+
 ## [3.18.3] - 2026-10-09
 
 ### Fixed
@@ -1527,7 +1546,8 @@ restructured yet; the tabs keep their layout and take on the new look.
   was right for one library and wrong for every other. Nothing is tagged now
   unless you ask for it.
 
-[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.18.3...HEAD
+[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.18.4...HEAD
+[3.18.4]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.18.3...v3.18.4
 [3.18.3]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.18.2...v3.18.3
 [3.18.2]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.18.1...v3.18.2
 [3.18.1]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.18.0...v3.18.1

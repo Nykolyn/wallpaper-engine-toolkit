@@ -218,6 +218,11 @@ switch to a playlist it already has. So:
    monitors' passes are left byte for byte as they were.
 4. It is started again with the program and arguments it was running with.
 
+Wallpaper Engine that was not running is not started: the two files are
+rewritten for its next start. Started after a while closed, it moves on from
+the wallpaper the rotation dealt within seconds, so that one sits out the pass;
+the [Tracker](tracker.md#cycles) counts from the wallpaper it moves on to.
+
 Both files are copied to `data/playlist-refresh/` before they are rewritten,
 and replaced whole rather than edited in place. Wallpaper Engine is started
 again whatever happens in between — a rotation that fails or is stopped leaves

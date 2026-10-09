@@ -905,6 +905,87 @@ tracker.poll()
 check("what it set aside counts again once the engine deals it again",
       tr.TrackerState.load().cycles["Monitor0"].excluded == [])
 
+# ---- A rotation made with Wallpaper Engine closed --------------------------------
+#
+# Seen on 2026-10-09: the rotation rewrote the record with Wallpaper Engine
+# closed, dealing it a wallpaper whose file was last opened 540 days before.
+# The tracker counted that one at once, dated by that access time — "shown for
+# 540d 7h" — and Wallpaper Engine, started later, moved on to another within
+# seconds, as it does on every start after a while closed. Nothing is on screen
+# while it is closed; the first wallpaper is the one it shows once started.
+
+dealt_items = [make_item(f"dealt{i}", 540) for i in range(8)]
+HIST.write_text(json.dumps({"runs": [
+    {"id": "closed", "timestamp": (datetime.now() - timedelta(minutes=1)).strftime(tr.TIME_FMT),
+     "moved": [f"dealt{i}" for i in range(8)]},
+]}), encoding="utf-8")
+engine = {"now": None}
+tr.wallpaper_engine_process = lambda: engine["now"]
+
+tracker = fresh_tracker(dealt_items, atime_ok=True)
+deal(dealt_items[0], dealt_items[1:])
+p = tracker.poll()[0]
+check("a wallpaper dealt while Wallpaper Engine is closed is not counted",
+      (p.seen, p.current, p.live, p.total) == (0, None, False, 8))
+check("it stays in the queue", dealt_items[0] in tracker.split_items("Monitor0")[1])
+
+engine["now"] = (4242, _time.time() - 2)
+p = tracker.poll()[0]
+check("nor in the first seconds after Wallpaper Engine starts",
+      (p.seen, p.current, p.live) == (0, None, True))
+check("and the tracker asks to look again once those are over",
+      tracker.recheck_in is not None and 50 < tracker.recheck_in <= tr.START_GRACE_SECONDS)
+
+rest = [i for i in dealt_items[1:] if i != dealt_items[4]]
+moved_on = deal(dealt_items[4], rest)
+p = tracker.poll()[0]
+check("what Wallpaper Engine moves on to as it starts is the first wallpaper shown",
+      (p.seen, p.current, p.inferred) == (1, dealt_items[4], 0))
+check("dated from the write, not from a file time older than the cycle",
+      p.current_since == datetime.fromtimestamp(moved_on - 3.0).strftime(tr.TIME_FMT))
+shown, remaining = tracker.split_items("Monitor0")
+check("the one passed over is neither shown nor still to come",
+      [s[0] for s in shown] == [dealt_items[4]] and dealt_items[0] not in remaining)
+check("so the pass is one shorter, and the card says why", (p.total, p.passed) == (7, 1))
+for k, item in enumerate(rest):
+    deal(item, rest[k + 1:])
+    p = tracker.poll()[0]
+check("and it still runs to its end", (p.seen, p.total, p.remaining) == (7, 7, 0))
+finished_id = p.cycle_id
+deal(dealt_items[0], dealt_items[1:])
+p = tracker.poll()[0]
+check("shown to the end, by the engine's next pass",
+      p.previous_finished and p.previous_id == finished_id and p.restarted_from == "7/7")
+
+# Started soon after it was closed, Wallpaper Engine keeps the wallpaper it
+# was dealt instead: that one is on screen from the start.
+tracker = fresh_tracker(dealt_items, atime_ok=True)
+engine["now"] = None
+deal(dealt_items[2], [i for i in dealt_items if i != dealt_items[2]])
+tracker.poll()
+began = _time.time() - 5
+engine["now"] = (4242, began)
+check("while it might still move on it is not counted", tracker.poll()[0].seen == 0)
+engine["now"] = (4242, began - tr.START_GRACE_SECONDS)
+p = tracker.poll()[0]
+check("kept past the first minute, it is counted",
+      (p.seen, p.current, p.inferred) == (1, dealt_items[2], 0))
+check("as on screen since Wallpaper Engine started",
+      p.current_since == datetime.fromtimestamp(began - tr.START_GRACE_SECONDS)
+      .strftime(tr.TIME_FMT))
+check("and nothing more is asked for", tracker.recheck_in is None)
+
+# Not seen while closed — the tracker was not running then — the old date is
+# still not taken from a file time from before the rotation.
+tracker = fresh_tracker(dealt_items, atime_ok=True)
+engine["now"] = (4242, _time.time() - 3600)
+stamp = deal(dealt_items[5], [i for i in dealt_items if i != dealt_items[5]])
+p = tracker.poll()[0]
+check("a rotated playlist's wallpaper is never dated before the rotation",
+      p.current_since == datetime.fromtimestamp(stamp - 3.0).strftime(tr.TIME_FMT))
+HIST.unlink()
+tr.wallpaper_engine_process = lambda: (4242, _time.time() - 3600)
+
 # The probe is still there for what the deck does not describe.
 tracker = fresh_tracker(deck_items, atime_ok=False)
 write_cfg(deck_items, order="sorted")
@@ -995,6 +1076,14 @@ ticks["t"] += 299
 check("the heartbeat waits its full interval", look() is None)
 ticks["t"] += 1
 check("and then looks anyway", look() == "heartbeat")
+
+schedule.again_in(40)
+ticks["t"] += 39
+check("a look asked for is not due early", look() is None)
+ticks["t"] += 1
+check("and is taken when it is", look() == "the last look asked for another")
+ticks["t"] += 60
+check("once", look() is None)
 
 schedule.due()
 schedule.looked()
