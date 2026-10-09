@@ -24,6 +24,9 @@ The wizard asks three things, the first two only on a first install:
 1. **Where to put the program.** `%LOCALAPPDATA%\Programs\WallpaperEngineToolkit`
    unless you choose otherwise. It installs for your Windows account only and
    asks for no administrator rights.
+   You can choose a folder under Program Files by running the installer as
+   administrator; every update and the uninstall then need the same, and say
+   so before they change anything.
 2. **Data from an earlier copy** — see [below](#coming-from-an-earlier-copy).
    Leave it empty on a first install.
 3. **Start the tray tracker when I sign in to Windows** (ticked), and a

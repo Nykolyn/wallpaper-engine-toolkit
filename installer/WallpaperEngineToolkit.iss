@@ -113,6 +113,9 @@ en.BackupFailed=Your data could not be copied aside before the update:%n%n%1%n%n
 en.AutostartFailed=Starting the tracker with Windows could not be set up:%n%n%1%n%nYou can switch it on later, on the Tracker page.
 en.DataKept=Your data was kept, in%n%1%n%nIt holds your settings, the authors database, the rotation history and the Steam key. Installing Toolkit again picks it up. If you no longer need it, delete that folder yourself.
 en.StepFailedNoReport=it ended with code %1 and left no report
+en.NeedsAdmin=Toolkit is installed in%n%1%nand only an administrator can change that folder.%n%nRun this installer as administrator (right-click, Run as administrator). Nothing was changed.
+en.NeedsAdminUninstall=Toolkit is installed in%n%1%nand only an administrator can remove it from there.%n%nRun the uninstall as administrator. Nothing was changed.
+en.DirNeedsAdmin=Only an administrator can write in%n%1%n%nRun this installer as administrator to install there — updates will need the same — or choose a folder of your own.
 
 ru.AutostartTask=Запускать трекер в трее при входе в Windows
 ru.DesktopIconTask=Создать ярлык на рабочем столе
@@ -130,6 +133,9 @@ ru.BackupFailed=Не удалось сделать резервную копию
 ru.AutostartFailed=Не удалось настроить запуск трекера вместе с Windows:%n%n%1%n%nЕго можно включить позже на странице Tracker.
 ru.DataKept=Ваши данные сохранены в%n%1%n%nТам настройки, база авторов, история ротаций и ключ Steam. При повторной установке Toolkit подхватит их. Если они больше не нужны, удалите эту папку сами.
 ru.StepFailedNoReport=завершилось с кодом %1 без отчёта
+ru.NeedsAdmin=Toolkit установлен в%n%1%nи изменять эту папку может только администратор.%n%nЗапустите установщик от имени администратора (правый клик, «Запуск от имени администратора»). Ничего не изменено.
+ru.NeedsAdminUninstall=Toolkit установлен в%n%1%nи удалить его оттуда может только администратор.%n%nЗапустите удаление от имени администратора. Ничего не изменено.
+ru.DirNeedsAdmin=Писать в%n%1%nможет только администратор.%n%nЧтобы установить туда, запустите установщик от имени администратора — обновлениям понадобится то же самое, — или выберите свою папку.
 
 uk.AutostartTask=Запускати трекер у треї під час входу в Windows
 uk.DesktopIconTask=Створити ярлик на робочому столі
@@ -147,6 +153,9 @@ uk.BackupFailed=Не вдалося зробити резервну копію �
 uk.AutostartFailed=Не вдалося налаштувати запуск трекера разом із Windows:%n%n%1%n%nЙого можна ввімкнути пізніше на сторінці Tracker.
 uk.DataKept=Ваші дані збережено в%n%1%n%nТам налаштування, база авторів, історія ротацій і ключ Steam. Під час повторного встановлення Toolkit підхопить їх. Якщо вони більше не потрібні, видаліть цю папку самі.
 uk.StepFailedNoReport=завершилося з кодом %1 без звіту
+uk.NeedsAdmin=Toolkit встановлено в%n%1%nі змінювати цю папку може лише адміністратор.%n%nЗапустіть інсталятор від імені адміністратора (правий клік, «Запуск від імені адміністратора»). Нічого не змінено.
+uk.NeedsAdminUninstall=Toolkit встановлено в%n%1%nі видалити його звідти може лише адміністратор.%n%nЗапустіть видалення від імені адміністратора. Нічого не змінено.
+uk.DirNeedsAdmin=Писати в%n%1%nможе лише адміністратор.%n%nЩоб установити туди, запустіть інсталятор від імені адміністратора — оновленням знадобиться те саме, — або оберіть власну папку.
 
 [Tasks]
 Name: "autostart"; Description: "{cm:AutostartTask}"; Check: IsFirstInstall
@@ -200,10 +209,37 @@ begin
   Result := FirstInstall;
 end;
 
+{ Whether this process can write in Dir, or in the nearest folder above it that
+  exists: what replacing or removing the program there takes. A folder under
+  Program Files is writable only with administrator rights. }
+function CanWriteTo(Dir: String): Boolean;
+var
+  Probe: String;
+begin
+  Dir := RemoveBackslashUnlessRoot(Dir);
+  while (Dir <> '') and not DirExists(Dir) and (ExtractFileDir(Dir) <> Dir) do
+    Dir := ExtractFileDir(Dir);
+  Probe := AddBackslash(Dir) + 'toolkit-setup-write-check.tmp';
+  Result := SaveStringToFile(Probe, '', False);
+  if Result then
+    DeleteFile(Probe);
+end;
+
 function InitializeSetup: Boolean;
+var
+  Location: String;
 begin
   FirstInstall := not RegKeyExists(HKCU, UninstallKey);
   Result := True;
+  { An update goes where the copy it replaces is. If that is a folder only an
+    administrator can write in, say so now, before anything is asked or closed. }
+  if RegQueryStringValue(HKCU, UninstallKey, 'InstallLocation', Location)
+     and DirExists(Location) and not CanWriteTo(Location) then
+  begin
+    SuppressibleMsgBox(FmtMessage(CustomMessage('NeedsAdmin'), [RemoveBackslashUnlessRoot(Location)]),
+                       mbError, MB_OK, IDOK);
+    Result := False;
+  end;
 end;
 
 function InstalledExe: String;
@@ -358,9 +394,43 @@ end;
 
 { ---- running copies -------------------------------------------------------- }
 
+{ Whether a WallpaperEngineToolkit.exe process exists, from any folder. }
+function ProgramRunning: Boolean;
+var
+  Locator, Service, Found: Variant;
+begin
+  Result := False;
+  try
+    Locator := CreateOleObject('WbemScripting.SWbemLocator');
+    Service := Locator.ConnectServer('.', 'root\CIMV2');
+    Found := Service.ExecQuery('SELECT ProcessId FROM Win32_Process WHERE Name = ''{#ExeName}''');
+    Result := Found.Count > 0;
+  except
+    Result := False;
+  end;
+end;
+
+{ A window or a tracker holds its mutex from soon after it starts until it
+  ends, and listens for the request to quit while it does. A process of the
+  toolkit runs for a few seconds before it takes its mutex, though: one just
+  started, or the tracker an update has just started again. }
 function AnythingRunning: Boolean;
 begin
-  Result := CheckForMutexes('{#Mutexes}');
+  Result := CheckForMutexes('{#Mutexes}') or ProgramRunning;
+end;
+
+{ Give a copy that is still starting the time to come up and take its mutex,
+  so that it is asked to quit rather than missed. }
+procedure WaitWhileStarting;
+var
+  I: Integer;
+begin
+  for I := 1 to 20 * 4 do
+  begin
+    if CheckForMutexes('{#Mutexes}') or not ProgramRunning then
+      exit;
+    Sleep(250);
+  end;
 end;
 
 function WaitUntilGone(Seconds: Integer): Boolean;
@@ -387,6 +457,7 @@ var
 begin
   Result := '';
   repeat
+    WaitWhileStarting;
     if not AnythingRunning then
       exit;
     if (Exe <> '') and FileExists(Exe) then
@@ -514,6 +585,10 @@ begin
     begin
       SuppressibleMsgBox(FmtMessage(CustomMessage('DirIsData'), [DataDir]), mbError, MB_OK, IDOK);
       Result := False;
+    end else if not CanWriteTo(Dir) then
+    begin
+      SuppressibleMsgBox(FmtMessage(CustomMessage('DirNeedsAdmin'), [Dir]), mbError, MB_OK, IDOK);
+      Result := False;
     end;
   end else if (EarlierPage <> nil) and (CurPageID = EarlierPage.ID) then
   begin
@@ -562,6 +637,13 @@ function InitializeUninstall: Boolean;
 var
   Stopped: String;
 begin
+  if not CanWriteTo(ExpandConstant('{app}')) then
+  begin
+    SuppressibleMsgBox(FmtMessage(CustomMessage('NeedsAdminUninstall'), [ExpandConstant('{app}')]),
+                       mbError, MB_OK, IDOK);
+    Result := False;
+    exit;
+  end;
   Stopped := StopRunningCopies(ExpandConstant('{app}\{#ExeName}'));
   Result := Stopped = '';
 end;
