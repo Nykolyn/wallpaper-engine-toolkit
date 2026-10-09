@@ -261,6 +261,63 @@ else:
     os.environ["LOCALAPPDATA"] = saved_local
 
 print("-- two processes at once --")
+# ---- bringing an earlier copy's data in (what the installer asks for) --------
+
+def checkout(name: str) -> tuple[Path, Path, dict[str, bytes]]:
+    """A pretend checkout with its data\\ beside run_app.py, and an empty
+    pretend %LOCALAPPDATA% folder."""
+    base = TMP / name
+    clone = base / "wallpaper-engine-toolkit"
+    files = fill(clone / "data")
+    (clone / "data" / "suite.json").write_text("{}", encoding="utf-8")
+    files["suite.json"] = b"{}"
+    return clone, base / "local" / dl.APP_FOLDER, files
+
+
+clone, new, files = checkout("earlier")
+copied, said = dl.adopt(clone, new, sandbox="")
+check("an earlier copy's data is copied in when there is no data folder yet",
+      copied and same(new, files) and "copied from" in said)
+check("and the original is left exactly where it was", same(clone / "data", files))
+check("the marker says where it was copied from, and that nothing was moved",
+      marker(new)["copied_from"] == str(clone / "data") and marker(new)["moved_from"] is None)
+
+clone, new, files = checkout("earlier-data-folder")
+copied, _ = dl.adopt(clone / "data", new, sandbox="")
+check("the data folder itself can be named instead of the copy's folder",
+      copied and same(new, files))
+
+clone, new, files = checkout("earlier-existing")
+new.mkdir(parents=True)
+(new / dl.MARKER).write_text("{}", encoding="utf-8")
+(new / "history.json").write_bytes(b"theirs")
+copied, said = dl.adopt(clone, new, sandbox="")
+check("an existing data folder is never added to or replaced",
+      not copied and (new / "history.json").read_bytes() == b"theirs"
+      and not (new / "authors.sqlite").exists() and "left as it is" in said)
+check("and the earlier copy is not touched either", same(clone / "data", files))
+
+clone, new, files = checkout("earlier-unmarked")
+new.mkdir(parents=True)
+(new / "stray.txt").write_text("x", encoding="utf-8")
+copied, _ = dl.adopt(clone, new, sandbox="")
+check("nor is a folder holding files it cannot vouch for",
+      not copied and sorted(p.name for p in new.iterdir()) == ["stray.txt"])
+
+empty = TMP / "earlier-nothing" / "some folder"
+empty.mkdir(parents=True)
+(empty / "notes.txt").write_text("not data", encoding="utf-8")
+new = TMP / "earlier-nothing" / "local" / dl.APP_FOLDER
+copied, said = dl.adopt(empty, new, sandbox="")
+check("a folder with no data of this app is not copied from",
+      not copied and not new.exists() and "holds no data" in said)
+
+clone, new, files = checkout("earlier-sandbox")
+copied, said = dl.adopt(clone, new, sandbox="Claude_test")
+check("inside another app's sandbox nothing is copied",
+      not copied and not new.exists() and "sandbox" in said)
+
+
 if sys.platform == "win32":
     order: list[str] = []
     holding = threading.Event()

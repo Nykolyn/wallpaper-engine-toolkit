@@ -36,6 +36,7 @@ from PySide6.QtWidgets import QApplication, QSystemTrayIcon
 from . import theme, tray_words as words, window_instance
 from .branding import DISPLAY_NAME
 from .hang_watch import HangWatch
+from .quit_request import QuitListener
 from .engines.tracker import FALLBACK_SECONDS, TIME_FMT, Progress, app_data_dir, pick_primary
 from .engines.wallpaper_timer import Countdown, WallpaperTimer
 from .settings import Settings
@@ -93,7 +94,7 @@ def _seconds_since(stamp: str) -> float:
 class TrackerTray:
     """Follows Wallpaper Engine in the background and renders the result into the tray."""
 
-    def __init__(self, app: QApplication):
+    def __init__(self, app: QApplication, quit_listener: QuitListener | None = None):
         self.app = app
         self.settings = Settings.load()
         self.results: list[Progress] = []
@@ -129,6 +130,11 @@ class TrackerTray:
         self.menu.chosen.connect(self._on_chosen)
         self.icon.setContextMenu(self.menu)
         self.icon.show()
+
+        # The installer asks before it replaces or removes the program
+        # (`--quit`, see quit_request): the same as Quit in the menu.
+        self.quit_listener = quit_listener or QuitListener()
+        self.quit_listener.requested.connect(self._on_quit_requested)
 
         self.clock_timer = QTimer()
         self.clock_timer.timeout.connect(self._tick_clock)
@@ -258,6 +264,10 @@ class TrackerTray:
         elif key == QUIT:
             self.app.quit()
 
+    def _on_quit_requested(self):
+        log("asked to quit (an update or an uninstall is starting)")
+        self.app.quit()
+
     def _on_activated(self, reason):
         if reason in (QSystemTrayIcon.Trigger, QSystemTrayIcon.DoubleClick):
             self.open_toolkit()
@@ -324,14 +334,24 @@ def _claim_single_instance() -> bool:
     return True
 
 
-def _wait_for_tray() -> bool:
-    """Give the notification area time to appear. True if it ever did."""
+def _wait_for_tray(app: QApplication, quit_asked=lambda: False) -> bool:
+    """Give the notification area time to appear. True if it ever did.
+
+    The events are handled while it waits, so a request to quit — the
+    installer's, before an update — is heard; `quit_asked` says one came, and
+    the wait ends there.
+    """
     deadline = time.monotonic() + TRAY_WAIT_SECONDS
     if QSystemTrayIcon.isSystemTrayAvailable():
         return True
     log("notification area not ready yet — waiting for it")
-    while time.monotonic() < deadline:
-        time.sleep(TRAY_POLL_SECONDS)
+    next_look = time.monotonic() + TRAY_POLL_SECONDS
+    while time.monotonic() < deadline and not quit_asked():
+        app.processEvents()
+        time.sleep(0.1)
+        if time.monotonic() < next_look:
+            continue
+        next_look = time.monotonic() + TRAY_POLL_SECONDS
         if QSystemTrayIcon.isSystemTrayAvailable():
             log(f"notification area appeared after "
                 f"{int(TRAY_WAIT_SECONDS - (deadline - time.monotonic()))}s")
@@ -356,7 +376,17 @@ def run_tray() -> int:
         theme.apply(app, styled=False)
         app.setQuitOnLastWindowClosed(False)
 
-        if not _wait_for_tray():
+        # Listening from the start, since the mutex above says a tracker runs
+        # from the start: the installer asks before it replaces or removes the
+        # program (`--quit`, see quit_request) — the same as Quit in the menu.
+        asked: list[bool] = []
+        listener = QuitListener()
+        listener.requested.connect(lambda: asked.append(True))
+        if not _wait_for_tray(app, lambda: bool(asked)):
+            if asked:
+                log("asked to quit (an update or an uninstall is starting) "
+                    "while waiting for the notification area")
+                return 0
             # Not fatal: counting is the point, and the icon re-registers by
             # itself if the shell comes back later. Quitting here would lose the
             # count instead, and a dialog at logon would be worse than useless.
@@ -367,7 +397,7 @@ def run_tray() -> int:
         # here should wait on a disk; if anything ever holds the GUI thread
         # for seconds, this says what.
         watch = HangWatch(app_data_dir() / "tracker-hangs.log", "the tray tracker").start()
-        tray = TrackerTray(app)   # the local reference is what keeps the icon alive
+        tray = TrackerTray(app, listener)   # the local reference keeps the icon alive
         log(f"running; tray icon visible: {tray.icon.isVisible()}")
         exit_code = app.exec()
         watch.stop()

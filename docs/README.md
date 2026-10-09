@@ -3,7 +3,8 @@
 Five tools in one window, each solving a different part of the same problem:
 keeping a large Wallpaper Engine library moving without doing it by hand.
 
-Start with [Getting started](getting-started.md) if this is a fresh install.
+Start with [Installing](installing.md), then [Getting started](getting-started.md)
+for what the first run already knows.
 
 ## Getting around
 
@@ -47,11 +48,12 @@ still beside the word "working".
 
 | Page | Covers |
 |---|---|
-| [Getting started](getting-started.md) | Installing, first run, what needs setting up before which page works. |
+| [Installing](installing.md) | The installer: what it does, your data through updates and uninstalls, coming from an earlier copy. |
+| [Getting started](getting-started.md) | First run, running from source, what needs setting up before which page works. |
 | [Configuration](configuration.md) | Every setting, every file written, where each one lives, and what to back up. |
 | [Gallery](gallery.md) | The wall of previews the Review page opens: what the badges mean, and subscribing. |
 | [Authors database](authors-database.md) | The file behind Review — what is in it, its backups, and restoring one. |
-| [Building](building.md) | Producing a standalone `.exe`. |
+| [Building](building.md) | Producing a standalone `.exe`, and the installer. |
 | [Development](development.md) | Architecture, the frame and its pages, the test suite, and the look and feel: tokens, type, icons, motion, the kit preview, snapshots. |
 | [Troubleshooting](troubleshooting.md) | What each failure looks like and which file answers it. |
 

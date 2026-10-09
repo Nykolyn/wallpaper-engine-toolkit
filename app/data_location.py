@@ -121,6 +121,14 @@ def redirected_into() -> str:
     return ""
 
 
+def sandbox_for_data() -> str:
+    """`redirected_into()`, unless WALLPAPER_TOOLKIT_DATA names the data folder:
+    then it is where it is said to be, as `_decide` takes it."""
+    if os.environ.get(OVERRIDE_ENV, "").strip():
+        return ""
+    return redirected_into()
+
+
 def sandbox_copy(new: Path, sandbox: str) -> Path:
     """Where ``new`` really is for a process whose writes ``sandbox`` takes."""
     local = new.parent
@@ -206,8 +214,72 @@ def _sandboxed(old: Path, new: Path, sandbox: str) -> Resolved:
     return Resolved(new, f"{new} (not set up yet: {note})")
 
 
-def _copy_verified(old: Path, new: Path) -> tuple[int, int]:
-    """Copy ``old`` to ``new`` through a staging folder, checking every file."""
+# ---- Bringing data over from an earlier copy ----------------------------------
+
+# A data folder has at least one of these. A folder with none of them is not
+# one, however it is named, and nothing is copied from it.
+KNOWN_FILES = ("suite.json", "config.json", "history.json", "authors.sqlite",
+               "tracker.json", "secrets.json")
+
+
+def data_in(chosen: Path) -> Path | None:
+    """The data folder of an earlier copy: ``chosen\\data`` (a checkout, or a
+    build from before 3.0.0) or ``chosen`` itself. None if neither holds any."""
+    for folder in (chosen / "data", chosen):
+        if any((folder / name).is_file() for name in KNOWN_FILES):
+            return folder
+    return None
+
+
+def adopt(chosen: Path, new: Path | None = None, sandbox: str | None = None) -> tuple[bool, str]:
+    """Copy an earlier copy's data in, as the data folder — if there is none yet.
+
+    What the installer runs on a first install when it is told where an earlier
+    copy is: a checkout run from source keeps its data in ``data\\`` beside
+    ``run_app.py``, which an installed copy never looks at. The data is copied,
+    every file checked, and **the original is left where it is** — it is still
+    that checkout's data, and nothing here deletes anything. A data folder that
+    already exists is never added to or replaced: two sets of data are not
+    merged by guessing. Returns (copied, what happened in words).
+
+    ``WALLPAPER_TOOLKIT_DATA`` names the folder to copy into, as it names the
+    data folder everywhere else — which is how this is tried out on a build
+    without coming near the real one.
+    """
+    override = os.environ.get(OVERRIDE_ENV, "").strip()
+    new = new or (Path(override) if override else installed_dir())
+    source = data_in(chosen)
+    if source is None:
+        return False, (f"nothing copied: {chosen} holds no data of this app "
+                       f"(none of {', '.join(KNOWN_FILES)})")
+    if sandbox is None:
+        sandbox = sandbox_for_data()
+    if sandbox:
+        return False, (f"nothing copied: this process runs inside {sandbox}'s sandbox, "
+                       f"where the copy would land in that app's private folder")
+    try:
+        if source.resolve() == new.resolve():
+            return False, f"nothing copied: {source} is the data folder already"
+    except OSError:
+        pass
+    with _exclusive():
+        if (new / MARKER).exists():
+            return False, (f"nothing copied: {new} is already the data folder, and it "
+                           f"was left as it is; {source} was not touched")
+        if _has_files(new):
+            return False, (f"nothing copied: {new} already holds files that are not "
+                           f"marked as the data folder; {source} was not touched")
+        try:
+            files, size = _copy_verified(source, new, copied_from=source)
+        except Exception as err:  # noqa: BLE001 — a failed copy is undone, the original is untouched
+            return False, f"the copy from {source} failed and was undone: {err}"
+    return True, (f"{new} (copied from {source}: {files} files, "
+                  f"{size / 1_048_576:.1f} MB, each one verified; the original is still there)")
+
+
+def _copy_verified(old: Path, new: Path, copied_from: Path | None = None) -> tuple[int, int]:
+    """Copy ``old`` to ``new`` through a staging folder, checking every file.
+    The marker says it was moved from ``old``, or copied from ``copied_from``."""
     staging = new.with_name(new.name + STAGING_SUFFIX)
     if staging.exists():
         shutil.rmtree(staging)          # a move that died half way; ours alone
@@ -226,7 +298,8 @@ def _copy_verified(old: Path, new: Path) -> tuple[int, int]:
                 raise OSError(f"{copy} differs in content from {original}")
             files += 1
             size += original.stat().st_size
-        _write_marker(staging, moved_from=old, files=files, size=size)
+        _write_marker(staging, moved_from=None if copied_from else old, files=files,
+                      size=size, copied_from=copied_from)
         if new.exists():
             new.rmdir()                  # empty — checked by the caller
         staging.rename(new)
@@ -253,16 +326,20 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def _write_marker(folder: Path, moved_from: Path | None, files: int, size: int) -> None:
+def _write_marker(folder: Path, moved_from: Path | None, files: int, size: int,
+                  copied_from: Path | None = None) -> None:
     from . import __version__
-    (folder / MARKER).write_text(json.dumps({
+    marker = {
         "what": "Wallpaper Engine Toolkit keeps its data in this folder.",
         "since": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "version": __version__,
         "moved_from": str(moved_from) if moved_from else None,
         "files": files,
         "bytes": size,
-    }, indent=2), encoding="utf-8")
+    }
+    if copied_from:
+        marker["copied_from"] = str(copied_from)
+    (folder / MARKER).write_text(json.dumps(marker, indent=2), encoding="utf-8")
 
 
 # ---- Windows ----------------------------------------------------------------

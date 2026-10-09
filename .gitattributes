@@ -6,6 +6,9 @@
 # Windows batch files are read by cmd.exe, which wants CRLF.
 *.cmd text eol=crlf
 *.bat text eol=crlf
+# So is the installer script, by Inno Setup. It keeps a UTF-8 BOM, which is
+# how Inno Setup knows to read its Russian and Ukrainian text as UTF-8.
+*.iss text eol=crlf
 
 # Binary, so git never tries to translate anything inside them.
 *.ico binary

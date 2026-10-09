@@ -55,11 +55,65 @@ jobs:
           }
           Write-Host "all test files passed"
 
+  installer:
+    # The installer every release carries, made the way build.cmd makes it and
+    # then used the way a person would on a fresh Windows: installed from an
+    # earlier copy, updated over a running one, uninstalled, installed again,
+    # with the data checked at every step (tools/check_installer.py). On pull
+    # requests too, so a change that would lose someone's data never merges.
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          # The Python the release is built with, as on the author's machine.
+          python-version: '3.14'
+          cache: pip
+
+      - name: Install dependencies
+        run: python -m pip install --upgrade pip && pip install -r requirements.txt
+
+      - name: Make sure Inno Setup is there
+        # The runner image has it; this is for the day it does not.
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe")) {
+              choco install innosetup -y --no-progress
+          }
+
+      - name: Build the exe and the installer
+        shell: cmd
+        run: build.cmd installer
+
+      - name: Check the build imports everything
+        # With a data folder of its own: the check below wants a machine where
+        # the toolkit has never run.
+        shell: pwsh
+        env:
+          WALLPAPER_TOOLKIT_DATA: ${{ runner.temp }}\selfcheck-data
+        run: |
+          $run = Start-Process -FilePath build\stage\WallpaperEngineToolkit\WallpaperEngineToolkit.exe `
+              -ArgumentList '--selfcheck' -Wait -PassThru -NoNewWindow `
+              -RedirectStandardOutput "$env:RUNNER_TEMP\selfcheck.txt"
+          Get-Content "$env:RUNNER_TEMP\selfcheck.txt"
+          exit $run.ExitCode
+
+      - name: Install, update, uninstall and install again
+        run: python tools/check_installer.py
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: installer
+          path: dist/installer/*.exe
+          if-no-files-found: error
+
   release:
-    # A green main is a release: tag vX.Y.Z and publish the CHANGELOG section
-    # as its notes. A push that did not raise the version finds its tag already
-    # there and does nothing, so re-runs are harmless.
-    needs: tests
+    # A green main is a release: tag vX.Y.Z, publish the CHANGELOG section as
+    # its notes and attach the installer. A push that did not raise the version
+    # finds its tag already there and does nothing, so re-runs are harmless.
+    needs: [tests, installer]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
@@ -72,6 +126,11 @@ jobs:
         with:
           python-version: '3.12'
 
+      - uses: actions/download-artifact@v4
+        with:
+          name: installer
+          path: dist/installer
+
       - name: Tag and publish the release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -83,4 +142,6 @@ jobs:
             exit 0
           fi
           python tools/release.py notes > notes.md
-          gh release create "v$version" --target "$GITHUB_SHA"             --title "v$version" --notes-file notes.md
+          gh release create "v$version" --target "$GITHUB_SHA" \
+            --title "v$version" --notes-file notes.md \
+            "dist/installer/WallpaperEngineToolkit-Setup-$version.exe"

@@ -144,7 +144,7 @@ Wallpaper Engine has the build's copy loaded. Before 3.0.1, a rotation
 restarted it with the toolkit's DLL folder, so it ran on
 `_internal\VCRUNTIME140.dll` instead of the one in System32, and held the file
 for as long as it ran. Quit Wallpaper Engine from its tray, start it again, and
-rebuild. See [Updating an installed copy](building.md#updating-an-installed-copy).
+rebuild. See [Updating a copy you built](building.md#updating-a-copy-you-built).
 From 3.0.1 on, the toolkit starts every other program without its DLL folder.
 
 ## A rotation produced a playlist smaller than the count I asked for

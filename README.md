@@ -27,6 +27,18 @@ monitors and the newest log lines](docs/images/overview.png)
 
 ## Install
 
+Download **`WallpaperEngineToolkit-Setup-X.Y.Z.exe`** from the latest
+[release](https://github.com/Nykolyn/wallpaper-engine-toolkit/releases/latest)
+and run it. No Python, no administrator rights; it installs for your account,
+puts **Toolkit** in the Start menu, and can start the tray tracker with
+Windows. Updates are the next release's installer, run over this one — your
+data is kept, and copied aside first. **[Installing →](docs/installing.md)**
+
+The tray tracker lives in the notification area, without a window; clicking
+it opens the main window on the Tracker page.
+
+### From source
+
 ```
 git clone https://github.com/Nykolyn/wallpaper-engine-toolkit.git
 cd wallpaper-engine-toolkit
@@ -35,17 +47,9 @@ python -m venv .venv
 .venv\Scripts\python.exe run_app.py
 ```
 
-…or double-click `run.cmd`. For a standalone `.exe`, see
+…or double-click `run.cmd`; `run_app.py --tracker` is the tray tracker. To
+build the `.exe` and the installer yourself, see
 **[Building](docs/building.md)**.
-
-The background playlist tracker is the same entry point with a flag:
-
-```
-.venv\Scripts\python.exe run_app.py --tracker
-```
-
-It has no window — it lives in the notification area and clicking it opens the
-main window on the Tracker page.
 
 **[Getting started →](docs/getting-started.md)**
 
@@ -54,7 +58,7 @@ main window on the Tracker page.
 - **Windows.** Several features call Windows directly: DPAPI for the stored
   Steam key, Task Scheduler for autostart, and a read-only process-memory probe
   behind the Tracker's countdown.
-- **Python 3.11+**, or the standalone build.
+- **Nothing else** with the installer; **Python 3.11+** to run from source.
 - **Wallpaper Engine** via Steam. Steam's registry entry and
   `libraryfolders.vdf` are read to locate it, so folder settings arrive already
   filled in.

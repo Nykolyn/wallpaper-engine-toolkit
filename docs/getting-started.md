@@ -6,11 +6,18 @@
   Steam key, Task Scheduler for autostart, and the process-memory read behind
   the Tracker's countdown. The pure engines
   run anywhere; the app as a whole does not.
-- **Python 3.11 or newer**, or the [standalone build](building.md).
+- **Nothing else** with the [installer](installing.md); **Python 3.11 or
+  newer** to run from source.
 - **Wallpaper Engine**, installed through Steam. It does not need to be running
   except where a page says so.
 
 ## Install
+
+Run the installer from the latest release — see [Installing](installing.md).
+It puts **Toolkit** in the Start menu and can start the tray tracker with
+Windows; the rest of this page is what happens when you open it.
+
+### From source
 
 ```bash
 git clone https://github.com/Nykolyn/wallpaper-engine-toolkit.git
@@ -20,6 +27,8 @@ python -m venv .venv
 ```
 
 ## Run
+
+Installed: **Toolkit** in the Start menu. From source:
 
 ```bash
 .venv\Scripts\python.exe run_app.py
