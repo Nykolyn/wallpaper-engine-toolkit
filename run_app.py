@@ -15,6 +15,19 @@ Run:
     python run_app.py --selfcheck      # report what a built exe can actually
                                        #   import, and exit
     python run_app.py --version        # print the version and exit
+
+What the installer runs (installer/WallpaperEngineToolkit.iss); each takes
+``--report <file>`` to write what happened there as well, as a windowed build
+has no console:
+
+    python run_app.py --quit           # ask the running window and tray tracker
+                                       #   to quit, and wait for them
+    python run_app.py --adopt-data <folder>
+                                       # copy an earlier copy's data in, when
+                                       #   there is no data folder yet
+    python run_app.py --backup-data    # copy the data aside before an update
+    python run_app.py --autostart release
+                                       # remove autostart if it starts this copy
 """
 from __future__ import annotations
 
@@ -52,10 +65,88 @@ def _autostart(action: str) -> int:
     elif action == "off":
         autostart.disable()
         message = "autostart removed"
+    elif action == "release":
+        message = autostart.release()
     else:
         message = f"autostart: {autostart.method()}"
     log(message)
-    print(message)
+    _report(message)
+    return 0
+
+
+def _argument(flag: str) -> str:
+    """The word after `flag` on the command line, or ""."""
+    args = sys.argv[1:]
+    if flag in args:
+        position = args.index(flag)
+        if position + 1 < len(args):
+            return args[position + 1]
+    return ""
+
+
+def _report(said: str) -> None:
+    """Print what happened, and write it where `--report <file>` says: the
+    installer reads it from there, since a windowed build has no console."""
+    print(said)
+    path = _argument("--report")
+    if path:
+        try:
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(said + "\n")
+        except OSError:
+            pass
+
+
+def _quit_running() -> int:
+    """Ask the running window and tray tracker to quit, and wait until they
+    have (see app/quit_request.py). 0 when nothing runs any more, 1 when
+    something would not quit. Reads and writes no data."""
+    from PySide6.QtCore import QCoreApplication
+    from app import quit_request
+
+    # The sockets want an event dispatcher, which wants an application.
+    app = QCoreApplication(sys.argv)  # noqa: F841
+    gone, said = quit_request.ask_all()
+    _report(said)
+    return 0 if gone else 1
+
+
+def _adopt_data(folder: str) -> int:
+    """Copy an earlier copy's data in, if there is no data folder yet (see
+    data_location.adopt). 0 when it was copied, 1 when it was not; either way
+    the earlier copy is left as it was. Nothing else here may run first: the
+    first look at the data folder makes one, and then there is no room for it."""
+    from pathlib import Path
+    from app import data_location
+
+    if not folder:
+        _report("--adopt-data needs the folder of the earlier copy")
+        return 1
+    copied, said = data_location.adopt(Path(folder))
+    if copied:
+        from app.tracker_tray import log
+        log(f"data: {said}")
+    _report(said)
+    return 0 if copied else 1
+
+
+def _backup_data() -> int:
+    """Copy the data aside before an update (see app/update_backup.py).
+    0 when it was copied and checked, or there was no data to copy."""
+    from app import __version__, data_location, update_backup
+
+    if data_location.sandbox_for_data():
+        _report("no backup made: this process runs inside another app's sandbox")
+        return 1
+    folder = data_location.data_dir()
+    try:
+        _, said = update_backup.take(folder, f"before {__version__}")
+    except OSError as err:
+        _report(f"the data could not be copied aside: {err}")
+        return 1
+    from app.tracker_tray import log
+    log(said)
+    _report(said)
     return 0
 
 
@@ -109,6 +200,15 @@ def main():
         from app import __version__
         print(__version__)
         sys.exit(0)
+
+    # The installer's: each before anything else looks at the data folder or
+    # the Start menu, which is what they are run to take care of.
+    if "--quit" in sys.argv[1:]:
+        sys.exit(_quit_running())
+    if "--adopt-data" in sys.argv[1:]:
+        sys.exit(_adopt_data(_argument("--adopt-data")))
+    if "--backup-data" in sys.argv[1:]:
+        sys.exit(_backup_data())
 
     sys.setswitchinterval(SWITCH_INTERVAL)
     QApplication.setHighDpiScaleFactorRoundingPolicy(

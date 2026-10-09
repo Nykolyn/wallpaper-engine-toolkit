@@ -69,6 +69,28 @@ shortcuts[link] = (r"D:\Moved\WallpaperEngineToolkit.exe", "Someone.Else")
 claim(target=r"D:\Moved\WallpaperEngineToolkit.exe")
 check("and one carrying another ID", shortcuts[link][1] == ai.APP_ID and len(made) == 3)
 
+# An installed copy owns the shortcut; a build run from elsewhere leaves it be.
+INSTALLED = r"C:\Users\you\AppData\Local\Programs\WallpaperEngineToolkit\WallpaperEngineToolkit.exe"
+shortcuts[link] = (INSTALLED, ai.APP_ID)
+taken.clear()
+said = ai.claim(frozen=True, target=r"D:\src\dist\WallpaperEngineToolkit.exe", link=link,
+                read=read, write=write, set_id=taken.append, installed=INSTALLED)
+check("a build beside an installed copy leaves its shortcut and still takes the ID",
+      shortcuts[link][0] == INSTALLED and len(made) == 3 and taken == [ai.APP_ID]
+      and "installed copy" in said)
+said = ai.claim(frozen=True, target=INSTALLED, link=link, read=read, write=write,
+                set_id=taken.append, installed=INSTALLED)
+check("the installed copy finds its own shortcut in place", "in place" in said and len(made) == 3)
+shortcuts[link] = (r"D:\src\dist\WallpaperEngineToolkit.exe", ai.APP_ID)
+ai.claim(frozen=True, target=INSTALLED, link=link, read=read, write=write,
+         set_id=taken.append, installed=INSTALLED)
+check("and takes it back from a build that had it", shortcuts[link][0] == INSTALLED)
+shortcuts[link] = (r"D:\Old\WallpaperEngineToolkit.exe", ai.APP_ID)
+ai.claim(frozen=True, target=r"D:\src\dist\WallpaperEngineToolkit.exe", link=link,
+         read=read, write=write, set_id=taken.append, installed=INSTALLED)
+check("a shortcut to some other build is still made again",
+      shortcuts[link][0] == r"D:\src\dist\WallpaperEngineToolkit.exe")
+
 
 def refuse(path, target):
     raise OSError("access denied")

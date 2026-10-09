@@ -6,6 +6,48 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [3.19.0] - 2026-10-10
+
+### Added
+
+- **An installer.** Every release now carries
+  `WallpaperEngineToolkit-Setup-X.Y.Z.exe`: download it, run it, done — no
+  Python, no clone, no build. It installs for your Windows account only, into
+  `%LOCALAPPDATA%\Programs\WallpaperEngineToolkit`, and asks for no
+  administrator rights. It puts Toolkit in the Start menu, can start the tray
+  tracker with Windows, and has an uninstaller in Settings > Apps. Its wizard
+  speaks English, Russian and Ukrainian. See [Installing](docs/installing.md).
+- **Your data is kept through every update, and copied aside before one.**
+  The installer never deletes, moves or overwrites the data folder. Before an
+  update's new version does anything else, the data is copied into
+  `update_backup\` in the data folder, every file checked against its
+  original; the newest five copies are kept, older ones go to the Recycle Bin.
+  Uninstalling leaves the data where it is, and installing again picks it up.
+- **An earlier copy's data comes along.** On a first install the installer
+  asks for the folder of a copy you ran before — a git clone run from source,
+  or a build from before 3.0.0, which keep their data beside themselves — and
+  fills it in from that copy's autostart entry when it has one. The data is
+  copied in and checked; the original is not touched.
+- **Updating no longer means quitting Toolkit first.** The installer asks the
+  running window and tray tracker to quit, and waits. A window in the middle
+  of a run, a scan or a question does not quit; it comes forward, and the
+  installer asks you to finish and close it. Nothing is ended by force.
+- New command-line options, for the installer: `--quit`, `--adopt-data
+  <folder>`, `--backup-data`, `--autostart release` (removes autostart only if
+  it starts this copy), and `--report <file>`.
+- `build.cmd installer` makes the installer too, with Inno Setup 6.3 or later.
+  CI makes it on every pull request, then installs it on a fresh Windows from
+  an earlier copy, updates it over a running copy, uninstalls it and installs
+  it again, checking the data at every step.
+
+### Changed
+
+- **The Start-menu entry stays with the installed copy.** A build run from
+  somewhere else, `dist\` for one, no longer points it at itself while an
+  installed copy exists.
+- `build.cmd` now refuses to start only while the copy in `dist\` runs, not
+  while an installed copy does, and waits for no key press on CI.
+
 ## [3.18.4] - 2026-10-09
 
 ### Fixed

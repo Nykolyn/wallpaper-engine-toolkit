@@ -237,6 +237,36 @@ check("rotate:confirm shows the Rotator and asks its start question, once",
 del w.pages["rotator"].start_rotation
 w.show_page("copier")
 
+# quit: is the installer's (app/quit_request.py). The application is stood in
+# for, so the windows this test goes on with stay open.
+import app.main_window as main_window_module                              # noqa: E402
+real_application = main_window_module.QApplication
+done: list[str] = []
+
+
+def stand_in_application(asking=None):
+    return SimpleNamespace(activeModalWidget=lambda: asking,
+                           closeAllWindows=lambda: done.append("close all"),
+                           quit=lambda: done.append("quit"))
+
+
+main_window_module.QApplication = stand_in_application()
+# A run under way, as the JobCenter would list it; a real one would be the
+# "last run" the status line tests further down expect there not to be.
+svc.jobs.running = lambda: [SimpleNamespace(tool="rotator")]
+w.handle_command("quit", "")
+check("quit: during a run does not quit, and the window comes forward",
+      done == [] and w.isVisible())
+del svc.jobs.running
+main_window_module.QApplication = stand_in_application(asking=QWidget())
+w.handle_command("quit", "")
+check("nor while a question waits for an answer", done == [])
+main_window_module.QApplication = stand_in_application()
+w.handle_command("quit", "")
+check("with nothing under way it closes every window and quits",
+      done == ["close all", "quit"])
+main_window_module.QApplication = real_application
+
 print("-- the rail --")
 w.resize(1199, 800)
 app.processEvents()

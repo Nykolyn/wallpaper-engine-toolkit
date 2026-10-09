@@ -39,6 +39,7 @@ data/
 ├── selfcheck.txt           the last --selfcheck report
 ├── thumbs/                 cached preview images
 ├── authors_backup/         a snapshot of the authors after every change, and journal.jsonl
+├── update_backup/          the data as it was before each of the last 5 updates (Installing)
 └── playlist-refresh/       Wallpaper Engine's two files before the last rotation rewrote them
 ```
 
@@ -73,7 +74,7 @@ The move is left to the next start outside it: the tracker at logon, or
 
 A build older than 3.0.0 does not look in `%LOCALAPPDATA%`: going back to one
 means copying the folder back — see
-[Building](building.md#updating-an-installed-copy).
+[Building](building.md#updating-a-copy-you-built).
 
 > `suite.json` keeps its original filename. It is an internal data file, and
 > renaming it would orphan settings for no visible benefit.

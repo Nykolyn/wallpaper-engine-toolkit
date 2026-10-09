@@ -13,7 +13,9 @@ registers can make Windows drop a notification rather than rename it, so a
 process that could not make the shortcut keeps the name it had.
 
 Source runs do neither: a Start-menu entry pointing at a checkout's Python is
-nobody's idea of an install.
+nobody's idea of an install. Where the installer has put a copy on the machine,
+the shortcut is that copy's — the installer makes it — and a build run from
+somewhere else takes the ID but leaves the shortcut pointing where it does.
 
 The shortcut is made through the shell's own COM interfaces (IShellLinkW,
 IPropertyStore, IPersistFile) with ctypes; nothing else in the app needs
@@ -46,13 +48,16 @@ def shortcut_path() -> Path | None:
 def claim(*, frozen: bool, target: str, link: Path | None,
           read: Callable[[Path], tuple[str, str] | None],
           write: Callable[[Path, str], None],
-          set_id: Callable[[str], None]) -> str:
+          set_id: Callable[[str], None],
+          installed: str | None = None) -> str:
     """Make the shortcut if it is missing or points elsewhere, then take the ID.
     Returns what was done, in words, for data/tracker.log.
 
     `read(link)` is (target, app id) of an existing shortcut or None, `write`
     makes one, `set_id` sets the process's ID: passed in so this can be checked
-    away from Windows.
+    away from Windows. `installed` is the installed copy's exe, if there is one
+    (see install_info): a shortcut to it is that copy's, and a build run from
+    elsewhere leaves it alone.
     """
     if not frozen:
         return "source run: no Start-menu shortcut, the sender stays as it was"
@@ -60,6 +65,12 @@ def claim(*, frozen: bool, target: str, link: Path | None,
         return "no Start menu found: the sender stays as it was"
     try:
         found = read(link) if link.exists() else None
+        if found is not None and found[1] == APP_ID and installed \
+                and os.path.normcase(found[0]) == os.path.normcase(installed) \
+                and os.path.normcase(target) != os.path.normcase(installed):
+            set_id(APP_ID)
+            return (f"Start-menu shortcut left with the installed copy ({installed}); "
+                    f"notifications come from {DISPLAY_NAME}")
         if found is None or os.path.normcase(found[0]) != os.path.normcase(target) \
                 or found[1] != APP_ID:
             link.parent.mkdir(parents=True, exist_ok=True)
@@ -75,9 +86,11 @@ def claim(*, frozen: bool, target: str, link: Path | None,
 
 def claim_for_this_process() -> str:
     """`claim` with the real exe, Start menu and Windows calls."""
+    from .install_info import installed_exe
+    installed = installed_exe()
     return claim(frozen=bool(getattr(sys, "frozen", False)), target=sys.executable,
                  link=shortcut_path(), read=_read_shortcut, write=_write_shortcut,
-                 set_id=_set_process_id)
+                 set_id=_set_process_id, installed=str(installed) if installed else None)
 
 
 # ---- Windows ------------------------------------------------------------------------

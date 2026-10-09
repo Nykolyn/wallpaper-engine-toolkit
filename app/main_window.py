@@ -23,7 +23,8 @@ from pathlib import Path
 
 from PySide6.QtCore import QEvent, QObject, QRectF, QSize, Qt, QTimer
 from PySide6.QtGui import QKeySequence, QPainter, QPixmap, QShortcut
-from PySide6.QtWidgets import QHBoxLayout, QMainWindow, QStackedWidget, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (QApplication, QHBoxLayout, QMainWindow, QStackedWidget,
+                               QVBoxLayout, QWidget)
 
 from . import animations, services, theme
 from .branding import DISPLAY_NAME
@@ -506,7 +507,11 @@ class MainWindow(QMainWindow):
         question (the check of the folders, then "Start run N?"; nothing is
         moved before that is answered). A command this version does not know
         still brings the window forward. Asked before the pages are made, it
-        brings the window forward now and is carried out once they are."""
+        brings the window forward now and is carried out once they are.
+        `quit:` is the installer's (see quit_request) and is answered at once."""
+        if verb == "quit":
+            self.quit_if_idle()
+            return
         if self.loading is not None:
             self._waiting.append((verb, argument))
             self.bring_forward()
@@ -516,6 +521,22 @@ class MainWindow(QMainWindow):
             self.pages["rotator"].start_rotation()
             return
         self.bring_forward(argument if verb == "show" else "")
+
+    def quit_if_idle(self) -> bool:
+        """Quit for an update or an uninstall — unless something is under way.
+
+        A run moving folders, a build, a copy or a scan is not cut short from
+        outside, and neither is a question waiting on screen: the window comes
+        forward instead, so you see why the installer is still waiting, and
+        the installer asks you to finish and close it. True if it quit.
+        """
+        if self.services.jobs.running() or QApplication.activeModalWidget() is not None:
+            self.bring_forward()
+            return False
+        # Every window of the app, the gallery's too, then the app itself.
+        QApplication.closeAllWindows()
+        QApplication.quit()
+        return True
 
     # -- the frame's own behaviour
 

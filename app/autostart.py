@@ -378,6 +378,73 @@ def disable() -> None:
     clear_run_key(LEGACY_VALUE_NAME)
 
 
+def run_key_value(name: str = VALUE_NAME) -> str:
+    """The command line a Run entry holds, or "" if there is none."""
+    try:
+        import winreg
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY) as key:
+            value, _ = winreg.QueryValueEx(key, name)
+        return str(value)
+    except (ImportError, OSError):
+        return ""
+
+
+def program_of(command_line: str) -> str:
+    """The program a command line starts: its first word, quoted or not."""
+    line = command_line.strip()
+    if line.startswith('"'):
+        end = line.find('"', 1)
+        return line[1:end] if end > 0 else line[1:]
+    return line.split(" ", 1)[0]
+
+
+def _same_program(a: str, b: str) -> bool:
+    return os.path.normcase(os.path.abspath(a)) == os.path.normcase(os.path.abspath(b))
+
+
+def release(exe: str | None = None, *, task_program=None, run_value=None,
+            delete=None, clear=None) -> str:
+    """Remove autostart only where it starts `exe` — this program, by default.
+    Returns what was done, in words.
+
+    What the uninstaller runs. ``--autostart off`` removes autostart whatever it
+    starts; a copy being uninstalled must not take it away from another copy —
+    a build of your own, a checkout — that it was pointed at since. The other
+    arguments stand in for Task Scheduler and the registry in the tests.
+    """
+    exe = exe or str(target()[0])
+    task_program = task_program or (lambda name: _task_command(export_task(name)))
+    run_value = run_value or run_key_value
+    delete = delete or delete_task
+    clear = clear or clear_run_key
+    removed: list[str] = []
+    kept: list[str] = []
+    for name in (TASK_NAME, LEGACY_TASK_NAME):
+        program = task_program(name)
+        if not program:
+            continue
+        if _same_program(program, exe):
+            delete(name)
+            removed.append(f"the scheduled task {name}")
+        else:
+            kept.append(f"the scheduled task {name} ({program})")
+    for name in (VALUE_NAME, LEGACY_VALUE_NAME):
+        line = run_value(name)
+        if not line:
+            continue
+        if _same_program(program_of(line), exe):
+            clear(name)
+            removed.append(f"the Run entry {name}")
+        else:
+            kept.append(f"the Run entry {name} ({program_of(line)})")
+    said = []
+    if removed:
+        said.append("removed " + ", ".join(removed))
+    if kept:
+        said.append("left alone, as it starts another copy: " + ", ".join(kept))
+    return "autostart: " + ("; ".join(said) if said else "off, nothing to remove")
+
+
 def set_enabled(on: bool) -> None:
     if on:
         enable()

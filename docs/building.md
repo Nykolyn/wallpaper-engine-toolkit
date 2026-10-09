@@ -16,6 +16,43 @@ WallpaperEngineToolkit.exe --tracker    the tray tracker
 WallpaperEngineToolkit.exe --selfcheck  what this build can actually import
 ```
 
+## The installer
+
+```
+build.cmd installer
+```
+
+Builds the exe as above, then makes
+`dist\installer\WallpaperEngineToolkit-Setup-X.Y.Z.exe` from the same build,
+with [Inno Setup](https://jrsoftware.org/isinfo.php) 6.3 or later. `build.cmd`
+looks for `ISCC.exe` where Inno Setup's own installer puts it; the `ISCC`
+environment variable names it outright. What the installer does is in
+[Installing](installing.md); how, in `installer\WallpaperEngineToolkit.iss`.
+
+The script decides *when*; the app does the work on the data, where the tests
+reach it. The installer runs the installed exe with:
+
+| Option | What it does | Where |
+|---|---|---|
+| `--quit` | asks the running window and tray tracker to quit, and waits until they have; a busy window does not | `app/quit_request.py` |
+| `--adopt-data <folder>` | copies an earlier copy's data in, when there is no data folder yet; never touches the original | `app/data_location.py` (`adopt`) |
+| `--backup-data` | copies the data aside before an update, every file checked | `app/update_backup.py` |
+| `--autostart on` / `release` | points the logon task at the installed copy / removes it if it starts this copy | `app/autostart.py` |
+| `--report <file>` | writes what any of the above did to a file, for the installer to show | `run_app.py` |
+
+CI makes the installer on every pull request and runs
+`tools\check_installer.py` on a fresh Windows: install from a made-up earlier
+copy, update over a running window and tracker, uninstall, install again —
+checking the data after each. It installs things, so it refuses to run outside
+CI without `--yes-on-this-machine`, and refuses outright where a data folder
+already exists. A merge to `main` attaches the installer to the release.
+
+An installed copy and a build in `dist\` can both be on one machine, and use
+the same data. Only one window and one tray tracker run at a time, whichever
+copy they come from: the single-instance locks are the same. `build.cmd`
+refuses only while the copy in `dist\` runs, and the Start-menu entry stays
+the installed copy's.
+
 ## What the build script does around PyInstaller
 
 Since 3.0.0 a build keeps its data in `%LOCALAPPDATA%\WallpaperEngineToolkit`,
@@ -95,7 +132,10 @@ program starts, and every path into the bundle is left out of its environment
 (see `app/external.py`). A source run has no DLL directory to clear and leaves
 out one entry of `PATH`, PySide6's own folder.
 
-## Updating an installed copy
+## Updating a copy you built
+
+This is for a copy run from `dist\`. One the installer put there is updated by
+the next release's installer — see [Installing](installing.md#updating).
 
 The tray tracker runs from the build in `dist\`, and a running copy holds its
 exe open — so `build.cmd` refuses to start while one is running. The whole

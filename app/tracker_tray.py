@@ -36,6 +36,7 @@ from PySide6.QtWidgets import QApplication, QSystemTrayIcon
 from . import theme, tray_words as words, window_instance
 from .branding import DISPLAY_NAME
 from .hang_watch import HangWatch
+from .quit_request import QuitListener
 from .engines.tracker import FALLBACK_SECONDS, TIME_FMT, Progress, app_data_dir, pick_primary
 from .engines.wallpaper_timer import Countdown, WallpaperTimer
 from .settings import Settings
@@ -129,6 +130,11 @@ class TrackerTray:
         self.menu.chosen.connect(self._on_chosen)
         self.icon.setContextMenu(self.menu)
         self.icon.show()
+
+        # The installer asks before it replaces or removes the program
+        # (`--quit`, see quit_request): the same as Quit in the menu.
+        self.quit_listener = QuitListener()
+        self.quit_listener.requested.connect(self._on_quit_requested)
 
         self.clock_timer = QTimer()
         self.clock_timer.timeout.connect(self._tick_clock)
@@ -257,6 +263,10 @@ class TrackerTray:
             self.open_toolkit("Settings")
         elif key == QUIT:
             self.app.quit()
+
+    def _on_quit_requested(self):
+        log("asked to quit (an update or an uninstall is starting)")
+        self.app.quit()
 
     def _on_activated(self, reason):
         if reason in (QSystemTrayIcon.Trigger, QSystemTrayIcon.DoubleClick):

@@ -138,6 +138,40 @@ else:
     print("SKIP  this machine still has the old entry; not migrating it in a test")
 
 
+# ---- what the uninstaller removes: only what starts the copy going away
+
+check("a quoted command line gives up its program",
+      autostart.program_of(r'"C:\Apps\T\WallpaperEngineToolkit.exe" --tracker')
+      == r"C:\Apps\T\WallpaperEngineToolkit.exe")
+check("so does an unquoted one", autostart.program_of(r"C:\T\x.exe --tracker") == r"C:\T\x.exe")
+
+INSTALLED = r"C:\Users\you\AppData\Local\Programs\WallpaperEngineToolkit\WallpaperEngineToolkit.exe"
+BUILD = r"D:\src\dist\WallpaperEngineToolkit\WallpaperEngineToolkit.exe"
+
+
+def release(tasks: dict, run: dict, exe: str = INSTALLED):
+    gone: list[str] = []
+    said = autostart.release(exe, task_program=lambda n: tasks.get(n, ""),
+                             run_value=lambda n: run.get(n, ""),
+                             delete=lambda n: gone.append("task " + n),
+                             clear=lambda n: gone.append("run " + n))
+    return gone, said
+
+
+gone, said = release({autostart.TASK_NAME: INSTALLED.upper()}, {})
+check("the installed copy's own task is removed, whatever the case of its path",
+      gone == ["task " + autostart.TASK_NAME] and "removed" in said)
+gone, said = release({autostart.TASK_NAME: BUILD}, {})
+check("a task that starts another copy is left alone, and that is said",
+      gone == [] and "left alone" in said and BUILD in said)
+gone, said = release({}, {autostart.VALUE_NAME: f'"{INSTALLED}" --tracker',
+                          autostart.LEGACY_VALUE_NAME: f'"{BUILD}" --tracker'})
+check("Run entries the same way, the old name included",
+      gone == ["run " + autostart.VALUE_NAME] and BUILD in said)
+gone, said = release({}, {})
+check("with no autostart at all nothing is removed", gone == [] and "nothing to remove" in said)
+
+
 print()
 print("PASSED %d/%d" % (sum(results), len(results)))
 sys.exit(0 if all(results) else 1)
