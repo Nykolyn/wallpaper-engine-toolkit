@@ -28,6 +28,7 @@ app/
 │   │                       two dialogs, review_fixtures.py its made-up states
 │   ├── settings.py       what is set once
 │   ├── creator.py        video metadata, selection, builds and results
+│   ├── cleaner.py        background Workshop availability checks and verified reserve moves
 │   └── copier.py         sequential duplication queue, measurements and results
 ├── theme.py              the design tokens: colour, type, space, radius, shadows, the stylesheet
 ├── animations.py         motion tokens, the easing curve, reduced motion, the shared loops
@@ -1061,7 +1062,7 @@ form's own check pass.
   (a page's widgets made later, a monitor's card, join the chain at its end);
   it costs about 2 ms. A dialog does the same over its own panel, so its body
   comes before its buttons. Scroll areas are not stops; tables are left by Tab.
-- **Shortcuts**: Ctrl+1 … Ctrl+7 go to the pages in the sidebar's order;
+- **Shortcuts**: Ctrl+1 … Ctrl+8 go to the pages in the sidebar's order;
   Ctrl+F puts the cursor in the page's filter with its words selected
   (`Page.filter_field()`: the Tracker's, the Rotator's and Review's authors);
   Ctrl+V on the Copier pastes paths; Enter confirms a dialog and Esc cancels

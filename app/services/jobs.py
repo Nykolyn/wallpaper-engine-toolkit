@@ -36,7 +36,7 @@ RESULTS = ("clean", "problems", "stopped", "failed")
 # Which running job the status line leads with: the one that is moving files
 # of the loop first. A rotation closes Wallpaper Engine and moves the reserve;
 # a copy or a build writes into myprojects; a Review scan only reads.
-PRIORITY = {"rotator": 0, "copier": 1, "creator": 2, "review": 3, "tracker": 4}
+PRIORITY = {"rotator": 0, "copier": 1, "cleaner": 1, "creator": 2, "review": 3, "tracker": 4}
 OTHER_PRIORITY = 9
 
 # A rate needs this many counts within one phase, over at least this long.

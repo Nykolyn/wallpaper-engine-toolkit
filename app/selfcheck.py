@@ -56,6 +56,7 @@ def run() -> tuple[bool, str]:
                         ("app.pages.review",
                          "the Review page: the scan, the authors, finishing a review"),
                         ("app.pages.copier", "the Copier queue, verification and retry"),
+                        ("app.pages.cleaner", "Cleaner: unavailable Workshop wallpapers and verified reserve moves"),
                         ("app.pages.creator", "the Creator page: reading, building and verified Move"),
                         ("app.pages.review_settings",
                          "Review settings, the authors database and its backups"),

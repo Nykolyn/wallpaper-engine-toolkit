@@ -181,6 +181,7 @@ class ItemDetails:
     favorited: int = 0
     file_size: int = 0          # bytes, as Steam reports the download
     kind: str = ""              # Scene, Video, Web, Application — or "" if untagged
+    result: int = 0            # Steam EResult; 0 in older cached answers
 
     @property
     def large(self) -> bool:
@@ -233,6 +234,7 @@ class ItemDetails:
             "preview": self.preview, "subscriptions": self.subscriptions,
             "favorited": self.favorited, "file_size": self.file_size,
             "kind": self.kind,
+            "result": self.result,
         }
 
     @classmethod
@@ -247,11 +249,13 @@ class ItemDetails:
         ``GetUserFiles`` omits the field entirely for items it does return.
         """
         item_id = str(data.get("publishedfileid", ""))
-        if data.get("result", 1) != 1:
-            return cls(id=item_id, ok=False)
+        result = data.get("result", 1)
+        if result != 1:
+            return cls(id=item_id, ok=False, result=result)
         return cls(
             id=item_id,
             ok=True,
+            result=result,
             creator=str(data["creator"]) if data.get("creator") else None,
             title=data.get("title") or "",
             created=int(data.get("time_created") or 0),
@@ -687,6 +691,7 @@ class SteamClient:
 
     def details(self, ids: Iterable[str], refresh: bool = False,
                 on_progress: Callable[[int, int], None] | None = None,
+                *, max_age: float = DETAILS_TTL,
                 ) -> dict[str, ItemDetails]:
         """Describe every id, in batches of 200, cache first.
 
@@ -700,7 +705,7 @@ class SteamClient:
 
         for item_id in wanted:
             cached = None if refresh or not self._cache else \
-                self._cache.get(ITEM_CACHE, item_id, DETAILS_TTL)
+                self._cache.get(ITEM_CACHE, item_id, max_age)
             if cached:
                 self._count("cache_hits")
                 found[item_id] = ItemDetails.from_json(cached)
@@ -750,7 +755,16 @@ class SteamClient:
 
     def _remember_items(self, items: Iterable[ItemDetails]) -> None:
         if self._cache:
-            self._cache.put(ITEM_CACHE, {i.id: i.to_json() for i in items if i.id})
+            entries = {}
+            for item in items:
+                if not item.id:
+                    continue
+                if not item.ok and not item.creator:
+                    previous = self._cache.get(ITEM_CACHE, item.id, float("inf"))
+                    if previous:
+                        item.creator = previous.get("creator")
+                entries[item.id] = item.to_json()
+            self._cache.put(ITEM_CACHE, entries)
 
     # -- authors -----------------------------------------------------------
 

@@ -518,12 +518,17 @@ check("a command asked meanwhile waits for them", window.current_page() == "")
 window.move(300, 200)
 window.show()
 check("once on screen, the pages are made", wait_for(window.ready)
-      and len(window.pages) == 7 and window.loading is None)
+      and len(window.pages) == 8 and window.loading is None)
 check("and the command is carried out", window.current_page() == "rotator")
 check("no window but the main one came on screen while it was all made",
       windows.shown == ["MainWindow"])
 app.removeEventFilter(windows)
 window.close()
+
+# Let Qt emit aboutToQuit so page workers stop before QApplication is destroyed.
+from PySide6.QtCore import QTimer
+QTimer.singleShot(0, app.quit)
+app.exec()
 
 print()
 passed = sum(results)

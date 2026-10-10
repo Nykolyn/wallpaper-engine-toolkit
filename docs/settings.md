@@ -1,6 +1,6 @@
 # Settings
 
-**What is set once, in one place: the last entry in the sidebar, or Ctrl+7.**
+**What is set once, in one place: the last entry in the sidebar, or Ctrl+8.**
 
 ![The Settings page (made-up folders on a drive X:)](images/settings.png)
 

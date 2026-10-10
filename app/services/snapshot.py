@@ -59,6 +59,7 @@ AFTER_JOB = {
     "creator": (ROTATION,),
     "copier": (ROTATION,),
     "review": (REVIEW,),
+    "cleaner": (RESERVE, ROTATION),
 }
 
 RUN_META = "run_meta.json"          # the Rotator's side file, beside history.json

@@ -6,6 +6,27 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [3.21.0] - 2026-10-11
+
+### Added
+
+- **Cleaner** lists downloaded Workshop wallpapers whose Steam records are
+  unavailable. It checks the library in the background at startup, reuses
+  cached batched Steam answers for up to a day, and shows the unprocessed
+  count in the Utilities sidebar. Filter by Wallpaper Engine folder or view
+  everything; the table shows previews, titles, authors when known, types,
+  folder sizes and folder creation dates. Click a row to open it in Explorer.
+- Cleaner can unsubscribe and send a wallpaper to the Recycle Bin, or keep
+  a verified copy in the Rotator's reserve before unsubscribing and recycling
+  its Workshop source. Both actions ask first; existing reserve folders are
+  never overwritten. Network failures are reported without flagging healthy
+  wallpapers as unavailable.
+
+### Changed
+
+- The Utilities section starts with Cleaner. Keyboard shortcuts now run from
+  Ctrl+1 through Ctrl+8, with Settings last.
+
 ## [3.20.0] - 2026-10-10
 
 ### Added
@@ -1620,7 +1641,8 @@ restructured yet; the tabs keep their layout and take on the new look.
   was right for one library and wrong for every other. Nothing is tagged now
   unless you ask for it.
 
-[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.20.0...HEAD
+[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.21.0...HEAD
+[3.21.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.20.0...v3.21.0
 [3.20.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.19.1...v3.20.0
 [3.19.1]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.19.0...v3.19.1
 [3.19.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.18.4...v3.19.0
