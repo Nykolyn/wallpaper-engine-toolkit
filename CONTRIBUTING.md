@@ -79,6 +79,10 @@ running often enough to matter on a short playlist.
    for %f in (tests\test_*.py) do .venv\Scripts\python.exe %f
    ```
 
+   CI runs Python with `-u -X faulthandler` and reports each failed process's
+   exit code. Use those flags locally when a GUI test ends without a traceback:
+   they preserve its last printed check and enable Python's crash diagnostics.
+
 2. **Check it still imports as a whole**, since nothing here is lazy-loaded at
    test time but plenty is at runtime:
 

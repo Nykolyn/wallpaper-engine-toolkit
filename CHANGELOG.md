@@ -15,6 +15,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   includes only wallpapers still present, and counts shared folder entries
   once. Reading the count runs in the background, without asking Steam.
 
+### Changed
+
+- CI test logs now flush each check immediately and report process exit
+  codes and Python fault traces, so a GUI crash does not leave an empty log.
+
 ## [3.19.1] - 2026-10-10
 
 ### Fixed
