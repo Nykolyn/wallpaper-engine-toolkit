@@ -22,6 +22,7 @@ import threading
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from unittest.mock import patch
 
 TMP = Path(tempfile.mkdtemp(prefix="wallpaper_review_page_test_"))
 # Before any app module: the data folder resolves when they are imported.
@@ -417,10 +418,58 @@ def answer(dialog):
 
 
 page._answer = answer
+page.library = library
 page.on_shown()
 check("with no key, the keyless banner shows in the empty state", page.texts()["keyless"])
 check("and with no last review, the page says so",
-      page.subtitle() == "No review yet" and page.texts()["empty"][0] == "Nothing scanned yet")
+      page.subtitle().endswith("No review yet")
+      and page.texts()["empty"][0] == "Nothing scanned yet")
+check("the header counts the selected source before a scan",
+      wait_for(lambda: page.subtitle() == "5 wallpapers to scan · No review yet"))
+
+print("-- source counts --")
+original_config = WE_CONFIG.read_text(encoding="utf-8")
+WE_CONFIG.write_text(json.dumps({"user": {"general": {"browser": {"folders": [
+    {"title": "new", "items": {QUEUED[0]: 1, QUEUED[1]: 1, "999999": 1}},
+    {"title": "other", "items": {QUEUED[1]: 1, QUEUED[2]: 1}},
+    {"title": "empty", "items": {}}]}}}}), encoding="utf-8")
+guarded(page._refresh_source_counts)
+check("counting reads no library or config on the GUI thread",
+      wait_for(lambda: page._source_counts is not None) and on_gui_thread == [])
+check("counts exclude deleted IDs, deduplicate folders, and include loose wallpapers",
+      page._source_counts == {"folder:new": 2, "folder:other": 2, "folder:empty": 0,
+                              rv.SCOPE_FOLDERS: 3, rv.SCOPE_LOOSE: 2,
+                              rv.SCOPE_EVERYTHING: 5})
+
+def choose_source(dialog):
+    dialog.source.setCurrentIndex(dialog.source.findData(rv.SCOPE_EVERYTHING))
+    return True
+
+with patch("app.pages.review.steamworks_note", return_value="test"):
+    page._answer = choose_source
+    page.edit_settings()
+    check("saving another Review source updates the header without scanning",
+          wait_for(lambda: page.subtitle() == "5 wallpapers to scan · No review yet")
+          and page.flow is None)
+page._answer = answer
+for scope, expected in (("folder:empty", 0), ("folder:gone", 0),
+                        (rv.SCOPE_LOOSE, 2), (rv.SCOPE_FOLDERS, 3)):
+    settings.set("review", "scope", scope)
+    page._render()
+    check(f"the header describes {scope}",
+          page.subtitle().startswith(f"{expected} wallpapers to scan · "))
+page._answered(f"source-counts:{page._source_request - 1}", {rv.SCOPE_FOLDERS: 999})
+check("an older background result cannot replace a newer count",
+      page.subtitle().startswith("3 wallpapers to scan · "))
+page._answered(f"source-counts:{page._source_request}", OSError("test"))
+check("a failed count is not displayed as zero",
+      page.subtitle().startswith("Wallpaper count unavailable · "))
+WE_CONFIG.write_text(original_config, encoding="utf-8")
+settings.set("review", "scope", rv.DEFAULT_SCOPE)
+page.on_hidden()
+page.on_shown()
+check("returning to Review rereads the source and recovers from a count failure",
+      wait_for(lambda: page.subtitle() == "5 wallpapers to scan · No review yet"))
 
 print("-- a scan, end to end --")
 page.start_scan()
@@ -597,7 +646,8 @@ check("review_last.json says the review is finished", final.finished is not None
       and json.loads(last_file.read_text(encoding="utf-8"))["written"]["created"] == 4)
 check("the finished state: who went through, the numbers, the last scan",
       page.texts()["done"][0].startswith("1 of 4 authors went through. 2 wallpapers were subscribed")
-      and page.texts()["done"][1].startswith("last scan ") and page.subtitle().startswith("Finished "))
+      and page.texts()["done"][1].startswith("last scan ")
+      and page.subtitle().startswith("5 wallpapers to scan · Finished "))
 check("and the database write is journalled", svc.journal.recent(1)[0].kind == "database.clean")
 page.reopen()
 check("Reopen review goes back to the authors", page.state == "reviewing"
@@ -667,7 +717,8 @@ check("with the reason in plain words", texts["stopped"][1].startswith(
 check("and the last log lines", page.excerpt.lines()[-1].message.startswith("stopped at Cat")
       and page.excerpt.lines()[-2].kind == "error")
 check("the status line and the journal say it failed",
-      svc.journal.recent(1)[0].kind == "scan.failed" and page.subtitle().startswith("Scan stopped at"))
+      svc.journal.recent(1)[0].kind == "scan.failed"
+      and page.subtitle().startswith("5 wallpapers to scan · Scan stopped at"))
 check("the sidebar says stopped", page.nav_state().text == "stopped")
 asked_before = list(steam.calls)
 steam.fail.clear()

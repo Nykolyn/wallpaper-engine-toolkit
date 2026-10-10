@@ -46,6 +46,13 @@ Nothing. Press **Scan for new items**.
 
 ## How to use it
 
+Beside **Review**, the header shows **N wallpapers to scan** for the saved
+**Review source**. It counts the wallpapers still present that the next scan
+will read, with duplicates across folders counted once. Changing the source
+in **Review settings** updates the count; reopening Review refreshes it from
+Wallpaper Engine's saved folders. The count loads in the background and
+stays visible alongside the current scan or review status.
+
 1. Put wallpapers in Wallpaper Engine's `new` folder during the week.
 2. Open the page and press **Scan for new items**. The page says what it is
    doing as it does it: how many authors it has checked of how many, the time
