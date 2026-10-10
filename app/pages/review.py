@@ -1117,6 +1117,10 @@ class ReviewPage(Page):
         self._writing = False
         self._watching = False
         self._folders: dict[str, int] | None = None
+        self._source_counts: dict[str, int] | None = None
+        self._source_request = 0
+        self._source_error = False
+        self._status_subtitle = ""
         self._settings_dialog: ReviewSettingsDialog | None = None
         self.signals = _Signals(self)
         self.signals.flow_event.connect(self._flow_event)
@@ -1291,6 +1295,7 @@ class ReviewPage(Page):
         if self._fixture:
             return
         self.settings.reload_if_changed()
+        self._refresh_source_counts()
         if self._last_raw is None:
             if self._services is not None:
                 # what the snapshot already read, if it did before the page was made
@@ -1379,6 +1384,32 @@ class ReviewPage(Page):
 
     def _scope(self) -> str:
         return str(self.settings.get(SECTION, "scope", rv.DEFAULT_SCOPE) or rv.DEFAULT_SCOPE)
+
+    def set_subtitle(self, text: str) -> None:
+        self._status_subtitle = text
+        self._render_source_count()
+
+    def _render_source_count(self) -> None:
+        if self._source_error:
+            words = "Wallpaper count unavailable"
+        elif self._source_counts is None:
+            words = "Counting wallpapers…"
+        else:
+            count = self._source_counts.get(self._scope(), 0)
+            words = f"{fmt.counted(count, 'wallpaper')} to scan"
+        super().set_subtitle(f"{words} · {self._status_subtitle}"
+                             if self._status_subtitle else words)
+
+    def _refresh_source_counts(self) -> None:
+        if self._fixture:
+            return
+        self._source_request += 1
+        self._source_counts = None
+        self._source_error = False
+        self._render_source_count()
+        config_path, library = self._config_path, self.library
+        _thread(self.signals, f"source-counts:{self._source_request}",
+                lambda: _source_counts(config_path, library))
 
     def _render_empty(self, now: datetime) -> None:
         seconds = (self._last_raw or {}).get("seconds")
@@ -2173,7 +2204,8 @@ class ReviewPage(Page):
                                       stored=stored_key_words(), on_authors=self.edit_authors)
         self.last_dialog = dialog
         self._settings_dialog = dialog
-        _thread(self.signals, "folders", _folder_counts)
+        self._refresh_source_counts()
+        _thread(self.signals, "folders", lambda: _folder_counts(self._config_path))
         _thread(self.signals, "steamworks", steamworks_note)
         try:
             if not self._answer(dialog):
@@ -2191,6 +2223,7 @@ class ReviewPage(Page):
             self._update_bar()
         if "scope" in changed and self.state == "empty":
             self._render()
+        self._render_source_count()
 
     def edit_authors(self) -> None:
         """The authors database and its backups."""
@@ -2239,7 +2272,13 @@ class ReviewPage(Page):
     # -- answers from threads
 
     def _answered(self, what: str, found) -> None:
-        if what == "write":
+        if what.startswith("source-counts:"):
+            if what != f"source-counts:{self._source_request}":
+                return                 # a newer read owns the header now
+            self._source_counts = found if isinstance(found, dict) else None
+            self._source_error = self._source_counts is None
+            self._render_source_count()
+        elif what == "write":
             self._written(found)
         elif what == "subscribed":
             self._watching = False
@@ -2327,10 +2366,23 @@ class ReviewPage(Page):
         load(self, state)
 
 
-def _folder_counts() -> dict[str, int]:
+def _source_counts(config_path=None, library=None) -> dict[str, int]:
+    """Count the same present, distinct IDs as Review.scan, off the UI thread."""
+    if library is None:
+        from ..engines.library import Library
+        library = Library(roots=[])
+    folders = rv.we_folders(config_path)
+    here = library.listable()
+    scopes = [rv.FOLDER + title for title in folders]
+    scopes.extend((rv.SCOPE_FOLDERS, rv.SCOPE_LOOSE, rv.SCOPE_EVERYTHING))
+    return {scope: sum(item in here for item in rv.scope_candidates(scope, folders, here))
+            for scope in scopes}
+
+
+def _folder_counts(config_path=None) -> dict[str, int]:
     """Wallpaper Engine's folders and how many wallpapers each holds. Reads
     its config.json, on Wallpaper Engine's disk: on a thread."""
-    return {title: len(items) for title, items in rv.we_folders().items()}
+    return {title: len(items) for title, items in rv.we_folders(config_path).items()}
 
 
 __all__ = ["ReviewPage", "ScanProgress", "AuthorList", "AuthorModel", "SubscribeQueue",

@@ -6,6 +6,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [3.20.0] - 2026-10-10
+
+### Added
+
+- **Review shows how many wallpapers the selected source will scan**, beside
+  the page title. The count updates when Review opens or its settings change,
+  includes only wallpapers still present, and counts shared folder entries
+  once. Reading the count runs in the background, without asking Steam.
+
 ## [3.19.1] - 2026-10-10
 
 ### Fixed
@@ -1606,7 +1615,8 @@ restructured yet; the tabs keep their layout and take on the new look.
   was right for one library and wrong for every other. Nothing is tagged now
   unless you ask for it.
 
-[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.19.1...HEAD
+[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.20.0...HEAD
+[3.20.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.19.1...v3.20.0
 [3.19.1]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.19.0...v3.19.1
 [3.19.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.18.4...v3.19.0
 [3.18.4]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.18.3...v3.18.4

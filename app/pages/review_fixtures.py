@@ -233,6 +233,8 @@ def load(page, state: str) -> None:
     page.keyless.hide()
     page._folders = dict(data["folders"])
     found = result(data, now)
+    page._source_counts = {data["scope"]: len(found.queue)}
+    page._source_error = False
     page.cards = {c.id64: c for c in found.cards}
     page.result = found
     page.session = None
