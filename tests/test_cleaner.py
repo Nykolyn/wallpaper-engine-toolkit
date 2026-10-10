@@ -129,8 +129,8 @@ class CleanerTests(unittest.TestCase):
             events.append(source)
             shutil.rmtree(source)
         target = engine.move_to_reserve(str(self.folder), str(reserve), remove=remove)
-        self.assertEqual(target, str(reserve / "1001"))
-        self.assertEqual(events, [str(self.folder)])
+        self.assertEqual(Path(target), (reserve / "1001").resolve())
+        self.assertEqual(events, [str(self.folder.resolve())])
         self.assertFalse(self.folder.exists())
         self.assertEqual(list(self.root.glob(".toolkit-reserve-*")), [])
 
