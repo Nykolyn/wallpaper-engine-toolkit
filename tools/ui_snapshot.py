@@ -16,7 +16,7 @@ myprojects), made-up folders on a drive `X:` that it reports as present, and
 the frame's state from `tests/fixtures/ui/shell.json`. All pages are the real ones, populated by load_fixture(state). No live
 engines, feeds, Steam or Wallpaper Engine library scans run.
 
-- `--page`: overview, rotator, tracker, review, creator, copier, settings.
+- `--page`: overview, rotator, tracker, review, cleaner, creator, copier, settings.
 - `--state`: a state of the frame (`--list` shows them: idle, running, clean,
   problems, scanning, building, copying, failed, empty, we-off), or one of
   the page's own (the Tracker's tracking, paused, disconnected, finished, …,
@@ -183,6 +183,7 @@ def build_window(page_key: str):
     from app.pages.overview import OverviewPage
     from app.pages.creator import CreatorPage
     from app.pages.copier import CopierPage
+    from app.pages.cleaner import CleanerPage
     from app.pages.review import ReviewPage
     from app.pages.rotator import RotatorPage
     from app.pages.settings import SettingsPage
@@ -225,6 +226,7 @@ def build_window(page_key: str):
              RotatorPage(config, svc),
              TrackerPage(feed, svc, settings=settings),
              review,
+             CleanerPage(settings, svc, config),
              CreatorPage(settings, svc, config),
              CopierPage(settings, svc, config),
              # wired as build_pages wires it, so its two buttons draw as they are

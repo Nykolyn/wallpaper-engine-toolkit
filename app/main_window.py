@@ -38,13 +38,13 @@ from .ui.kit import format as fmt
 from .window_frame import NativeFrame
 
 # The pages, in the order of the loop; Ctrl+1 is the first.
-PAGE_ORDER = ("overview", "rotator", "tracker", "review", "creator", "copier", "settings")
+PAGE_ORDER = ("overview", "rotator", "tracker", "review", "cleaner", "creator", "copier", "settings")
 DEFAULT_PAGE = "overview"
 # The sidebar's groups: which pages open each.
-SECTIONS = {"overview": "The loop", "creator": "Utilities"}
+SECTIONS = {"overview": "The loop", "cleaner": "Utilities"}
 FOOTER = ("settings",)
 TOOL_NAMES = {"rotator": "Rotator", "tracker": "Tracker", "review": "Review",
-              "creator": "Creator", "copier": "Copier"}
+              "creator": "Creator", "copier": "Copier", "cleaner": "Cleaner"}
 
 
 def page_for(name: str | None) -> str | None:
@@ -354,6 +354,9 @@ class MainWindow(QMainWindow):
         self.show_page(self._initial, animate=False)
         if self._start:
             self.services.start()
+            cleaner = self.pages.get("cleaner")
+            if cleaner is not None:
+                QTimer.singleShot(0, cleaner.startup)
         waiting, self._waiting = self._waiting, []
         for verb, argument in waiting:
             self.handle_command(verb, argument)

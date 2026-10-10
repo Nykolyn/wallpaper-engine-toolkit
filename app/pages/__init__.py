@@ -44,6 +44,7 @@ def build_pages(window) -> list[Page]:
     from ..engines.rotator.config import Config
     from ..services.snapshot import RESERVE, ROTATION
     from .copier import CopierPage
+    from .cleaner import CleanerPage
     from .creator import CreatorPage
     from .overview import OverviewPage
     from .review import ReviewPage
@@ -58,6 +59,7 @@ def build_pages(window) -> list[Page]:
     # Tracker reads where myprojects is from it, for Mark [protected].
     config = Config.load()
     copier = CopierPage(settings, services, config)
+    cleaner = CleanerPage(settings, services, config)
     rotator_page = RotatorPage(config, services)
     creator_page = CreatorPage(settings, services, config, on_rebuild=rotator_page.rebuild_playlist)
     tracker_page = TrackerPage(feed, services, settings=settings, config=config)
@@ -104,4 +106,4 @@ def build_pages(window) -> list[Page]:
     rotator_page.copier_requested.connect(to_copier(rotator_page))
     on_steam_found(settings_page, steam_found)
     return [OverviewPage(services, feed, settings=settings), rotator_page, tracker_page,
-            review_page, creator_page, copier, settings_page]
+            review_page, cleaner, creator_page, copier, settings_page]

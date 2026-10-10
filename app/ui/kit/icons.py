@@ -61,6 +61,7 @@ _BODIES: dict[str, str] = {
     "chevL": '<polyline points="10,3.6 5.8,8 10,12.4"></polyline>',          # Pagination back
 }
 
+_BODIES["cleaner"] = _BODIES["warn"]
 NAMES: tuple[str, ...] = tuple(_BODIES)
 
 
