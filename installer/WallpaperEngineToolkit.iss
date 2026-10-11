@@ -175,7 +175,8 @@ Type: filesandordirs; Name: "{app}\_internal"
 Type: dirifempty; Name: "{app}"
 
 [Run]
-Filename: "{app}\{#ExeName}"; Description: "{cm:LaunchApp}"; Flags: postinstall nowait skipifsilent; Check: AllWentWell
+Filename: "{app}\{#ExeName}"; Description: "{cm:LaunchApp}"; Flags: postinstall nowait skipifsilent; Check: ManualLaunch
+Filename: "{app}\{#ExeName}"; Flags: nowait; Check: UpdateLaunch
 
 [Code]
 var
@@ -629,6 +630,23 @@ end;
 function AllWentWell: Boolean;
 begin
   Result := not PostInstallFailed;
+end;
+
+function UpdateLaunch: Boolean;
+begin
+  Result := AllWentWell and (ExpandConstant('{param:UpdateFromApp|0}') = '1');
+end;
+
+function ManualLaunch: Boolean;
+begin
+  Result := AllWentWell and not UpdateLaunch;
+end;
+
+function GetCustomSetupExitCode: Integer;
+begin
+  Result := 0;
+  if PostInstallFailed then
+    Result := 20;
 end;
 
 { ---- uninstalling ----------------------------------------------------------- }

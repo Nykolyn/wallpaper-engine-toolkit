@@ -81,3 +81,27 @@ The name and version, and three buttons:
 - **Run selfcheck** — what `--selfcheck` does, from the window: it checks what
   this build can import and reach, writes `data/selfcheck.txt`, and says
   whether every check passed. **Open report** shows the file.
+
+## Updates
+
+![An update ready to install (fabricated release)](images/updates.png)
+
+Installed copies check GitHub's latest stable release at window startup by
+default. **Check for updates at startup** switches this off; **Check for
+updates** always checks on demand. A newer version adds an Update notice to
+Settings in the sidebar and a notification with **Show update**.
+
+**Download update** fetches the complete installer in the background, shows
+progress, and supports cancellation and retry. Its size and SHA-256 must match
+GitHub's release metadata. Release notes are shown as plain text; the link
+opens the complete notes on GitHub.
+
+**Install and restart** asks first, waits for active tasks to finish, then
+starts setup without its wizard. Setup closes the window and tray, keeps and
+backs up your data, installs the new version and opens Toolkit again. Windows
+is never restarted automatically. You can cancel while waiting for tasks;
+once setup starts, it has its own progress and error messages.
+
+Source runs and standalone builds can check releases, but cannot install an
+update over another copy. Install the release's setup once to enable this
+workflow. Automatic rollback is not included.

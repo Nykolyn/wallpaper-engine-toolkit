@@ -181,6 +181,8 @@ def main(argv: list[str]) -> int:
     check("the earlier copy is exactly as it was", digests(earlier / "data") == earlier_files)
 
     # 2. Update over a running copy.
+    (DATA / "suite.json").write_text(json.dumps({"updates": {"check_on_startup": False},
+                                                "app": {"autostart_migrated": True}}), encoding="utf-8")
     environment = dict(os.environ, QT_QPA_PLATFORM="offscreen")
     if not wait_for(lambda: mutex_held(TRAY_MUTEX), 15):
         subprocess.Popen([str(EXE), "--tracker"], env=environment, cwd=str(INSTALL_DIR))
@@ -188,10 +190,11 @@ def main(argv: list[str]) -> int:
     check("the tray tracker runs", wait_for(lambda: mutex_held(TRAY_MUTEX), 60))
     check("and the window", wait_for(lambda: mutex_held(WINDOW_MUTEX), 60))
     time.sleep(5)                         # let the window make its pages
-    code = install(setup, work / "2-update.log")
+    code = install(setup, work / "2-update.log", "/UpdateFromApp=1")
     show_log(work / "2-update.log")
     check("the update finishes over a running copy", code == 0)
-    check("the window was asked to quit, and did", not mutex_held(WINDOW_MUTEX))
+    check("in-app setup opens the updated window again", wait_for(lambda: mutex_held(WINDOW_MUTEX), 60))
+    check("in-app setup starts the tracker again", wait_for(lambda: mutex_held(TRAY_MUTEX), 60))
     tracker_log = (DATA / "tracker.log").read_text(encoding="utf-8", errors="replace") \
         if (DATA / "tracker.log").exists() else ""
     check("the tracker was asked to quit, and said so", "asked to quit" in tracker_log)
@@ -205,6 +208,34 @@ def main(argv: list[str]) -> int:
               and not any(name.startswith("thumbs/") for name in listed))
     data_intact("after the update")
 
+    # A file held without sharing makes the data backup fail, after file replacement.
+    # Setup must report that failure and must not start a version with unprotected data.
+    blocked = DATA / "locked-during-backup.txt"
+    blocked.write_text("keep me too", encoding="utf-8")
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.CreateFileW.argtypes = [wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD,
+                                   wintypes.LPVOID, wintypes.DWORD, wintypes.DWORD, wintypes.HANDLE]
+    kernel32.CreateFileW.restype = wintypes.HANDLE
+    kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+    handle = kernel32.CreateFileW(str(blocked), 0x80000000, 0, None, 3, 0x80, None)
+    if handle == wintypes.HANDLE(-1).value:
+        raise ctypes.WinError(ctypes.get_last_error())
+    try:
+        code = install(setup, work / "2-backup-failed.log", "/UpdateFromApp=1")
+    finally:
+        kernel32.CloseHandle(handle)
+    show_log(work / "2-backup-failed.log")
+    check("backup failure returns the custom setup error", code == 20)
+    check("failed in-app setup does not launch the window or tracker",
+          not mutex_held(WINDOW_MUTEX) and not mutex_held(TRAY_MUTEX))
+    check("a failed backup leaves the original file intact", blocked.read_text(encoding="utf-8") == "keep me too")
+    blocked.unlink()
+    data_intact("after a failed update backup")
+    code = install(setup, work / "2-retry.log", "/UpdateFromApp=1")
+    check("retry installs successfully and opens the window", code == 0
+          and wait_for(lambda: mutex_held(WINDOW_MUTEX), 60))
+    data_intact("after retrying")
+
     # 3. Uninstall.
     gone = uninstall(work / "3-uninstall.log")
     show_log(work / "3-uninstall.log")
@@ -216,7 +247,7 @@ def main(argv: list[str]) -> int:
           not SHORTCUT.exists() and task_program() == "")
     data_intact("after uninstalling")
     check("the copies taken before the update are kept too",
-          (DATA / "update_backup").exists() and len(list((DATA / "update_backup").iterdir())) == 1)
+          (DATA / "update_backup").exists() and len(list((DATA / "update_backup").iterdir())) == 2)
 
     # 4. Install again: the data is picked up, and copied aside first.
     code = install(setup, work / "4-reinstall.log", "/MERGETASKS=!autostart")
@@ -225,7 +256,7 @@ def main(argv: list[str]) -> int:
     check("without autostart, as asked", task_program() == "")
     data_intact("after installing again")
     check("and the data was copied aside again first",
-          len(list((DATA / "update_backup").iterdir())) == 2)
+          len(list((DATA / "update_backup").iterdir())) == 3)
 
     uninstall(work / "5-uninstall.log")
 

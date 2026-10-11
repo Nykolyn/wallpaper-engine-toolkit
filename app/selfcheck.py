@@ -38,6 +38,7 @@ def run() -> tuple[bool, str]:
                         ("app.secrets", "the stored Steam key"),
                         ("PySide6.QtNetwork", "one window, raised from the tray"),
                         ("app.window_instance", "starting the window on its own"),
+                        ("app.engines.updates", "checking and verifying application updates"),
                         ("app.engines.playlist_refresh",
                          "rebuilding Wallpaper Engine's playlist after a rotation"),
                         ("app.engines.rotator.runner",

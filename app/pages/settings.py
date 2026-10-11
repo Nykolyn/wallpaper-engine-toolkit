@@ -24,22 +24,23 @@ from __future__ import annotations
 
 import threading
 
-from PySide6.QtCore import QObject, Qt, Signal
+from PySide6.QtCore import QObject, Qt, QTimer, Signal
 from PySide6.QtWidgets import (
-    QGridLayout, QHBoxLayout, QScrollArea, QSizePolicy, QVBoxLayout, QWidget,
+    QApplication, QGridLayout, QHBoxLayout, QScrollArea, QSizePolicy, QVBoxLayout, QWidget,
 )
 
-from .. import __version__, autostart, external, selfcheck, theme
+from .. import __version__, autostart, external, install_info, selfcheck, theme
 from ..branding import FULL_NAME
 from ..engines.rotator.config import Config
+from ..engines import updates
 from ..services.snapshot import PLAYLIST, RESERVE, ROTATION
 from ..settings import (
     DEFAULT_CREATOR_SOURCE, Settings, app_data_dir, default_copier_dest, default_creator_target,
 )
 from ..tracker_feed import heartbeat_setting
 from ..ui.kit import (
-    BrandMark, CardTitle, Dropdown, GlassPanel, LinkButton, Overline, PathField,
-    SecondaryButton, SpinBox, Toggle, format as fmt, label,
+    AccentButton, BrandMark, CardTitle, ConfirmDialog, Dropdown, GlassPanel, LinkButton,
+    NavState, Overline, PathField, ProgressBar, SecondaryButton, SpinBox, Toggle, format as fmt, label,
 )
 from ..ui.kit.base import set_tone
 from .base import Page
@@ -96,10 +97,11 @@ class SettingsPage(Page):
     key = "settings"
     title = "Settings"
     icon = "settings"
-    FIXTURES = ("default", "running")
+    FIXTURES = ("default", "running", "update-available", "update-ready", "update-downloading")
 
     # Which store changed: "rotator", "copier", "creator" or "tracker".
     changed = Signal(str)
+    _update_progress = Signal(int, int)
 
     def __init__(self, settings: Settings, config: Config, *, feed=None, services=None,
                  on_review_settings=None, on_authors=None, parent: QWidget | None = None):
@@ -112,9 +114,16 @@ class SettingsPage(Page):
         self._answer.done.connect(self._answered)
         self._autostart_known = False
         self._checking = False
+        self._update_busy = False
+        self._release = self._installer = None
+        self._update_job = None
+        self._install_requested = False
+        self._cancel_update = threading.Event()
+        self._update_progress.connect(self._show_update_progress)
         self.set_subtitle("Set once, used everywhere · saved as you change them")
 
         scroll = QScrollArea()
+        self._scroll = scroll
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QScrollArea.NoFrame)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
@@ -141,6 +150,7 @@ class SettingsPage(Page):
         right.addWidget(self._engine_panel())
         right.addWidget(self._tracker_panel())
         right.addWidget(self._review_panel())
+        right.addWidget(self._updates_panel())
         right.addWidget(self._about_panel())
         right.addStretch(1)
         grid.addLayout(left, 0, 0)
@@ -148,6 +158,7 @@ class SettingsPage(Page):
 
         if services is not None:
             services.jobs.changed.connect(self._jobs_changed)
+            services.jobs.changed.connect(self._try_update_install)
         if feed is not None:
             feed.updated.connect(self._fill_monitors)
             feed.config_changed.connect(self._feed_config_changed)
@@ -318,6 +329,195 @@ class SettingsPage(Page):
 
     # ---- wiring the Review buttons once the window has made the Review tab ------------
 
+    def _updates_panel(self) -> GlassPanel:
+        panel, column = self._panel("Updates")
+        self.auto_update_check = Toggle("Check for updates at startup")
+        self.auto_update_check.setChecked(self.settings.get("updates", "check_on_startup", True))
+        self.auto_update_check.toggled.connect(self._set_update_check)
+        column.addWidget(self.auto_update_check)
+        self.update_note = label("Check for a newer stable release.", "type.bodySm", "mid")
+        self.update_note.setTextFormat(Qt.PlainText)
+        self.update_note.setWordWrap(True)
+        column.addWidget(self.update_note)
+        self.update_notes = label("", "type.caption", "lo")
+        self.update_notes.setTextFormat(Qt.PlainText)
+        self.update_notes.setWordWrap(True)
+        self.update_notes.hide()
+        column.addWidget(self.update_notes)
+        self.update_bar = ProgressBar(caption=True)
+        self.update_bar.setAccessibleName("Update download progress")
+        self.update_bar.hide()
+        column.addWidget(self.update_bar)
+        buttons = QHBoxLayout()
+        self.update_check = SecondaryButton("Check for updates")
+        self.update_check.clicked.connect(self.check_update)
+        self.update_action = AccentButton("Download update")
+        self.update_action.clicked.connect(self._update_action)
+        self.update_action.hide()
+        self.update_cancel = SecondaryButton("Cancel")
+        self.update_cancel.clicked.connect(self.cancel_update)
+        self.update_cancel.hide()
+        for button in (self.update_check, self.update_action, self.update_cancel):
+            buttons.addWidget(button)
+        buttons.addStretch(1)
+        column.addLayout(buttons)
+        self.release_link = LinkButton("Release notes")
+        self.release_link.clicked.connect(lambda: external.open_url(
+            self._release.url.rsplit("/", 1)[0].replace("/download/", "/tag/")
+            if self._release else updates.RELEASES))
+        column.addWidget(self.release_link, 0, Qt.AlignLeft)
+        return panel
+
+    def startup(self) -> None:
+        if (install_info.is_installed_copy()
+                and self.settings.get("updates", "check_on_startup", True)):
+            self.check_update()
+
+    def _set_update_check(self, on: bool) -> None:
+        self.settings.set("updates", "check_on_startup", on)
+        self.settings.save()
+
+    def check_update(self) -> None:
+        if self._update_busy or self._install_requested:
+            return
+        self._update_busy = True
+        self.update_check.setEnabled(False)
+        self.update_action.hide()
+        self.update_notes.hide()
+        self._update_message("Checking for updates…")
+        self._ask("update-check", updates.check)
+
+    def _update_message(self, text: str, tone: str = "lo") -> None:
+        self.update_note.setText(text)
+        set_tone(self.update_note, tone)
+
+    def _show_update(self, found) -> None:
+        self._update_busy = False
+        self.update_check.setEnabled(True)
+        if isinstance(found, Exception):
+            self._update_message(f"Could not check for updates: {found}", "danger")
+            return
+        self._release, self._installer = found, None
+        if found is None:
+            self.set_nav_state(NavState())
+            self._update_message("You are using the latest version.", "ok")
+            return
+        self.set_nav_state(NavState.status("Update", "accent"))
+        self._update_message(f"Version {found.version} is available · {fmt.size(found.size)}", "ok")
+        self.update_notes.setText(found.notes[:1200])
+        self.update_notes.setVisible(bool(found.notes))
+        self.update_action.setText("Download update")
+        self.update_action.setEnabled(True)
+        self.update_action.setVisible(install_info.is_installed_copy())
+        if not install_info.is_installed_copy():
+            self._update_message(f"Version {found.version} is available. Install its setup to enable "
+                                 "updates from the program; this source or standalone build stays as it is.")
+        toasts = getattr(self.window(), "toasts", None)
+        if toasts is not None:
+            toasts.show_toast(f"Toolkit {found.version} is available.", action="Show update",
+                              on_action=self.show_update, timeout=None)
+
+    def show_update(self) -> None:
+        self.navigate.emit(self.key)
+        QTimer.singleShot(0, lambda: self._scroll.ensureWidgetVisible(self.update_action))
+
+    def _update_action(self) -> None:
+        if self._update_busy or self._release is None or self._install_requested:
+            return
+        if self._installer is not None:
+            dialog = ConfirmDialog(f"Install Toolkit {self._release.version}?",
+                                   "After active tasks finish, the window and tray will close. "
+                                   "Setup will keep your data, install the update and open Toolkit again.",
+                                   self.window(), confirm_text="Install and restart", safe_default=True)
+            if dialog.ask():
+                self._install_requested = True
+                self.update_action.setEnabled(False)
+                self.update_check.setEnabled(False)
+                self.update_cancel.show()
+                self._try_update_install()
+            return
+        self._update_busy = True
+        self._cancel_update.clear()
+        self.update_check.setEnabled(False)
+        self.update_action.setEnabled(False)
+        self.update_cancel.setEnabled(True)
+        self.update_cancel.show()
+        self.update_bar.set_value(0, self._release.size)
+        self.update_bar.set_caption(None)
+        self.update_bar.set_state("determinate")
+        self.update_bar.show()
+        self._update_message("Downloading update…")
+        if self._services is not None:
+            self._update_job = self._services.jobs.start("updates", "Downloading update", self.key)
+        release = self._release
+        self._ask("update-download", lambda: updates.download(
+            release, app_data_dir() / "updates",
+            self._cancel_update, self._update_progress.emit))
+
+    def _show_update_progress(self, done: int, total: int) -> None:
+        self.update_bar.set_value(done, total)
+        self.update_bar.set_caption(f"{fmt.size(done)} / {fmt.size(total)}", f"{int(done * 100 / total)}%")
+        if self._update_job is not None:
+            self._update_job.update("Downloading update", done, total)
+
+    def _downloaded_update(self, found) -> None:
+        self._update_busy = False
+        self.update_cancel.hide()
+        self.update_check.setEnabled(True)
+        self.update_action.setEnabled(True)
+        if isinstance(found, Exception):
+            stopped = isinstance(found, updates.Cancelled)
+            self._update_message("Download cancelled." if stopped else f"Could not download update: {found}",
+                                 "lo" if stopped else "danger")
+            self.update_bar.hide()
+            result = "stopped" if stopped else "failed"
+        else:
+            self._installer = found
+            self.update_bar.set_state("success")
+            self._update_message("Update downloaded and verified. Ready to install.", "ok")
+            self.update_action.setText("Install and restart")
+            result = "clean"
+        job, self._update_job = self._update_job, None
+        if job is not None:
+            job.finish(result, self.update_note.text())
+
+    def cancel_update(self) -> None:
+        if self._install_requested:
+            self._install_requested = False
+            self.update_cancel.hide()
+            self.update_check.setEnabled(True)
+            self.update_action.setEnabled(True)
+            self._update_message("Installation postponed. The verified download is ready.")
+        else:
+            self._cancel_update.set()
+            self.update_cancel.setEnabled(False)
+            self._update_message("Cancelling download…")
+
+    def _try_update_install(self, *_args) -> None:
+        if not self._install_requested or self._update_busy:
+            return
+        if self._services is not None and self._services.jobs.running():
+            self._update_message("Waiting for active tasks to finish before installing…", "warn")
+            return
+        if QApplication.activeModalWidget() is not None:
+            QTimer.singleShot(500, self._try_update_install)
+            return
+        self._install_requested = False
+        self._update_busy = True
+        self.update_cancel.hide()
+        self._update_message("Verifying the installer and starting setup…")
+        self._ask("update-install", lambda: updates.install(self._installer, self._release))
+
+    def _installed_update(self, found) -> None:
+        # Normally this window has quit by now; setup shows errors after it closes.
+        self._update_busy = False
+        self.update_check.setEnabled(True)
+        self.update_action.setEnabled(True)
+        if found == 0:
+            self._update_message("Update installed. Restart Toolkit to use the new version.", "ok")
+        else:
+            self._update_message(f"Setup could not finish: {found}. You can retry installing the update.", "danger")
+
     def connect_review(self, on_review_settings=None, on_authors=None) -> None:
         """What "Review settings…" and "Authors database…" open. They are the
         Review page's dialogs, so the page hears what changed."""
@@ -475,6 +675,12 @@ class SettingsPage(Page):
             self._show_autostart(found)
         elif what == "selfcheck":
             self._show_selfcheck(found)
+        elif what == "update-check":
+            self._show_update(found)
+        elif what == "update-download":
+            self._downloaded_update(found)
+        elif what == "update-install":
+            self._installed_update(found)
 
     def _show_autostart(self, found) -> None:
         if isinstance(found, Exception):
@@ -538,6 +744,9 @@ class SettingsPage(Page):
 
     # ---- snapshots ----------------------------------------------------------------
 
+    def frame_fixture(self, state: str) -> dict | None:
+        return {"frame": "idle"} if state.startswith("update-") else None
+
     def load_fixture(self, state: str) -> None:
         """Made-up folders on a made-up drive, never this machine's."""
         if state not in self.FIXTURES:
@@ -566,6 +775,25 @@ class SettingsPage(Page):
                                       "using these folders.")
             set_tone(self.rotator_note, "warn")
             self.rotator_note.show()
+        if state.startswith("update-"):
+            self._release = updates.Release("9.9.0", "Faster library scans and clearer download progress.",
+                                            "", 60_000_000, "0" * 64)
+            self.set_nav_state(NavState.status("Update", "accent"))
+            self.update_notes.setText(self._release.notes)
+            self.update_notes.show()
+            self.update_action.show()
+            self._update_message("Version 9.9.0 is available · 57.2 MB", "ok")
+            if state == "update-ready":
+                self.update_action.setText("Install and restart")
+                self._update_message("Update downloaded and verified. Ready to install.", "ok")
+            if state == "update-downloading":
+                self.update_check.setEnabled(False)
+                self.update_action.setEnabled(False)
+                self.update_cancel.show()
+                self.update_bar.show()
+                self._show_update_progress(24_000_000, 60_000_000)
+                self._update_message("Downloading update…")
+            QTimer.singleShot(0, lambda: self._scroll.ensureWidgetVisible(self.update_action))
 
 
 def _autostart_state() -> tuple[bool, str]:

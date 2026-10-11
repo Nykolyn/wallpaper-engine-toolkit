@@ -32,7 +32,8 @@ Download **`WallpaperEngineToolkit-Setup-X.Y.Z.exe`** from the latest
 [release](https://github.com/Nykolyn/wallpaper-engine-toolkit/releases/latest)
 and run it. No Python, no administrator rights; it installs for your account,
 puts **Toolkit** in the Start menu, and can start the tray tracker with
-Windows. Updates are the next release's installer, run over this one — your
+Windows. Check, download and install new versions from **Settings > Updates**.
+The program checks at startup and asks before installing — your
 data is kept, and copied aside first. **[Installing →](docs/installing.md)**
 
 The tray tracker lives in the notification area, without a window; clicking
