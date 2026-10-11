@@ -5,6 +5,10 @@
 The playlist table includes **Tags** and **Age**, read from each wallpaper's
 `project.json` on the metadata worker. Missing values show a dash.
 
+Monitor previews are square: 400 × 400 for the leading monitor and 100 × 100
+for the summaries. GIF previews animate while their cards are visible and
+motion is enabled. The playlist scrolls horizontally when its columns do not fit.
+
 ![The leading monitor in detail, the other as a summary, and the playlist (made-up data)](images/tracker.png)
 
 ## What it is for

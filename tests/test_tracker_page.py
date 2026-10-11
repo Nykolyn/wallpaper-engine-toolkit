@@ -424,7 +424,7 @@ class CountingLoader(QObject):
     def forget_local(self, key):
         pass
 
-    def request_local(self, key, path, box=None):
+    def request_local(self, key, path, box=None, cover=False):
         self.asked += 1
         return True
 

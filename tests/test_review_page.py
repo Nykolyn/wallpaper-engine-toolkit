@@ -36,6 +36,7 @@ sys.path.insert(0, str(ROOT))
 sys.stdout.reconfigure(errors="replace")
 
 from PySide6.QtCore import Qt                                             # noqa: E402
+from PySide6.QtGui import QImage                                           # noqa: E402
 from PySide6.QtWidgets import QApplication, QVBoxLayout, QWidget          # noqa: E402
 
 app = QApplication(sys.argv)
@@ -181,6 +182,24 @@ check("a list read without a key says so, in warn",
 check("over the gallery: since when, and how much in all",
       gallery_subtitle(rf.SessionAuthor(id=ann.id64, name="Ann", new=3), ann, NOW)
       .startswith("3 new since 13 Sep"))
+
+avatar_path = TMP / "avatar.png"
+avatar_image = QImage(64, 64, QImage.Format_RGB32)
+avatar_image.fill(Qt.red)
+avatar_image.save(str(avatar_path))
+ann.profile.avatar = avatar_path.as_uri()
+check("both Review author lists carry the profile avatar URL",
+      author_row(person, ann).thumb_url == found_row(ann).thumb_url == ann.profile.avatar)
+avatar_model = page_module.AuthorModel()
+avatar_model.set_rows([(ann.id64, author_row(person, ann))])
+check("the author's downloaded avatar reaches the list painter",
+      wait_for(lambda: avatar_model.list_item(0)[1] is not None)
+      and avatar_model.list_item(0)[1].toImage().pixelColor(0, 0).red() > 200)
+avatar_model.set_rows([(ann.id64, found_row(ann))])
+check("sorting or rebuilding the list preserves the downloaded avatar",
+      avatar_model.list_item(0)[1] is not None)
+avatar_model._loader.stop()
+ann.profile.avatar = None
 
 print("-- stopped --")
 cards4 = [rv.AuthorCard(id64=str(i), profile=Profile(id64=str(i), name=f"n{i}")) for i in range(4)]

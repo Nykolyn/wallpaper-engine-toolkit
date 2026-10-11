@@ -344,6 +344,24 @@ check("its own page looked at, the line is quiet again",
       w.status.state() == "idle" and w.status.text().startswith("Nothing running · last run finished"))
 
 print("-- the cross-fade --")
+from app.ui.kit import GhostButton  # noqa: E402
+
+rotator_action = GhostButton("Run history", w.pages["rotator"])
+conditional_action = GhostButton("Duplicates", w.pages["rotator"])
+conditional_action.hide()
+w.pages["rotator"]._actions = [rotator_action, conditional_action]
+for _ in range(5):
+    w.show_page("rotator")
+    w.show_page("overview")
+    rotator_action.show()  # a background result rerenders Rotator's header
+wait(300)
+check("background page updates cannot overlay the current header's buttons",
+      w.header.title() == "Overview" and not rotator_action.isVisible()
+      and w.header.actions()[0].isVisible())
+w.show_page("rotator")
+wait(300)
+check("returning shows that page's actions and preserves conditional visibility",
+      rotator_action.isVisible() and not conditional_action.isVisible())
 w.show_page("overview")
 wait(300)
 w.show_page("tracker")

@@ -6,9 +6,9 @@
   loading, three shimmering bars where the words will be; empty, "—" and why
   ("no run yet"). The number can take a tone (warn for "89 new").
 - MonitorCard is what a monitor is showing and how far through the playlist
-  it is. **compact** (Overview): a 72 × 41 thumb, the title, "author · 14 min
+  it is. **compact** (Overview): a 100 × 100 thumb, the title, "author · 14 min
   in", and a bar with "4 / 201". **detail** (Tracker): a ring and the count,
-  a 298 × 84 preview, the title, the author with a chip, and a footer of SHOWN
+  a 400 × 400 preview, the title, the author with a chip, and a footer of SHOWN
   FOR / REMAINING / CYCLE STARTED. Its states are the monitor's: leading,
   summary (a second monitor, following its own order), paused and
   disconnected. A playlist shown to its end closes the ring in ok, turns the
@@ -549,7 +549,7 @@ class MonitorCard(GlassPanel):
     def _build_compact(self, column: QVBoxLayout) -> None:
         body = QHBoxLayout()
         body.setSpacing(theme.SP_10)
-        self._thumb = Thumb("card")
+        self._thumb = Thumb("card", animated=True)
         words = QVBoxLayout()
         words.setSpacing(theme.SP_2 + 1)
         words.addStretch(1)
@@ -588,8 +588,8 @@ class MonitorCard(GlassPanel):
         top.addWidget(self._ring)
         top.addLayout(numbers, 1)
         column.addLayout(top)
-        self._thumb = Thumb("wide")
-        column.addWidget(self._thumb)
+        self._thumb = Thumb("wide", animated=True)
+        column.addWidget(self._thumb, 0, Qt.AlignHCenter)
         words = QVBoxLayout()
         words.setSpacing(theme.SP_4)
         words.addWidget(self._title)

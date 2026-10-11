@@ -729,16 +729,16 @@ THUMB: dict[str, tuple[int, int, int]] = {
     "xs": (34, 19, 3),       # an ActivityLine
     "sm": (40, 23, 4),
     "md": (64, 36, 5),
-    "card": (72, 41, 5),     # a compact MonitorCard (Overview)
+    "card": (100, 100, 5),   # a compact MonitorCard
     "row": (200, 200, 8),    # a table's thumb column: square, as Wallpaper Engine's browser
     "rowsm": (120, 120, 6),  # the same, in a table too narrow for it (THUMB_NARROWER)
     "rowxs": (72, 72, 5),    # and narrower still
-    "wide": (298, 84, 5),    # a detailed MonitorCard's preview (Tracker)
+    "wide": (400, 400, 5),   # the leading monitor's preview (Tracker)
     "grid": (160, 90, 6),    # 16:9 in a grid; the width follows the cell
 }
 # Sizes that fill their box, the picture cropped about its middle, rather than
 # letterboxed in it: a square well around a 16:9 picture is mostly empty.
-THUMB_COVER = frozenset({"row", "rowsm", "rowxs"})
+THUMB_COVER = frozenset({"row", "rowsm", "rowxs", "card", "wide"})
 THUMB_GAP = 9            # a thumb to the text beside it
 # A table's stretched thumb column too narrow to leave its words this much (about a
 # dozen characters) draws the next thumb down, as far down as it must. Measured: at
@@ -981,7 +981,7 @@ ACTIVITY_LIST_PAD = 6             # the rows' inset from the panel's sides and f
 
 # -- the Tracker (TrackerBody)
 
-TRACKER_SIDE = 330            # the left column: the monitors and the pace
+TRACKER_SIDE = 430            # a 400 px preview plus the monitor card's margins
 PACE_PAD = (12, 14)           # the Pace panel: vertical, horizontal
 PACE_GAP = 10                 # its overline, figure, rule, sentence and notes
 PACE_ICON = 14                # the clock before the finish sentence

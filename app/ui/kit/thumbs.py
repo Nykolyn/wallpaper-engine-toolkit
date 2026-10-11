@@ -54,8 +54,8 @@ MAX_STILL_FRAMES = 24
 STILL_MIN_BRIGHTNESS = 0.06
 
 # The still kept on disk fits in this box. It covers the largest thumbs the
-# screens draw at 150 % with room to spare — a MonitorCard's 298 × 84 preview,
-# a table's square 200 × 200 — and at JPEG quality 85 it is a few tens of KB,
+# tables draw at 150 % with room to spare; a 400 px monitor preview scales it
+# at higher DPI. At JPEG quality 85 it is a few tens of KB,
 # which 33 000 folders can afford. Stills kept for the old 480 × 270 box are
 # named without the box, so they are read again once and replaced.
 LOCAL_BOX = QSize(480, 480)
