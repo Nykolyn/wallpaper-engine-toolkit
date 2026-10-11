@@ -1,5 +1,7 @@
 # Overview
 
+Monitor previews are square, 100 × 100, and play GIFs while visible with motion enabled.
+
 **Where the loop stands, at a glance: the first entry in the sidebar, and the
 page the window opens on (Ctrl+1).**
 

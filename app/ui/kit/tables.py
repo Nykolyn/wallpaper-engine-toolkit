@@ -156,15 +156,20 @@ class Thumb(QWidget):
     layout gives it."""
 
     def __init__(self, size: str = "row", parent: QWidget | None = None, *,
-                 loader: ThumbLoader | None = None):
+                 loader: ThumbLoader | None = None, animated: bool = False):
         super().__init__(parent)
         self._size = size
         width, height, self._radius = thumb_box(size)
         self._pixmap: QPixmap | None = None
         self._state = "placeholder"
         self._source: str | None = None
+        self._revision = 0
+        self._load_key = ""
         self._loader = loader
         self._listening: ThumbLoader | None = None
+        self._animated = animated
+        self._animation_path = ""
+        self._movie: QMovie | None = None
         if size == "grid":
             policy = QSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
             policy.setHeightForWidth(True)
@@ -193,6 +198,8 @@ class Thumb(QWidget):
         return self._pixmap
 
     def set_pixmap(self, pixmap: QPixmap | None) -> None:
+        self._stop_movie()
+        self._animation_path = ""
         self._source = None
         self._pixmap = pixmap if pixmap is not None and not pixmap.isNull() else None
         self._set_state("image" if self._pixmap is not None else "placeholder")
@@ -212,20 +219,26 @@ class Thumb(QWidget):
         # no preview: a card refreshed every second must not read it again.
         if path == self._source:
             return
+        self._stop_movie()
+        self._animation_path = ""
         self._source = path
+        self._revision += 1
+        self._load_key = f"thumb-{id(self)}-{self._revision}"
         self._pixmap = None
         self._set_state("loading")
         loader = self._loader or shared_loader()
         if self._listening is not loader:
             loader.local_done.connect(self._arrived)
+            if self._animated:
+                loader.animation_done.connect(self._animation_arrived)
             self._listening = loader
         dpr = self.devicePixelRatioF()
-        loader.forget_local(path)
-        loader.request_local(path, path, QSize(math.ceil(self.width() * dpr),
-                                               math.ceil(self.height() * dpr)))
+        loader.request_local(self._load_key, path, QSize(math.ceil(self.width() * dpr),
+                                               math.ceil(self.height() * dpr)),
+                             cover=self._size in theme.THUMB_COVER)
 
     def _arrived(self, key: str, image) -> None:
-        if key != self._source:
+        if key != self._load_key or self._source is None:
             return
         if image.isNull():
             self._pixmap = None
@@ -234,6 +247,48 @@ class Thumb(QWidget):
             self._pixmap = QPixmap.fromImage(image)
             self._pixmap.setDevicePixelRatio(self.devicePixelRatioF())
             self._set_state("image")
+            if self._animated and image.text(PREVIEW_KEY).lower().endswith(".gif"):
+                self._listening.request_animation(key, self._source)
+
+    def _animation_arrived(self, key: str, path: str) -> None:
+        if key != self._load_key or self._source is None:
+            return
+        self._animation_path = path
+        self._play_movie()
+
+    def _play_movie(self) -> None:
+        if (self._movie is not None or not self._animation_path
+                or not self.isVisible() or not animations.ENABLED):
+            return
+        movie = QMovie(self._animation_path, QByteArray(), self)
+        movie.setCacheMode(QMovie.CacheNone)
+        if not movie.isValid() or movie.frameCount() == 1 or not movie.jumpToFrame(0):
+            movie.deleteLater()
+            self._animation_path = ""
+            return
+        first = movie.currentImage().size()
+        box = self.size() * self.devicePixelRatioF()
+        fit = Qt.KeepAspectRatioByExpanding if self._size in theme.THUMB_COVER else Qt.KeepAspectRatio
+        scaled = first.scaled(box, fit)
+        if scaled.width() < first.width():
+            movie.setScaledSize(scaled)
+        self._movie = movie
+        movie.frameChanged.connect(lambda _frame: self.update())
+        movie.start()
+
+    def _stop_movie(self) -> None:
+        if self._movie is not None:
+            self._movie.stop()
+            self._movie.deleteLater()
+            self._movie = None
+
+    def showEvent(self, event) -> None:         # noqa: N802 - Qt's name
+        super().showEvent(event)
+        self._play_movie()
+
+    def hideEvent(self, event) -> None:         # noqa: N802 - Qt's name
+        self._stop_movie()
+        super().hideEvent(event)
 
     def _set_state(self, state: str) -> None:
         self._state = state
@@ -249,8 +304,9 @@ class Thumb(QWidget):
         if not self.isEnabled():
             painter.setOpacity(theme.DISABLED_OPACITY)
         shimmer = animations.loop("shimmer").value() if self._state == "loading" else None
-        paint_thumb(painter, QRectF(self.rect()), self._pixmap, self._state, self._radius,
-                    shimmer=shimmer)
+        pixmap = self._movie.currentPixmap() if self._movie is not None else self._pixmap
+        paint_thumb(painter, QRectF(self.rect()), pixmap, self._state, self._radius,
+                    shimmer=shimmer, cover=self._size in theme.THUMB_COVER)
 
 
 # ---- the column spec and the cells --------------------------------------------------------
@@ -1456,6 +1512,7 @@ class Table(QTableView):
         self.setSelectionMode(QAbstractItemView.SingleSelection)
         self.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.setVerticalScrollMode(QAbstractItemView.ScrollPerPixel)
+        self.setHorizontalScrollMode(QAbstractItemView.ScrollPerPixel)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.setMouseTracking(True)
         self.setCornerButtonEnabled(False)
@@ -1503,6 +1560,7 @@ class Table(QTableView):
         self._settle.setInterval(self.THUMB_SETTLE)
         self._settle.timeout.connect(self.request_visible_thumbs)
         self.verticalScrollBar().valueChanged.connect(self._scrolled)
+        self.horizontalScrollBar().valueChanged.connect(self._spans_changed)
 
     # -- the model
 
@@ -2373,6 +2431,7 @@ class ListRow:
     meta_tone: str = "text.lo"
     thumb_size: int = 0
     chips_inline: bool = False
+    thumb_url: str | None = None
 
 
 def list_row_height(row: ListRow | None = None) -> int:

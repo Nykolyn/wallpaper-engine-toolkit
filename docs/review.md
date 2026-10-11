@@ -1,5 +1,8 @@
 # Review
 
+The author lists show Steam profile avatars, downloaded in the background and
+cached on disk. A missing avatar leaves the empty square without blocking the review.
+
 **The week's new wallpapers, grouped by who made them.**
 
 The wallpaper list includes **Tags** (genre) and **Age** from Steam's item

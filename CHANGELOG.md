@@ -6,6 +6,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [3.23.1] - 2026-10-11
+
+### Fixed
+
+- Review author lists now show cached Steam profile avatars.
+- Horizontal scrolling moves table contents and column headings together.
+- Monitor previews are square, 400 × 400 for the leading Tracker monitor and
+  100 × 100 for summaries, and play GIFs while visible with motion enabled.
+- Background page updates no longer reveal inactive header buttons over
+  Overview's actions when switching quickly from Rotator.
+
 ## [3.23.0] - 2026-10-11
 
 ### Added
@@ -1673,7 +1684,8 @@ restructured yet; the tabs keep their layout and take on the new look.
   was right for one library and wrong for every other. Nothing is tagged now
   unless you ask for it.
 
-[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.23.0...HEAD
+[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.23.1...HEAD
+[3.23.1]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.23.0...v3.23.1
 [3.23.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.22.0...v3.23.0
 [3.22.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.21.0...v3.22.0
 [3.21.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.20.0...v3.21.0

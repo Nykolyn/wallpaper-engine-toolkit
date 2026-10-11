@@ -935,8 +935,45 @@ thumb.set_source(str(bare))
 check("and a folder with none is the placeholder again",
       wait_for(lambda: thumb.state() == "placeholder"))
 check("sizes are the design's", raises(lambda: Thumb("poster"), KeyError)
-      and Thumb("card").size() == QSize(72, 41) and Thumb("wide").size() == QSize(298, 84))
+      and Thumb("card").size() == QSize(100, 100) and Thumb("wide").size() == QSize(400, 400))
 thumb_host.close()
+
+animated_host = Host(500, 650)
+animated_thumb = Thumb("wide", animated=True, loader=ThumbLoader(local_root=cache))
+animated_host.column.addWidget(animated_thumb)
+animated_host.show()
+animated_thumb.set_source(str(gif_folder))
+check("a monitor preview plays its GIF", wait_for(lambda: animated_thumb._movie is not None))
+frames = []
+if animated_thumb._movie is not None:
+    animated_thumb._movie.frameChanged.connect(frames.append)
+check("the preview advances through frames", wait_for(lambda: len(set(frames)) > 1))
+animated_host.hide()
+check("a hidden monitor releases its player", animated_thumb._movie is None)
+animated_host.show()
+check("showing the monitor starts its player again", wait_for(lambda: animated_thumb._movie is not None))
+animated_thumb.set_source(str(folder))
+check("a different wallpaper stops the old GIF", animated_thumb._movie is None
+      and wait_for(lambda: animated_thumb.state() == "image"))
+animated_thumb.set_source(str(gif_folder))
+check("returning to the GIF starts a fresh player", wait_for(lambda: animated_thumb._movie is not None))
+animated_host.close()
+
+scroll_model = Rows([Column("#", 32), Column("Wallpaper", min_width=450), Column("Author", 220)])
+scroll_model.set_rows([(0, "Wallpaper", "Author", 0)])
+scroll_table = Table()
+scroll_table.setModel(scroll_model)
+scroll_host = Host(500, 300)
+scroll_host.column.addWidget(scroll_table)
+scroll_host.show()
+wait(30)
+before_scroll = scroll_table.column_spans()[1][0]
+scroll_table.horizontalScrollBar().setValue(100)
+wait(30)
+check("horizontal scrolling moves cached column coordinates with the header",
+      scroll_table.horizontalScrollBar().value() == 100
+      and scroll_table.column_spans()[1][0] == before_scroll - 100)
+scroll_host.close()
 
 
 # ---- a table of thumbs: only the rows on screen, and nothing on the GUI thread ------------------------

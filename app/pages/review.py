@@ -56,7 +56,7 @@ from typing import Callable
 from PySide6.QtCore import (
     QAbstractListModel, QCoreApplication, QModelIndex, QObject, Qt, QThread, QTimer, Signal,
 )
-from PySide6.QtGui import QKeySequence, QPainter, QShortcut
+from PySide6.QtGui import QKeySequence, QPainter, QPixmap, QShortcut
 from PySide6.QtWidgets import (
     QAbstractItemView, QHBoxLayout, QSizePolicy, QStackedWidget, QVBoxLayout, QWidget,
 )
@@ -82,7 +82,8 @@ from ..ui.kit import (
 )
 from ..ui.kit import base
 from ..ui.kit.base import Elided, set_tone
-from ..ui.kit.tables import LIST_ROW_ROLE
+from ..ui.kit.tables import LIST_PIXMAP_ROLE, LIST_ROW_ROLE
+from ..ui.kit.thumbs import ThumbLoader
 from .base import Page
 from .review_settings import (
     BY_PAGE, BY_STEAM, KEYLESS_HIDDEN, SECTION, WITHOUT_KEY, AuthorsDialog, ReviewSettingsDialog,
@@ -261,10 +262,13 @@ def found_row(card) -> ListRow:
     """A row of "Found so far": the author, NEW AUTHOR when they are, and
     how much is new."""
     new = f"{fmt.count(card.badge)} new"
+    avatar = card.profile.avatar if card.profile else None
     if card.state == rv.NEW:
         return ListRow(card.name, thumb=True, thumb_size=theme.REVIEW_AVATAR,
-                       chips=(("NewAuthor", None),), trailing=f"{new} — first time seen")
-    return ListRow(card.name, thumb=True, thumb_size=theme.REVIEW_AVATAR, trailing=new)
+                       chips=(("NewAuthor", None),), trailing=f"{new} — first time seen",
+                       thumb_url=avatar)
+    return ListRow(card.name, thumb=True, thumb_size=theme.REVIEW_AVATAR, trailing=new,
+                   thumb_url=avatar)
 
 
 def author_meta(author: SessionAuthor, card=None, selected: int = 0) -> tuple[str, str]:
@@ -291,7 +295,8 @@ def author_row(author: SessionAuthor, card=None, selected: int = 0) -> ListRow:
     return ListRow(author.name, meta=words, meta_tone=tone, thumb=True,
                    thumb_size=theme.REVIEW_AVATAR, title_note=f"was {old}" if old else "",
                    chips=((STATE_CHIPS.get(author.state, "Known"), None),), chips_inline=True,
-                   tick=author.done, dimmed=author.done)
+                   tick=author.done, dimmed=author.done,
+                   thumb_url=card.profile.avatar if card and card.profile else None)
 
 
 def _short(name: str) -> str:
@@ -483,6 +488,10 @@ class AuthorModel(QAbstractListModel):
         super().__init__(parent)
         self._ids: list[str] = []
         self._rows: dict[str, ListRow] = {}
+        self._avatars: dict[str, QPixmap | None] = {}
+        self._avatar_urls: dict[str, str] = {}
+        self._loader = ThumbLoader(self)
+        self._loader.done.connect(self._avatar_arrived)
 
     def rowCount(self, parent=QModelIndex()) -> int:     # noqa: N802 - Qt's name
         return 0 if parent.isValid() else len(self._ids)
@@ -493,6 +502,8 @@ class AuthorModel(QAbstractListModel):
         row = self._rows[self._ids[index.row()]]
         if role == LIST_ROW_ROLE:
             return row
+        if role == LIST_PIXMAP_ROLE:
+            return self._avatars.get(row.thumb_url)
         if role in (Qt.DisplayRole, Qt.AccessibleTextRole):
             return row.title
         if role == Qt.ToolTipRole:
@@ -501,13 +512,36 @@ class AuthorModel(QAbstractListModel):
 
     def list_item(self, row: int) -> tuple:
         """What RowList paints for a row, without a call into Qt for it."""
-        return self._rows[self._ids[row]], None, None
+        item = self._rows[self._ids[row]]
+        return item, self._avatars.get(item.thumb_url), None
+
+    def _load_avatar(self, row: ListRow) -> None:
+        import hashlib
+
+        url = row.thumb_url
+        if not url or url in self._avatars:
+            return
+        key = "avatar-" + hashlib.sha1(url.encode("utf-8")).hexdigest()
+        self._avatars[url] = None
+        self._avatar_urls[key] = url
+        self._loader.request(key, url)
+
+    def _avatar_arrived(self, key: str, _data, image) -> None:
+        url = self._avatar_urls.get(key)
+        if url is None or image.isNull():
+            return
+        self._avatars[url] = QPixmap.fromImage(image)
+        for at, author_id in enumerate(self._ids):
+            if self._rows[author_id].thumb_url == url:
+                self.dataChanged.emit(self.index(at), self.index(at), [LIST_PIXMAP_ROLE])
 
     def set_rows(self, rows: list[tuple[str, ListRow]]) -> None:
         self.beginResetModel()
         self._ids = [author_id for author_id, _ in rows]
         self._rows = dict(rows)
         self.endResetModel()
+        for _, row in rows:
+            self._load_avatar(row)
 
     def append(self, author_id: str, row: ListRow) -> None:
         if author_id in self._rows:
@@ -518,11 +552,13 @@ class AuthorModel(QAbstractListModel):
         self._ids.append(author_id)
         self._rows[author_id] = row
         self.endInsertRows()
+        self._load_avatar(row)
 
     def update(self, author_id: str, row: ListRow) -> None:
         if author_id not in self._rows:
             return
         self._rows[author_id] = row
+        self._load_avatar(row)
         at = self._ids.index(author_id)
         self.dataChanged.emit(self.index(at), self.index(at))
 

@@ -803,6 +803,7 @@ class PageHeader(QWidget):
         row.addWidget(self._subtitle, 1, Qt.AlignVCenter)
         row.addLayout(self._actions_row)
         self._actions: list[QWidget] = []
+        self._action_groups: dict[tuple, QWidget] = {}
 
     def title(self) -> str:
         return self._title.text()
@@ -824,13 +825,23 @@ class PageHeader(QWidget):
         """Show these widgets at the right, in order; the ones shown before are
         hidden, not destroyed (they belong to their page)."""
         widgets = list(widgets)
-        for widget in self._actions:
-            if widget not in widgets:
-                self._actions_row.removeWidget(widget)
-                widget.hide()
-        for widget in widgets:
-            self._actions_row.addWidget(widget, 0, Qt.AlignVCenter)
-            widget.show()
+        for group in self._action_groups.values():
+            group.hide()
+        key = tuple(widgets)
+        group = self._action_groups.get(key)
+        if group is None:
+            # A page can show its buttons while in the background; their parent stays hidden.
+            group = QWidget(self)
+            row = QHBoxLayout(group)
+            row.setContentsMargins(0, 0, 0, 0)
+            row.setSpacing(theme.HEADER_ACTION_GAP)
+            for widget in widgets:
+                hidden = widget.isHidden() and widget.testAttribute(Qt.WA_WState_ExplicitShowHide)
+                row.addWidget(widget, 0, Qt.AlignVCenter)
+                widget.setVisible(not hidden)
+            self._action_groups[key] = group
+            self._actions_row.addWidget(group, 0, Qt.AlignVCenter)
+        group.show()
         self._actions = widgets
 
     def paintEvent(self, event) -> None:        # noqa: N802 - Qt's name
