@@ -87,14 +87,22 @@ def ask_all(wait: float = WAIT_SECONDS, *, running=running, send=window_instance
     found = running()
     if not found:
         return True, "nothing of the toolkit was running"
-    for what in found:
-        name = (window_instance.server_name() if what == "the window"
-                else tracker_server_name())
-        send(QUIT, wait=2.0, name=name)
     deadline = clock() + wait
-    left = running()
-    while left and clock() < deadline:
-        sleep(0.25)
+    left = found
+    delivered = set()
+    while left:
+        for what in left:
+            if what in delivered:
+                continue
+            name = (window_instance.server_name() if what == "the window"
+                    else tracker_server_name())
+            # A mutex exists before the socket does: retry failed delivery until the deadline.
+            if send(QUIT, wait=max(0.0, min(2.0, deadline - clock())), name=name):
+                delivered.add(what)
+        left = running()
+        if not left or clock() >= deadline:
+            break
+        sleep(max(0.0, min(0.25, deadline - clock())))
         left = running()
     if not left:
         return True, f"asked {' and '.join(found)} to quit; nothing runs any more"

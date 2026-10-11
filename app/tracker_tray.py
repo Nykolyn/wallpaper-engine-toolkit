@@ -72,13 +72,17 @@ BALLOON_FINISHED, BALLOON_RESTARTED = "finished", "restarted"
 
 def log(message: str) -> None:
     """Append one line to data/tracker.log, trimming it when it grows."""
+    from .data_location import _exclusive
+
     line = f"{datetime.now():%Y-%m-%d %H:%M:%S}  {message}\n"
     try:
-        previous = ""
-        if LOG_PATH.exists():
-            previous = LOG_PATH.read_text(encoding="utf-8", errors="replace")
-        lines = (previous + line).splitlines(keepends=True)[-LOG_KEEP_LINES:]
-        LOG_PATH.write_text("".join(lines), encoding="utf-8")
+        # The window and tray can restart together; neither may overwrite the other's line.
+        with _exclusive("Local\\WallpaperEngineToolkitTrackerLog"):
+            previous = ""
+            if LOG_PATH.exists():
+                previous = LOG_PATH.read_text(encoding="utf-8", errors="replace")
+            lines = (previous + line).splitlines(keepends=True)[-LOG_KEEP_LINES:]
+            LOG_PATH.write_text("".join(lines), encoding="utf-8")
     except OSError:
         pass
 
@@ -348,6 +352,8 @@ def _wait_for_tray(app: QApplication, quit_asked=lambda: False) -> bool:
     next_look = time.monotonic() + TRAY_POLL_SECONDS
     while time.monotonic() < deadline and not quit_asked():
         app.processEvents()
+        if quit_asked():
+            return False
         time.sleep(0.1)
         if time.monotonic() < next_look:
             continue
