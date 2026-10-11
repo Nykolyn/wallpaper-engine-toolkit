@@ -26,7 +26,7 @@ from pathlib import Path
 
 FOLDER = "update_backup"
 KEEP = 5
-LEFT_OUT = ("thumbs", "logs", "authors_backup", "history_backup", FOLDER)
+LEFT_OUT = ("thumbs", "logs", "authors_backup", "history_backup", "updates", FOLDER)
 PARTIAL = ".partial"
 MANIFEST = "manifest.json"
 

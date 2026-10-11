@@ -357,6 +357,9 @@ class MainWindow(QMainWindow):
             cleaner = self.pages.get("cleaner")
             if cleaner is not None:
                 QTimer.singleShot(0, cleaner.startup)
+            settings = self.pages.get("settings")
+            if settings is not None:
+                QTimer.singleShot(0, settings.startup)
         waiting, self._waiting = self._waiting, []
         for verb, argument in waiting:
             self.handle_command(verb, argument)

@@ -47,6 +47,12 @@ checking the data after each. It installs things, so it refuses to run outside
 CI without `--yes-on-this-machine`, and refuses outright where a data folder
 already exists. A merge to `main` attaches the installer to the release.
 
+The update check also exercises `/UpdateFromApp=1`: setup closes running
+copies and opens the window and tracker again. An exclusively held data file
+forces the backup to fail; setup must return exit code 20 and leave the data
+intact without launching the new version. Retrying after releasing the file
+must succeed.
+
 An installed copy and a build in `dist\` can both be on one machine, and use
 the same data. Only one window and one tray tracker run at a time, whichever
 copy they come from: the single-instance locks are the same. `build.cmd`

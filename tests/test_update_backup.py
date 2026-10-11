@@ -55,6 +55,7 @@ left = {
     "logs/rotation.txt": b"moved",
     "authors_backup/snap.json.gz": b"gz",
     "history_backup/history.json": b"{}",
+    "updates/99.0.0/WallpaperEngineToolkit-Setup-99.0.0.exe": b"setup",
     "tracker.log": b"started",
 }
 for rel, content in {**kept, **left}.items():

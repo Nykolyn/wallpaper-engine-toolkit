@@ -50,7 +50,8 @@ history, the Tracker's state — lives apart from the program, in
   Every file is compared with its original, and `manifest.json` lists them
   with their checksums. Left out are the previews (`thumbs\`, a gigabyte on a
   big library, and fetched again when shown), the logs, and the backups the
-  app keeps anyway (`authors_backup\`, `history_backup\`). The newest five
+  app keeps anyway (`authors_backup\`, `history_backup\`), and downloaded
+  installers (`updates\`). The newest five
   copies are kept; older ones go to the Recycle Bin. If the copy cannot be
   made — a full disk — the new version is installed but not started, and says
   so;
@@ -62,7 +63,19 @@ files from the `update_backup\…` folder over the ones in the data folder.
 
 ## Updating
 
-Run the new release's installer. It:
+Open **Settings > Updates**. Installed copies check for stable releases at
+window startup by default, or when you click **Check for updates**. Click
+**Download update**, then **Install and restart**. The download is checked
+against GitHub's size and SHA-256, and checked again before setup runs.
+Cancellation and retry are available while downloading; installation can be
+postponed while waiting for active tasks. The installer then shows progress
+without its wizard and opens Toolkit after success. It never restarts Windows.
+
+The first release that adds this feature must be installed manually once.
+Source runs and standalone builds can check for releases but need the setup
+to enable in-app installation. Automatic rollback is not included.
+
+You can still run the new release's installer yourself. In either case it:
 
 1. asks the running window and tray tracker to quit, and waits. A window in
    the middle of a run, a scan or a question does not quit — it comes forward,
@@ -118,6 +131,12 @@ WallpaperEngineToolkit-Setup-X.Y.Z.exe /VERYSILENT /MERGETASKS=!autostart
 `/EarlierCopy` names the earlier copy's folder outright. `/LOG=<file>` writes
 the installer's log there; without it the log is in `%TEMP%`, as `Setup Log
 <date> #<n>.txt`, with a line for each step the app took and what it said.
+
+The in-app updater passes `/SILENT /SP- /NORESTART /UpdateFromApp=1` and writes
+`install.log` beside its downloaded installer, in the data folder's `updates`
+directory. `/UpdateFromApp=1` opens the application after a successful install,
+including a silent one. A failure to adopt or back up data returns exit code
+20 and does not start the application or tracker; setup explains the error.
 
 ## When something goes wrong
 

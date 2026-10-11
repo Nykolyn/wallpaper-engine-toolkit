@@ -6,6 +6,27 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [3.23.0] - 2026-10-11
+
+### Added
+
+- **Update from Settings > Updates**: check for stable releases at startup or
+  on demand, read release notes, download with progress, cancel and retry.
+  Install and restart asks first and waits for active tasks to finish before
+  setup closes the window and tray. Source runs and standalone builds can
+  check releases but do not replace another installed copy.
+
+### Security
+
+- Downloaded installers must match the exact release asset, size and SHA-256
+  from GitHub. Their contents are checked again immediately before execution.
+
+### Fixed
+
+- In-app setup opens Toolkit again after success and reports data-backup
+  failures with an error exit code. Downloaded installers are excluded from
+  backups of user data. Automatic rollback is deferred.
+
 ## [3.22.0] - 2026-10-11
 
 ### Added
@@ -1652,7 +1673,8 @@ restructured yet; the tabs keep their layout and take on the new look.
   was right for one library and wrong for every other. Nothing is tagged now
   unless you ask for it.
 
-[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.22.0...HEAD
+[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.23.0...HEAD
+[3.23.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.22.0...v3.23.0
 [3.22.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.21.0...v3.22.0
 [3.21.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.20.0...v3.21.0
 [3.20.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.19.1...v3.20.0
