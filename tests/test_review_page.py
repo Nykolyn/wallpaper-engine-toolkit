@@ -544,7 +544,7 @@ on_offer = next(w for c in page.cards.values() for w in c.offered
                 if page.gallery.busy(w.id) is None and not w.in_library)
 check("and the cards and the list say a click opens Steam's page",
       page.gallery.model_.opens_page
-      and page.gallery_list.model_.cell(on_offer, 5).text == "Open in Steam")
+      and page.gallery_list.model_.cell(on_offer, 7).text == "Open in Steam")
 settings.set("review", "subscribe", rs.BY_STEAM)
 page._update_bar()
 

@@ -36,6 +36,7 @@ import threading
 import time
 
 from .. import external
+from .wallpaper_meta import WE_AGES, WE_TAGS, content_rating
 
 # Folder naming + project.json come from the Creator engine unchanged.
 
@@ -65,24 +66,6 @@ def generate_suffix():
             f"{random.randint(0, 999999):06d}{_suffix_counter}")
 
 
-# Wallpaper Engine's genre tags.
-#
-# Measured rather than recalled. 21 distinct values appear across 1 529
-# project.json files in a real workshop library, and 23 of the 25 below are
-# present verbatim in Wallpaper Engine's own UI bundle. The two that are not —
-# "Sci-Fi" and "Television" — were found in real projects instead, so this list
-# is the union of both sources.
-#
-# It is an offer, not a rule: project.json takes any string, so a UI can show
-# these and still let anything be typed.
-WE_TAGS = (
-    "Abstract", "Animal", "Anime", "Cartoon", "CGI", "Cyberpunk", "Fantasy",
-    "Game", "Girls", "Guys", "Landscape", "Medieval", "Memes", "MMD", "Music",
-    "Nature", "Pixel art", "Relaxing", "Retro", "Sci-Fi", "Sports",
-    "Technology", "Television", "Unspecified", "Vehicle",
-)
-
-
 def clean_tags(tags):
     """Whatever was handed in, as a list of distinct non-empty strings, in order.
 
@@ -101,14 +84,14 @@ def clean_tags(tags):
     return out
 
 
-def build_project_json(basename, filename, preview_name, tags=None):
+def build_project_json(basename, filename, preview_name, tags=None, age=""):
     """The project.json Wallpaper Engine expects for a video wallpaper.
 
     ``tags`` is whatever the caller chose; nothing is invented when it is empty.
     An earlier version of this function hard-coded a single genre, which was
     right for the one library it was written in and wrong for every other.
     """
-    return {
+    data = {
         "file": basename,
         "general": {
             "properties": {
@@ -128,6 +111,9 @@ def build_project_json(basename, filename, preview_name, tags=None):
         "type": "video",
         "version": 0,
     }
+    if rating := content_rating(age):
+        data["contentrating"] = rating
+    return data
 
 
 VIDEO_EXTS = (".mp4", ".webm", ".mkv", ".mov", ".avi", ".m4v")
@@ -291,6 +277,7 @@ class VideoItem:
         # one — means this clip was decided about on its own. The difference
         # matters: clearing a clip's tags has to survive the batch changing.
         self.tags = None
+        self.age = None             # None follows the batch; "" is explicitly unset.
 
     @staticmethod
     def _safe_size(path):
@@ -316,6 +303,10 @@ def resolve_tags(item, batch_tags=()):
 
 def needs_tags(item, batch_tags=()):
     return not resolve_tags(item, batch_tags)
+
+
+def resolve_age(item, batch_age=""):
+    return content_rating(batch_age if item.age is None else item.age)
 
 
 def _cancelled(cancelled):
@@ -428,7 +419,7 @@ class BuildEngine:
 
     # ----- thread control -----------------------------------------------------
 
-    def start(self, items, target_dir, move=True, tags=None, skip_needs_tags=False):
+    def start(self, items, target_dir, move=True, tags=None, skip_needs_tags=False, age=""):
         if self.is_running():
             return False
         self._cancel.clear()
@@ -437,7 +428,7 @@ class BuildEngine:
         items = list(items)
         self._thread = threading.Thread(
             target=self._run,
-            args=(items, target_dir, move, clean_tags(tags), skip_needs_tags),
+            args=(items, target_dir, move, clean_tags(tags), skip_needs_tags, content_rating(age)),
             daemon=True,
         )
         self._thread.start()
@@ -474,7 +465,7 @@ class BuildEngine:
                 "preview": None, "preview_path": None, "reason": reason,
                 "size": item.size, "bytes_written": 0, "video_path": item.video_path}
 
-    def _run(self, items, target_dir, move, tags, skip_needs_tags=False):
+    def _run(self, items, target_dir, move, tags, skip_needs_tags=False, age=""):
         report = []
         total = len(items)
         self._progress(0, total)
@@ -513,7 +504,7 @@ class BuildEngine:
             elif run_error:
                 entry = self._entry(it, "failed", f"failed — {run_error}")
             else:
-                entry = self._process_item(it, target_dir, move, ffmpeg, tags)
+                entry = self._process_item(it, target_dir, move, ffmpeg, tags, age)
             report.append(entry)
             self._item_result(entry)
             self._item_done(it.basename, entry["status"], entry["folder"],
@@ -526,7 +517,7 @@ class BuildEngine:
         self._print_summary(report)
         self._finished(report)
 
-    def _process_item(self, item, target_dir, move, ffmpeg, tags=()):
+    def _process_item(self, item, target_dir, move, ffmpeg, tags=(), age=""):
         entry = self._entry(item)
         folder = None
         committed = False
@@ -582,7 +573,7 @@ class BuildEngine:
             # A clip that was decided about on its own keeps its own answer,
             # including an empty one.
             data = build_project_json(item.basename, item.filename, preview_name,
-                                      resolve_tags(item, tags))
+                                      resolve_tags(item, tags), resolve_age(item, age))
             project_path = os.path.join(folder, "project.json")
             self._item_progress(item.basename, "writing project.json", os.path.join(folder, preview_name))
             with open(project_path, "w", encoding="utf-8") as f:

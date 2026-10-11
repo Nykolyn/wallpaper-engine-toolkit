@@ -6,7 +6,7 @@ the video, a generated preview and `project.json`.
 ![Creator with fabricated scan data](images/creator-scanned.png)
 
 Choose a **Source folder**, or drop it onto the empty page. Creator reads the
-folder in the background and streams filenames, tags, dimensions, length and
+folder in the background and streams filenames, tags, age ratings, dimensions, length and
 size into the table. Reading writes nothing. **Stop reading** keeps the files
 already checked. Unreadable and unsupported files show their reasons.
 
@@ -22,7 +22,7 @@ its warning stays visible while configuring and building.
 
 **Tags for every new wallpaper** offers Wallpaper Engine's 25 genre tags and
 an **Other tag…** field for additional comma-separated tags. Nothing is tagged
-automatically. Click a file's TAG cell to make a different choice for it:
+automatically. Click a file's Tags cell to make a different choice for it:
 
 | Choice | TAG cell | Result |
 |---|---|---|
@@ -34,6 +34,15 @@ An empty resolved tag list always displays **NEEDS TAGS**, including a file
 following an empty batch. **Skip files that still need tags** is on by default.
 Turning it off allows untagged wallpapers. The **Needs tags** filter helps find
 files needing a decision.
+
+**Age for every new wallpaper** offers **Everyone**, **Questionable** and
+**Mature**, using Wallpaper Engine's `contentrating` values. It starts
+**Not selected** and remembers your last batch choice for the next launch.
+Click a file's **Age** cell to follow the batch, choose its own rating, or
+leave it explicitly unset. Inherited ratings are muted, and an unset rating
+shows **Needs age**. The warning and **Needs age** filter help you find files
+that still need a choice. An unset rating does not prevent building and is
+omitted from `project.json`; no rating is guessed.
 
 Use row checkboxes to choose a subset. **Select all** toggles the visible usable
 rows. The Build button follows the selected files and skip option. The size
@@ -54,7 +63,7 @@ the input and removes the incomplete project.
 For each wallpaper, Creator:
 
 1. Generates its preview and copies the video.
-2. Writes `project.json` with the selected tags.
+2. Writes `project.json` with the selected tags and age rating.
 3. Checks the video size, nonempty preview and JSON readback.
 4. Removes the source only after verification, in Move mode.
 

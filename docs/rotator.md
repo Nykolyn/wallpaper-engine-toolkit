@@ -2,6 +2,10 @@
 
 **Moves wallpaper folders between a reserve and `myprojects`, both ways.**
 
+Reserve and Current include **Tags** and **Age** from `project.json`.
+The metadata cache refreshes old entries once to populate these columns;
+missing values show a dash.
+
 ![A rotation under way: its steps on the left, its log on the right (made-up data)](images/rotator.png)
 
 ## What it is for

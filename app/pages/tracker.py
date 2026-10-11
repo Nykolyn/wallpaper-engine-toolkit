@@ -85,7 +85,7 @@ from ..tracker_feed import tray_running
 from ..ui.kit import (
     AccentButton, ButtonsCell, Callout, Cell, CellButton, Column, ConfirmDialog, EmptyState, FormDialog, GhostButton, Glyph, GlassPanel, Group, IconButton, LinkButton,
     MonitorCard, MonitorView, NavState, Overline, PathField, Rule, SecondaryButton,
-    SegmentedControl, Table, TableBar, TableFooter, TableModel, TextInput, format as fmt, label,
+    SegmentedControl, Table, TableBar, TableFooter, TableModel, TagsCell, TextInput, format as fmt, label,
 )
 from ..ui.kit.base import set_tone
 from ..ui.kit.cards import qualified_html
@@ -343,15 +343,18 @@ class PlaylistRow:
     # Marked [protected] here: `folder` is its new name, and Wallpaper Engine's
     # entry (`item`) still names the old one until the next rotation.
     stale: bool = False
+    tags: tuple[str, ...] = ()
+    age: str = ""
 
     def describe(self, found: Described | None) -> bool:
         """Take what was read; True when it changed anything."""
         if found is None:
             return False
-        new = (found.meta.title or self.title, found.author, found.meta.kind, found.known)
-        if new == (self.title, self.author, self.kind, self.known):
+        new = (found.meta.title or self.title, found.author, found.meta.kind, found.known,
+               found.meta.tags, found.meta.age)
+        if new == (self.title, self.author, self.kind, self.known, self.tags, self.age):
             return False
-        self.title, self.author, self.kind, self.known = new
+        self.title, self.author, self.kind, self.known, self.tags, self.age = new
         return True
 
 
@@ -545,12 +548,14 @@ def protect_dialog(old: str, new: str, parent: QWidget | None) -> ConfirmDialog:
 COLUMNS = (
     Column("#", theme.TRACKER_COLUMNS["number"], "right", mono=True, tone="text.lo",
            natural=True),
-    Column("Wallpaper", None, thumb="row"),
+    Column("Wallpaper", None, thumb="row", min_width=200),
     Column("Type", theme.TRACKER_COLUMNS["type"], font="type.monoXs", tone="text.lo"),
     Column("Size", theme.TRACKER_COLUMNS["size"], "right", mono=True, tone="text.mid"),
     Column("Shown", theme.TRACKER_COLUMNS["shown"], "right", mono=True, tone="text.mid"),
     Column("State", theme.TRACKER_COLUMNS["state"], "right", mono=True, tone="text.lo",
            sortable=False),
+    Column("Tags", theme.WALLPAPER_TAGS_WIDTH),
+    Column("Age", theme.WALLPAPER_AGE_WIDTH),
     Column("", theme.TRACKER_COLUMNS["actions"], "right", sortable=False),
 )
 TYPE, SIZE, SHOWN_FOR = 2, 3, 4
@@ -593,6 +598,10 @@ class PlaylistModel(TableModel):
             return row.kind
         if column == SIZE:
             return fmt.size(row.size) if row.size is not None else ""
+        if column == 6:
+            return TagsCell(row.tags) if row.tags else fmt.DASH
+        if column == 7:
+            return row.age or fmt.DASH
         if column == SHOWN_FOR:
             if row.shown_for is None:
                 return fmt.DASH
@@ -2106,7 +2115,8 @@ def _fixture_cycle(data: dict, entry: dict, p: Progress, now: datetime) -> Cycle
 
 def _fixture_described(spec: dict) -> Described:
     from ..engines.wallpaper_meta import WallpaperMeta
-    return Described(WallpaperMeta(title=spec.get("title", ""), kind=spec.get("type", "scene")),
+    return Described(WallpaperMeta(title=spec.get("title", ""), kind=spec.get("type", "scene"),
+                                  tags=tuple(spec.get("tags", ["Nature"])), age=spec.get("age", "Everyone")),
                      spec.get("author", ""), bool(spec.get("known")))
 
 
@@ -2119,5 +2129,7 @@ def _fixture_row_described(data: dict, item: str) -> Described:
         second = (second + 1) % len(words)
     title = f"{words[first]} {words[second]}"
     author = authors[n % len(authors)] if n % 11 else ""
-    return Described(WallpaperMeta(title=title, kind=kinds[n % len(kinds)]), author,
+    return Described(WallpaperMeta(title=title, kind=kinds[n % len(kinds)],
+                                  tags=("Nature", "Relaxing") if n % 3 else (),
+                                  age=("Everyone", "Questionable", "Mature")[n % 3]), author,
                      known=bool(author) and n % 4 == 0)

@@ -65,6 +65,7 @@ from pathlib import Path
 from typing import Callable, Iterable, Sequence
 
 from ..settings import app_data_dir
+from .wallpaper_meta import ITEM_KIND, WE_TAGS, content_rating, read_tags
 
 # Wallpaper Engine's Steam app id — every listing is filtered to it.
 APP_ID = 431960
@@ -114,8 +115,8 @@ CACHE_PATH = app_data_dir() / "steam_cache.sqlite"
 # Cache kinds for the answers whose shape has grown. Renaming the kind is how
 # an entry written before a field existed stops being served: an old item has
 # no type and no size, and would show that way for the rest of its thirty days.
-ITEM_CACHE = "item.2"
-AUTHOR_CACHE = "author.2"
+ITEM_CACHE = ITEM_KIND
+AUTHOR_CACHE = "author.3"
 
 # The tags Wallpaper Engine uses for what a wallpaper *is*. Everything else in
 # the tag list is genre, resolution or rating.
@@ -182,6 +183,8 @@ class ItemDetails:
     file_size: int = 0          # bytes, as Steam reports the download
     kind: str = ""              # Scene, Video, Web, Application — or "" if untagged
     result: int = 0            # Steam EResult; 0 in older cached answers
+    tags: tuple[str, ...] = ()
+    age: str = ""
 
     @property
     def large(self) -> bool:
@@ -235,11 +238,13 @@ class ItemDetails:
             "favorited": self.favorited, "file_size": self.file_size,
             "kind": self.kind,
             "result": self.result,
+            "tags": list(self.tags), "age": self.age,
         }
 
     @classmethod
     def from_json(cls, data: dict) -> "ItemDetails":
-        return cls(**data)
+        return cls(**{**data, "tags": read_tags(data.get("tags")),
+                      "age": content_rating(data.get("age"))})
 
     @classmethod
     def from_steam(cls, data: dict) -> "ItemDetails":
@@ -252,6 +257,7 @@ class ItemDetails:
         result = data.get("result", 1)
         if result != 1:
             return cls(id=item_id, ok=False, result=result)
+        tags = read_tags(data.get("tags"))
         return cls(
             id=item_id,
             ok=True,
@@ -265,6 +271,8 @@ class ItemDetails:
             favorited=int(data.get("favorited") or 0),
             file_size=int(data.get("file_size") or 0),
             kind=_kind_of(data.get("tags")),
+            tags=tuple(tag for tag in tags if tag in WE_TAGS),
+            age=next((rating for tag in tags if (rating := content_rating(tag))), ""),
         )
 
 
@@ -760,7 +768,8 @@ class SteamClient:
                 if not item.id:
                     continue
                 if not item.ok and not item.creator:
-                    previous = self._cache.get(ITEM_CACHE, item.id, float("inf"))
+                    previous = (self._cache.get(ITEM_CACHE, item.id, float("inf"))
+                                or self._cache.get("item.2", item.id, float("inf")))
                     if previous:
                         item.creator = previous.get("creator")
                 entries[item.id] = item.to_json()

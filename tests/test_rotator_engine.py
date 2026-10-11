@@ -688,7 +688,7 @@ check("library.json, Review's index, is left exactly as it was",
       library_json.read_bytes() == library_before)
 stored = json.loads(index_file.read_text(encoding="utf-8"))
 check("library_meta.json is its own file, in the documented shape",
-      stored["format"] == 1 and stored["roots"][os.path.normpath(str(L_RES))]["complete"] is True
+      stored["format"] == 2 and stored["roots"][os.path.normpath(str(L_RES))]["complete"] is True
       and stored["roots"][os.path.normpath(str(L_RES))]["folders"]["no-manifest"]["u"] == 1)
 
 reads.clear()

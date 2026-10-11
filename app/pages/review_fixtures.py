@@ -94,6 +94,8 @@ def cards(data: dict, now: datetime) -> list[rv.AuthorCard]:
                                title=title, created=_stamp(now, 1 + i * 0.7),
                                updated=_stamp(now, 1 + i * 0.7), preview="",
                                kind=KINDS[n % len(KINDS)],
+                               tags=("Nature", "Relaxing") if n % 3 else (),
+                               age=("Everyone", "Questionable", "Mature")[n % 3],
                                file_size=(40 + (n * 37) % 380) * 1024 ** 2)
             wallpaper = rv.Wallpaper(item=item, once_had=i < a.get("yours", 0),
                                      owned_checked=True)

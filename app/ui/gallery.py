@@ -62,7 +62,7 @@ from ..engines.library import DUPLICATES, LIBRARY, RESERVE, ROTATION
 from .kit import format as fmt, icons
 from .kit.chips import chip_pixmap, chip_size
 from .kit.tables import (
-    BusyCell, ButtonCell, Cell, ChipCell, Column, DiscCell, Table, TableModel, disc_pixmap,
+    BusyCell, ButtonCell, Cell, ChipCell, Column, DiscCell, Table, TableModel, TagsCell, disc_pixmap,
     paint_spinner,
 )
 from .kit.thumbs import ThumbLoader
@@ -1452,10 +1452,12 @@ class GalleryView(QListView):
 
 LIST_COLUMNS = (
     Column("", theme.THUMB["row"][0], thumb="row", sortable=False),
-    Column("Wallpaper", None, font="type.body", tone="text.hi"),
+    Column("Wallpaper", None, font="type.body", tone="text.hi", min_width=160),
     Column("Type", theme.GALLERY_LIST_COLUMNS["type"], mono=True, tone="text.mid"),
     Column("Size", theme.GALLERY_LIST_COLUMNS["size"], "right", mono=True, tone="text.mid"),
     Column("Mark", theme.GALLERY_LIST_COLUMNS["mark"]),
+    Column("Tags", theme.WALLPAPER_TAGS_WIDTH),
+    Column("Age", theme.WALLPAPER_AGE_WIDTH),
     Column("", theme.GALLERY_LIST_COLUMNS["action"], "right", sortable=False),
 )
 MARK_ORDER = (NEW, YOURS, QUEUED, UNKNOWN, HAVE, SUBSCRIBED)
@@ -1498,6 +1500,10 @@ class GalleryListModel(TableModel):
             mark = card_mark(wallpaper)
             return ChipCell(mark.chip, mark.text) if mark.chip else None
         if column == 5:
+            return TagsCell(wallpaper.item.tags) if wallpaper.item.tags else fmt.DASH
+        if column == 6:
+            return wallpaper.item.age or fmt.DASH
+        if column == 7:
             return action_cell(wallpaper, self.gallery.busy.get(wallpaper.id),
                                self.gallery.opens_page)
         return None

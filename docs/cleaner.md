@@ -2,6 +2,9 @@
 
 **Downloaded Workshop wallpapers whose Steam records are unavailable.**
 
+The table includes **Tags** and **Age**, read from the local `project.json`
+even when Steam cannot describe the wallpaper. Missing values show a dash.
+
 Cleaner is the first page under **Utilities** (Ctrl+5). Its sidebar chip is
 the total number of wallpapers still to process, including those hidden by
 the current folder filter. A completed check with no matches shows **0**.

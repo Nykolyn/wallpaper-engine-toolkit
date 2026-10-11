@@ -1,7 +1,8 @@
 {
   "target": "X:\\Studio\\myprojects",
   "tags": ["Nature", "Game", "My tag"],
-  "empty": {},
+  "age": "Everyone",
+  "empty": {"age": ""},
   "ffmpeg-missing": {"source": "X:\\Studio\\clips"},
   "reading": {
     "source": "X:\\Studio\\clips", "checked": 4, "total": 12,

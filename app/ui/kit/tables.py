@@ -262,6 +262,8 @@ class Column:
     - `title`: the header's words (drawn upper case).
     - `width`: the content's width in px, as the design's grid writes it; None
       shares out what the fixed columns leave.
+    - `min_width`: a stretched column's minimum content width; when it does
+      not fit, the table scrolls horizontally instead of hiding its words.
     - `align`: "left", "right" or "center".
     - `mono`: Consolas at type.monoSm (counts, sizes, times, ids), else Segoe at
       type.bodySm. `font` names another type token outright.
@@ -284,6 +286,7 @@ class Column:
     icon: str | None = None
     elide: str = "right"
     natural: bool = False
+    min_width: int = 0
 
     def __post_init__(self) -> None:
         if self.align not in ALIGNMENTS:
@@ -1518,13 +1521,19 @@ class Table(QTableView):
         header = self.horizontalHeader()
         model: TableModel = self.model()
         last = len(model.columns) - 1
+        minimum = sum((column.width if column.width is not None else column.min_width)
+                      + sum(self._pads(c, last)) for c, column in enumerate(model.columns))
+        scroll = any(column.min_width for column in model.columns)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded if scroll else Qt.ScrollBarAlwaysOff)
+        cramped = minimum > self.viewport().width() - self.verticalScrollBar().sizeHint().width()
         for c, column in enumerate(model.columns):
             left, right = self._pads(c, last)
-            if column.width is None:
+            if column.width is None and not (cramped and column.min_width):
                 header.setSectionResizeMode(c, QHeaderView.Stretch)
             else:
                 header.setSectionResizeMode(c, QHeaderView.Fixed)
-                header.resizeSection(c, column.width + left + right)
+                header.resizeSection(c, (column.width if column.width is not None else column.min_width)
+                                     + left + right)
         self._spans = None
 
     def refresh_columns(self) -> None:
@@ -1918,6 +1927,8 @@ class Table(QTableView):
 
     def resizeEvent(self, event) -> None:       # noqa: N802 - Qt's name
         super().resizeEvent(event)
+        if isinstance(self.model(), TableModel) and any(c.min_width for c in self.model().columns):
+            self._apply_columns()
         self._spans = None
         self._settle.start()
 

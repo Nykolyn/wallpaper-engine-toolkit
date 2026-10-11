@@ -2,6 +2,9 @@
 
 **How far Wallpaper Engine has got through the active playlist — `112/208`.**
 
+The playlist table includes **Tags** and **Age**, read from each wallpaper's
+`project.json` on the metadata worker. Missing values show a dash.
+
 ![The leading monitor in detail, the other as a summary, and the playlist (made-up data)](images/tracker.png)
 
 ## What it is for
