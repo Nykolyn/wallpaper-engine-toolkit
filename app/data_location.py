@@ -345,8 +345,8 @@ def _write_marker(folder: Path, moved_from: Path | None, files: int, size: int,
 # ---- Windows ----------------------------------------------------------------
 
 @contextmanager
-def _exclusive():
-    """Hold a named mutex, so two processes starting at once move nothing twice.
+def _exclusive(name: str = _MUTEX_NAME):
+    """Hold a named mutex; by default, simultaneous starts move nothing twice.
 
     A process that dies holding it abandons it, and Windows hands it to the next
     waiter, so a crash half way cannot lock the others out.
@@ -361,7 +361,7 @@ def _exclusive():
     kernel32.WaitForSingleObject.argtypes = (wintypes.HANDLE, wintypes.DWORD)
     kernel32.ReleaseMutex.argtypes = (wintypes.HANDLE,)
     kernel32.CloseHandle.argtypes = (wintypes.HANDLE,)
-    handle = kernel32.CreateMutexW(None, False, _MUTEX_NAME)
+    handle = kernel32.CreateMutexW(None, False, name)
     if not handle:
         yield
         return

@@ -6,6 +6,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [3.23.2] - 2026-10-11
+
+### Fixed
+
+- Updating a slow-starting tracker retries the quit request until its socket
+  is ready, within the existing shutdown timeout. Delivered requests are not
+  repeated to busy windows.
+- Concurrent window and tracker launches no longer overwrite each other's
+  `tracker.log` lines, including the shutdown trace checked by installer CI.
+  The log still retains its last 300 lines.
+
 ## [3.23.1] - 2026-10-11
 
 ### Fixed
@@ -1684,7 +1695,8 @@ restructured yet; the tabs keep their layout and take on the new look.
   was right for one library and wrong for every other. Nothing is tagged now
   unless you ask for it.
 
-[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.23.1...HEAD
+[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.23.2...HEAD
+[3.23.2]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.23.1...v3.23.2
 [3.23.1]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.23.0...v3.23.1
 [3.23.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.22.0...v3.23.0
 [3.22.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.21.0...v3.22.0

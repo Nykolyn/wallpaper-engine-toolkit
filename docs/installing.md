@@ -1,5 +1,9 @@
 # Installing
 
+Updates retry the graceful quit request if a running copy is still creating
+its command socket, within the existing shutdown timeout. Window and tracker
+log writes are serialized so a restart keeps the shutdown trace.
+
 Every release on the
 [Releases page](https://github.com/Nykolyn/wallpaper-engine-toolkit/releases)
 carries an installer, `WallpaperEngineToolkit-Setup-X.Y.Z.exe`. Download it and

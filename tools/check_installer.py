@@ -198,6 +198,9 @@ def main(argv: list[str]) -> int:
     tracker_log = (DATA / "tracker.log").read_text(encoding="utf-8", errors="replace") \
         if (DATA / "tracker.log").exists() else ""
     check("the tracker was asked to quit, and said so", "asked to quit" in tracker_log)
+    if "asked to quit" not in tracker_log:
+        print("---- tracker.log (shutdown trace missing) ----", flush=True)
+        print(tracker_log or "(no tracker log)", flush=True)
     backups = sorted((DATA / "update_backup").glob("*")) if (DATA / "update_backup").exists() else []
     check("the data was copied aside before the new version ran", len(backups) == 1)
     if backups:
