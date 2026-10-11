@@ -720,7 +720,7 @@ page.filter.setText("")
 check("and empty again shows them all", page.model.item_rows() == rows_before)
 check("no author column and no author list: # · WALLPAPER · TYPE · SIZE · SHOWN · STATE",
       [c.title for c in page.model.columns] == ["#", "Wallpaper", "Type", "Size", "Shown",
-                                                "State", ""]
+                                                "State", "Tags", "Age", ""]
       and not hasattr(page, "author_pick"))
 
 print("-- # is the playlist's own order --")

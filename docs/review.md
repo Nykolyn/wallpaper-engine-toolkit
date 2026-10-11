@@ -2,6 +2,10 @@
 
 **The week's new wallpapers, grouped by who made them.**
 
+The wallpaper list includes **Tags** (genre) and **Age** from Steam's item
+tags. Missing values show a dash; old cached item and author listings refresh
+to fetch these fields.
+
 ![The authors with new items, and one author's gallery (made-up data)](images/review.png)
 
 ## What it is for

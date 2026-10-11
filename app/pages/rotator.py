@@ -88,7 +88,7 @@ from ..ui.kit import (
     ConfirmDialog, DangerButton, GhostButton, GlassPanel, Glyph, IconButton, IconDisc, LinkButton,
     LiveDot, LogPanel, MetricStrip, NavState, Overline, OverlayDialog, PathField, ProgressBar,
     ProgressRing, SecondaryButton, SegmentedControl, SpinBox, StepList, Table, TableBar,
-    TableFooter, TableModel, TableSummary, TextInput, Toggle, chip_size, format as fmt, label,
+    TableFooter, TableModel, TableSummary, TagsCell, TextInput, Toggle, chip_size, format as fmt, label,
 )
 from ..ui.kit.base import Elided, set_tone
 from .base import Page, SideScroll
@@ -910,17 +910,19 @@ def library_columns(wide_chips: bool = False) -> tuple[Column, ...]:
     if wide_chips:
         chip = max(chip, chip_size("Unidentified").width())
     return (
-        Column("Folder", None, thumb="row", font="type.folder", tone="text.body"),
+        Column("Folder", None, thumb="row", font="type.folder", tone="text.body", min_width=200),
         Column("Author", widths["author"], font="type.label", tone="text.mid"),
         Column("Type", widths["type"], font="type.monoXs", tone="text.lo"),
         Column("Size", widths["size"], "right", mono=True, tone="text.mid"),
         Column("Last used", widths["used"], "right", mono=True, tone="text.mid"),
         Column("", chip, sortable=False),
+        Column("Tags", theme.WALLPAPER_TAGS_WIDTH),
+        Column("Age", theme.WALLPAPER_AGE_WIDTH),
         Column("", widths["actions"], "right", sortable=False),
     )
 
 
-LIBRARY_ACTIONS = 6                 # the reserve's and Current's last column
+LIBRARY_ACTIONS = 8                 # the reserve's and Current's last column
 
 
 class LibraryModel(TableModel):
@@ -1012,6 +1014,10 @@ class LibraryModel(TableModel):
             delete = (CellButton(DELETE, "trash", "Deleting it…", enabled=False)
                       if name in self.deleting else CellButton(DELETE, "trash", delete_tip(folder)))
             return ButtonsCell((CellButton(SEND, "copier", SEND_TIP), delete))
+        if column == 6:
+            return TagsCell(info.tags) if info is not None and info.tags else fmt.DASH
+        if column == 7:
+            return (info.age or fmt.DASH) if info is not None else ""
         if info is not None and info.unidentified:
             return ChipCell("Unidentified")
         if not is_protected(name) and self.never_used(name):
@@ -3372,7 +3378,9 @@ def build_fixture(data: dict, spec: dict, now: datetime) -> _Fixture:
                 by_id[wid] = authors[k % len(authors)]
             size = ((k * 7919) % 900 + 12) * 1024 * 1024 + (k % 1000) * 1024
             infos[view][name] = FolderInfo(name, title=name, kind=kinds[k % len(kinds)],
-                                           workshop_id=wid, size=size)
+                                           workshop_id=wid, size=size,
+                                           tags=("Nature", "Relaxing") if k % 3 else (),
+                                           age=("Everyone", "Questionable", "Mature")[k % 3])
     # Never used: `keep` of the reserve, spread through it rather than bunched
     # (a stride through the list, so the same folders every time).
     stride = sorted(range(len(reserve)), key=lambda k: (k * 7919) % len(reserve))

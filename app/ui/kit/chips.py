@@ -46,6 +46,7 @@ VARIANTS: dict[str, ChipSpec] = {
     # job and file state
     "Tagged": ChipSpec("Tagged", "ok.soft", "ok.line", "ok"),
     "NeedsTags": ChipSpec("Needs tags", "warn.soft", "warn.line", "warn"),
+    "NeedsAge": ChipSpec("Needs age", "warn.soft", "warn.line", "warn"),
     "AutoTagged": ChipSpec("From folder name", "info.soft", "info.line", "info"),
     "Copying": ChipSpec("Copying", "accent.soft", "accent.line", "accent.hover"),
     "Done": ChipSpec("Done", "ok.soft", "ok.line", "ok"),

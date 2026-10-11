@@ -14,16 +14,19 @@ index of workshop ids, read by every build since 1.x as `{name: [mtime, id]}`;
 leaving it exactly as it is means no older build ever meets a shape it did
 not write, and Review's refresh and this one never write the same file.
 
-    {"format": 1, "saved": "2026-09-30T13:02:11",
+    {"format": 2, "saved": "2026-09-30T13:02:11",
      "roots": {"W:\\\\reserve": {"complete": true, "folders": {
          "night-drive": {"m": 1727600000, "t": "Night Drive", "k": "video",
-                         "w": "3001", "p": "preview.jpg", "s": 91234567},
-         "no-manifest": {"m": 1727600100, "u": 1}}}}}
+                         "w": "3001", "p": "preview.jpg", "s": 91234567,
+                         "g": ["Vehicle"], "a": "Everyone"},
+         "no-manifest": {"m": 1727600100, "u": 1, "g": [], "a": ""}}}}}
 
 Per folder, keyed by name and modification time (`m`): `t` title, `k` type,
 `w` workshop id, `p` the preview's file name, `s` size in bytes (absent until
 measured), `u` 1 when there is no readable `project.json` (the Unidentified
-chip). Empty values are left out. A folder whose time changed is read again
+chip), `g` genre tags and `a` age rating. Missing `g`/`a` marks an old entry
+to read again, keeping its measured size. Other empty values are left out.
+A folder whose time changed is read again
 and measured again. A folder that moved between the two roots keeps its time,
 so after a rotation its entry is carried across instead of read again.
 
@@ -57,9 +60,10 @@ from PySide6.QtCore import QThread, Signal
 from ..settings import app_data_dir
 from .rotator.config import _write_atomically
 from .rotator.core import folder_size, folder_is_set
+from .wallpaper_meta import content_rating, read_tags
 
 FILE_NAME = "library_meta.json"
-FORMAT = 1
+FORMAT = 2
 SAVE_EVERY_SECONDS = 15.0
 # How many folders the worker measures between looks at what the page asked for.
 SIZE_CHUNK = 8
@@ -88,9 +92,14 @@ class FolderInfo:
     preview: str = ""               # the preview's file name, inside the folder
     size: int | None = None         # bytes; None until measured
     unidentified: bool = False      # no readable project.json
+    tags: tuple[str, ...] = ()
+    age: str = ""
+    metadata_read: bool = True      # old cache entries still need tags and age read.
 
     def to_json(self) -> dict:
         data: dict = {"m": self.mtime}
+        if self.metadata_read:
+            data.update(g=list(self.tags), a=self.age)
         for key, value in (("t", self.title), ("k", self.kind), ("w", self.workshop_id),
                            ("p", self.preview)):
             if value:
@@ -104,7 +113,8 @@ class FolderInfo:
     @classmethod
     def from_json(cls, name: str, data) -> "FolderInfo | None":
         """An entry as stored, or None when it is not one (read the folder again)."""
-        if not isinstance(data, dict) or type(data.get("m")) is not int:
+        if (not isinstance(data, dict) or type(data.get("m")) is not int
+                or not isinstance(data.get("g", []), list) or not isinstance(data.get("a", ""), str)):
             return None
         text = {k: data.get(k) for k in ("t", "k", "w", "p")}
         if any(v is not None and not isinstance(v, str) for v in text.values()):
@@ -114,7 +124,8 @@ class FolderInfo:
             size = None
         return cls(name=name, mtime=data["m"], title=text["t"] or "", kind=text["k"] or "",
                    workshop_id=text["w"] or "", preview=text["p"] or "", size=size,
-                   unidentified=bool(data.get("u")))
+                   unidentified=bool(data.get("u")), tags=read_tags(data.get("g")),
+                   age=content_rating(data.get("a")), metadata_read="g" in data and "a" in data)
 
 
 def describe(folder: str | Path, name: str, mtime: int) -> FolderInfo:
@@ -137,7 +148,8 @@ def describe(folder: str | Path, name: str, mtime: int) -> FolderInfo:
                     "")
     preview = Path(text("preview").replace("\\", "/")).name if text("preview") else ""
     return FolderInfo(name=name, mtime=mtime, title=text("title"), kind=text("type").lower(),
-                      workshop_id=workshop if workshop.isdigit() else "", preview=preview)
+                      workshop_id=workshop if workshop.isdigit() else "", preview=preview,
+                      tags=read_tags(data.get("tags")), age=content_rating(data.get("contentrating")))
 
 
 def _listing(root: str) -> list[tuple[str, int]]:
@@ -334,14 +346,16 @@ class LibraryIndex:
                 return False
             seen.add(name)
             known = previous.get(name)
-            if known is not None and known.mtime == mtime:
+            if known is not None and known.mtime == mtime and known.metadata_read:
                 report.reused += 1
-            elif (name, mtime) in carry:
+            elif (name, mtime) in carry and carry[(name, mtime)].metadata_read:
                 current[name] = carry[(name, mtime)]
                 report.carried += 1
                 changed = True
             else:
                 current[name] = describe(os.path.join(root, name), name, mtime)
+                if known is not None and known.mtime == mtime:
+                    current[name] = replace(current[name], size=known.size)
                 report.read += 1
                 changed = True
             if progress and (done % 250 == 0 or done == total):

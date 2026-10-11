@@ -183,12 +183,12 @@ check("a state that is not one of the five is refused",
       raises(lambda: setattr(SecondaryButton("x"), "force_state", "active"), ValueError))
 
 
-# ---- Chip: fourteen variants and no more ---------------------------------------------------
+# ---- Chip: the supported variants ---------------------------------------------------------
 
-FOURTEEN = {"NewAuthor", "Known", "Duplicated", "Unidentified", "New", "Queued", "WasYours",
-            "Subscribed", "Tagged", "NeedsTags", "AutoTagged", "Copying", "Done", "Failed"}
-check("the Chip variants are exactly the design's fourteen", set(chips.VARIANTS) == FOURTEEN
-      and len(chips.VARIANTS) == 14)
+EXPECTED = {"NewAuthor", "Known", "Duplicated", "Unidentified", "New", "Queued", "WasYours",
+            "Subscribed", "Tagged", "NeedsTags", "NeedsAge", "AutoTagged", "Copying", "Done", "Failed"}
+check("the Chip variants include the age prompt", set(chips.VARIANTS) == EXPECTED
+      and len(chips.VARIANTS) == 15)
 check("an unknown variant is an error, as a widget and as a pixmap",
       raises(lambda: Chip("Sparkly"), KeyError) and raises(lambda: chip_pixmap("Sparkly"), KeyError))
 own = Chip("Duplicated", "Already have")
@@ -209,7 +209,7 @@ size = chip_size("Done")
 check("its pixmap has room for the selected ring on every side",
       first.width() == round((size.width() + 2 * ring) * 1.5)
       and first.height() == round((size.height() + 2 * ring) * 1.5))
-check("every chip is the same height", len({chip_size(v).height() for v in FOURTEEN}) == 1)
+check("every chip is the same height", len({chip_size(v).height() for v in EXPECTED}) == 1)
 
 
 # ---- Pagination: the four-number rule ---------------------------------------------------------

@@ -30,6 +30,8 @@ class Wallpaper:
     size: int | None = None
     created: datetime | None = None
     note: str = ""
+    tags: tuple[str, ...] = ()
+    age: str = ""
 
 
 @dataclass
@@ -77,7 +79,7 @@ def scan(*, config_path=None, workshop=None, cache_path=None, refresh=False,
         folder = root / item_id
         meta = read_meta(str(folder / "project.json"))
         row = Wallpaper(str(folder), meta.title, authors[item_id].name if item_id in authors else "",
-                        meta.kind)
+                        meta.kind, tags=meta.tags, age=meta.age)
         try:
             row.created = datetime.fromtimestamp(folder.stat().st_ctime)
             files, _ = manifest(str(folder))

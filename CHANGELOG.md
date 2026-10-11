@@ -6,6 +6,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [3.22.0] - 2026-10-11
+
+### Added
+
+- Tags and Age columns in Tracker, Rotator's Reserve and Current, Review's
+  wallpaper list, Cleaner and Creator's source table.
+- Creator offers Wallpaper Engine's Everyone, Questionable and Mature age
+  ratings for the batch or an individual file. The batch starts unset and
+  remembers the last choice. Unrated files show Needs age and can be filtered;
+  selected ratings are written to `project.json` as `contentrating`.
+
 ## [3.21.0] - 2026-10-11
 
 ### Added
@@ -1641,7 +1652,8 @@ restructured yet; the tabs keep their layout and take on the new look.
   was right for one library and wrong for every other. Nothing is tagged now
   unless you ask for it.
 
-[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.21.0...HEAD
+[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.22.0...HEAD
+[3.22.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.21.0...v3.22.0
 [3.21.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.20.0...v3.21.0
 [3.20.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.19.1...v3.20.0
 [3.19.1]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.19.0...v3.19.1

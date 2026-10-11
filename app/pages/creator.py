@@ -19,7 +19,7 @@ from ..settings import DEFAULT_CREATOR_MODE, default_creator_target
 from ..services import Run
 from ..ui.kit import (
     AccentButton, ActivityLine, BusyCell, Callout, CardTitle, Cell, CheckCell, Chip,
-    ChipCell, Column, ConfirmDialog, EmptyState, GhostButton, GlassPanel, IconButton, IconDisc,
+    ChipCell, Column, ConfirmDialog, Dropdown, EmptyState, GhostButton, GlassPanel, IconButton, IconDisc,
     LiveDot, LogPanel, MetricStrip, NavState, Overline, PathField, ProgressBar,
     ProgressRing, SecondaryButton, SegmentedControl, SkeletonRows, Table, TableBar,
     TableFooter, TableModel, TagSelect, TagsCell, format as fmt, label,
@@ -33,6 +33,11 @@ def tag_cell(item, batch_tags):
     if not tags:
         return ChipCell("NeedsTags")
     return TagsCell(tuple(tags), "text.lo" if item.tags is None else "text.body")
+
+
+def age_cell(item, batch_age):
+    age = engine.resolve_age(item, batch_age)
+    return Cell(age, "text.lo" if item.age is None else "text.body") if age else ChipCell("NeedsAge")
 
 
 def build_items(items, selected, batch_tags, skip=True):
@@ -94,11 +99,12 @@ class SourceModel(TableModel):
     def __init__(self, page):
         self.page = page
         widths = theme.CREATOR_COLUMNS
-        columns = [Column("", widths[0], sortable=False), Column("FILE", widths[1]),
-                   Column("TAG", widths[2], sortable=False),
+        columns = [Column("", widths[0], sortable=False), Column("FILE", widths[1], min_width=160),
+                   Column("Tags", widths[2], sortable=False),
                    Column("RESOLUTION", widths[3], mono=True, align="right"),
                    Column("LENGTH", widths[4], mono=True, align="right"),
-                   Column("SIZE", widths[5], mono=True, align="right")]
+                   Column("SIZE", widths[5], mono=True, align="right"),
+                   Column("Age", theme.WALLPAPER_AGE_WIDTH)]
         super().__init__(columns, parent=page)
 
     def cell(self, item, column):
@@ -115,11 +121,13 @@ class SourceModel(TableModel):
             return item.resolution or fmt.DASH
         if column == 4:
             return video_length(item.duration)
+        if column == 6:
+            return age_cell(item, self.page.batch_age)
         return fmt.size(item.size)
 
     def sort_key(self, item, column):
         if isinstance(item, str):
-            return "" if column in (1, 2) else -1
+            return "" if column in (1, 2, 6) else -1
         if column == 0:
             return item.video_path in self.page.selected
         if column == 1:
@@ -128,6 +136,8 @@ class SourceModel(TableModel):
             return (item.width or 0) * (item.height or 0)
         if column == 4:
             return item.duration or 0
+        if column == 6:
+            return engine.resolve_age(item, self.page.batch_age)
         return item.size
 
     def row_tone(self, item):
@@ -207,6 +217,7 @@ class CreatorPage(Page):
         self.items, self.report, self.run_rows = [], [], []
         self.selected = set()
         self.batch_tags = engine.clean_tags(settings.get("creator", "tags", []))
+        self.batch_age = engine.content_rating(settings.get("creator", "age", ""))
         self._fixture = None
         self._on_screen = False
         self._job = None
@@ -218,6 +229,7 @@ class CreatorPage(Page):
         self._read_worker = None
         self._workers = []
         self._tag_editor = None
+        self._age_editor = None
         self._target = settings.get("creator", "target", default_creator_target())
         self._estimate = None
         self.messages = []
@@ -278,6 +290,17 @@ class CreatorPage(Page):
         self.tags.set_value(self.batch_tags)
         self.tags.changed.connect(self._options_changed)
         source.addWidget(self.tags)
+        source.addWidget(Overline("AGE FOR EVERY NEW WALLPAPER"))
+        self.age = Dropdown()
+        self.age.setAccessibleName("Age rating for every new wallpaper")
+        self.age.add_item("Not selected — choose age", "")
+        for rating in engine.WE_AGES:
+            self.age.add_item(rating, rating)
+        self.age.setCurrentIndex(self.age.findData(self.batch_age))
+        self.age.currentIndexChanged.connect(self._options_changed)
+        source.addWidget(self.age)
+        self.age_note = words("Batch age is not selected. Choose a rating above, or click a file's Age cell.", tone="warn")
+        source.addWidget(self.age_note)
         self.side_layout.addWidget(self.source_panel)
 
         self.how_panel, how = panel("How it works")
@@ -424,8 +447,10 @@ class CreatorPage(Page):
         bar.add(self.table_title)
         self.needs_chip = Chip("NeedsTags", "0 need tags")
         bar.add(self.needs_chip)
+        self.needs_age_chip = Chip("NeedsAge", "0 need age")
+        bar.add(self.needs_age_chip)
         bar.add_stretch()
-        self.filter = SegmentedControl(("All", "Needs tags"))
+        self.filter = SegmentedControl(("All", "Needs tags", "Needs age"))
         self.filter.changed.connect(self._render_tables)
         bar.add(self.filter)
         self.refresh_button = IconButton("refresh", "Read the source folder again")
@@ -526,6 +551,9 @@ class CreatorPage(Page):
         self.omissions_panel.setVisible(state == "done")
         self.source.setEnabled(state != "reading")
         self.tags.setEnabled(state != "building")
+        self.age.setEnabled(state != "building")
+        if state != "scanned" and self._age_editor is not None:
+            self._age_editor.hidePopup()
         self.mode.setEnabled(state != "building")
         self.right.setCurrentIndex({"reading": 1, "scanned": 1, "building": 2, "done": 3}.get(state, 0))
         self.header_bar.setVisible(state == "reading")
@@ -561,8 +589,10 @@ class CreatorPage(Page):
 
     def _options_changed(self, *_):
         self.batch_tags = self.tags.tags()
+        self.batch_age = self.age.currentData() or ""
         self.settings.set("creator", "mode", "Move" if self.mode.current_index() else "Copy")
         self.settings.set("creator", "tags", self.batch_tags)
+        self.settings.set("creator", "age", self.batch_age)
         if self._fixture is None:
             self.settings.save()
         self._refresh_counts()
@@ -576,6 +606,8 @@ class CreatorPage(Page):
         self.run_warning.setVisible(move)
         usable = [item for item in self.items if item.valid]
         need = sum(engine.needs_tags(item, self.batch_tags) for item in usable)
+        need_age = sum(not engine.resolve_age(item, self.batch_age) for item in usable)
+        self.age_note.setVisible(not self.batch_age)
         unsupported = sum(bool(item.reason and item.reason.startswith("unsupported")) for item in self.items)
         self.found_metrics.set_value(0, len(self.items))
         self.found_metrics.set_value(1, len(usable) if self.state == "reading" else len(usable) - need)
@@ -588,6 +620,8 @@ class CreatorPage(Page):
         self.build_button.setEnabled(self.state == "scanned" and bool(chosen) and bool(self.target.path()))
         self.needs_chip.set_text(f"{need} need tags")
         self.needs_chip.setVisible(need > 0)
+        self.needs_age_chip.set_text(f"{need_age} need age")
+        self.needs_age_chip.setVisible(need_age > 0)
         size = sum(item.size for item in chosen)
         estimate = self._estimate
         if self._fixture is None:
@@ -602,6 +636,8 @@ class CreatorPage(Page):
         rows = self.items
         if self.filter.current_index() == 1 and self.state == "scanned":
             rows = [item for item in rows if item.valid and engine.needs_tags(item, self.batch_tags)]
+        elif self.filter.current_index() == 2 and self.state == "scanned":
+            rows = [item for item in rows if item.valid and not engine.resolve_age(item, self.batch_age)]
         self.source_model.set_rows(rows + ([self._reading_name] if self.state == "reading" and self._reading_name else []))
         if self.state == "reading":
             height = self.table.horizontalHeader().sizeHint().height() + min(
@@ -636,6 +672,8 @@ class CreatorPage(Page):
             self.table.viewport().update()
         elif index.column() == 2:
             self.edit_tags(item, index)
+        elif index.column() == 6:
+            self.edit_age(item, index)
 
     def eventFilter(self, watched, event):
         if watched is getattr(self, "table", None) and event.type() == QEvent.KeyPress and self.state == "scanned":
@@ -664,6 +702,27 @@ class CreatorPage(Page):
 
     def _tag_changed(self, item, editor):
         item.tags = editor.value()
+        self._refresh_counts()
+        self._queue_render()
+
+    def edit_age(self, item, index=None):
+        if self._age_editor is not None:
+            self._age_editor.hidePopup()
+            self._age_editor.deleteLater()
+        editor = self._age_editor = Dropdown(self.table.viewport())
+        editor.setAccessibleName(f"Age rating for {item.basename}")
+        editor.add_item("Follow batch", None)
+        for rating in engine.WE_AGES:
+            editor.add_item(rating, rating)
+        editor.add_item("Not selected", "")
+        editor.setCurrentIndex(editor.findData(item.age))
+        editor.setGeometry(self.table.visualRect(index) if index is not None else self.table.rect())
+        editor.currentIndexChanged.connect(lambda: self._age_changed(item, editor))
+        editor.hide()
+        editor.showPopup()
+
+    def _age_changed(self, item, editor):
+        item.age = editor.currentData()
         self._refresh_counts()
         self._queue_render()
 
@@ -805,7 +864,8 @@ class CreatorPage(Page):
         self.pause_button.setText("Pause")
         self.stop_button.setEnabled(True)
         self._set_state("building")
-        self.engine.start(items, target, move=move, tags=list(self.batch_tags), skip_needs_tags=self.skip.isChecked())
+        self.engine.start(items, target, move=move, tags=list(self.batch_tags),
+                          skip_needs_tags=self.skip.isChecked(), age=self.batch_age)
 
     def _progress(self, done, total):
         self._done, self._total = done, total
@@ -986,6 +1046,8 @@ class CreatorPage(Page):
         self.target.set_path(self._target)
         self.tags.set_value(fixture["tags"])
         self.batch_tags = self.tags.tags()
+        self.batch_age = spec.get("age", fixture.get("age", ""))
+        self.age.setCurrentIndex(self.age.findData(self.batch_age))
         self.mode.set_current_index(int(spec.get("move", False)))
         self.items = []
         for data in spec.get("items", []):
@@ -994,7 +1056,7 @@ class CreatorPage(Page):
             item.__dict__.update(video_path=os.path.join(spec["source"], data["name"]), basename=data["name"],
                                  filename=os.path.splitext(data["name"])[0], size=data["size"], _exists=True,
                                  width=data.get("width"), height=data.get("height"), duration=data.get("duration"),
-                                 tags=data.get("tags"), metadata_read=True, reason=data.get("reason"))
+                                 tags=data.get("tags"), age=data.get("age"), metadata_read=True, reason=data.get("reason"))
             self.items.append(item)
         self.selected = {item.video_path for item in self.items if item.valid}
         self._estimate = spec.get("estimate")

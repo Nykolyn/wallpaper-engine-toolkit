@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import json
 import sys
 import tempfile
 import time
@@ -84,7 +85,8 @@ for name in ("a.mp4", "b.mp4", "bad.mp4", "notes.txt"):
     (source / name).write_bytes(b"video")
 target = source.parent / "output"
 svc = services.Services(data_dir=source.parent / "data")
-live = CreatorPage(Settings({"creator": {"target": str(target), "mode": "Copy", "tags": ["Nature"]}}), svc)
+live = CreatorPage(Settings({"creator": {"target": str(target), "mode": "Copy", "tags": ["Nature"],
+                                        "age": "Questionable"}}), svc)
 
 def settle_until(predicate, timeout=5):
     until = time.monotonic() + timeout
@@ -117,6 +119,9 @@ with patch("app.engines.creator.find_ffmpeg", return_value="fake"), \
     check("page completes a subset through queued engine signals", settle_until(lambda: live.state == "done"))
     check("page totals match actual created and skipped work", live._total == 1 and len(list(target.iterdir())) == 1
           and sum(e["status"] == "ok" for e in live.report) == 1)
+    project = next(target.glob("*/project.json"))
+    check("the page passes its batch age through the worker into project.json",
+          json.loads(project.read_text(encoding="utf-8"))["contentrating"] == "Questionable")
     check("Done preserves no-tag, damaged and unsupported reasons", len(live.report) == 4
           and any(e["reason"] == "skipped — no tags" for e in live.report)
           and any(e["reason"] == "could not be read — file may be damaged" for e in live.report))

@@ -34,13 +34,34 @@ from ..settings import app_data_dir
 
 # Review's Steam cache: see steam_api (ITEM_CACHE, the "profile" kind).
 STEAM_CACHE = "steam_cache.sqlite"
-ITEM_KIND = "item.2"
+ITEM_KIND = "item.3"
 PROFILE_KIND = "profile"
 AUTHORS_DB = "authors.sqlite"
 
 # SQLite's limit on bound parameters is 999 on old builds; stay well inside it.
 _CHUNK = 500
 _ID_KEYS = ("workshopid", "workshopId")
+WE_AGES = ("Everyone", "Questionable", "Mature")
+# The genre vocabulary from Wallpaper Engine's UI and real project.json files.
+WE_TAGS = (
+    "Abstract", "Animal", "Anime", "Cartoon", "CGI", "Cyberpunk", "Fantasy",
+    "Game", "Girls", "Guys", "Landscape", "Medieval", "Memes", "MMD", "Music",
+    "Nature", "Pixel art", "Relaxing", "Retro", "Sci-Fi", "Sports",
+    "Technology", "Television", "Unspecified", "Vehicle",
+)
+
+
+def content_rating(value) -> str:
+    return next((age for age in WE_AGES if isinstance(value, str)
+                 and value.strip().casefold() == age.casefold()), "")
+
+
+def read_tags(value) -> tuple[str, ...]:
+    if not isinstance(value, (list, tuple)):
+        return ()
+    names = (tag.get("tag") if isinstance(tag, dict) else tag for tag in value)
+    return tuple(dict.fromkeys(tag.strip() for tag in names
+                               if isinstance(tag, str) and tag.strip()))
 
 
 # ---- one wallpaper -------------------------------------------------------------------------
@@ -53,6 +74,8 @@ class WallpaperMeta:
     kind: str = ""                  # "scene", "video", "web", … as the file says, lower case
     workshop_id: str = ""
     readable: bool = True
+    tags: tuple[str, ...] = ()
+    age: str = ""
 
 
 def folder_of(item: str) -> Path:
@@ -81,7 +104,8 @@ def read_meta(item: str) -> WallpaperMeta:
     kind = str(data.get("type") or "").strip().lower()
     workshop = next((str(data[k]).strip() for k in _ID_KEYS if data.get(k)), "")
     return WallpaperMeta(title=title, kind=kind,
-                         workshop_id=workshop if workshop.isdigit() else "")
+                         workshop_id=workshop if workshop.isdigit() else "",
+                         tags=read_tags(data.get("tags")), age=content_rating(data.get("contentrating")))
 
 
 # ---- its author ----------------------------------------------------------------------------
@@ -140,7 +164,8 @@ def author_names(workshop_ids: Iterable[str],
     if conn is None:
         return {}
     try:
-        items = _payloads(conn, ITEM_KIND, ids)
+        items = _payloads(conn, "item.2", ids)
+        items.update(_payloads(conn, ITEM_KIND, ids))
         creators = {wid: str(p["creator"]) for wid, p in items.items() if p.get("creator")}
         profiles = _payloads(conn, PROFILE_KIND,
                              sorted({c.lower() for c in creators.values()}))

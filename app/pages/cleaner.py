@@ -15,7 +15,7 @@ from ..engines.wallpaper_delete import delete_wallpaper
 from ..services import begin
 from ..ui.kit import (
     ButtonsCell, Callout, Cell, CellButton, Column, ConfirmDialog, Dropdown, EmptyState,
-    GlassPanel, NavState, SecondaryButton, Table, TableBar, TableFooter, TableModel, format as fmt,
+    GlassPanel, NavState, SecondaryButton, Table, TableBar, TableFooter, TableModel, TagsCell, format as fmt,
 )
 from . import on_steam_found
 from .base import Page
@@ -26,9 +26,10 @@ from .tracker import _Offload
 class WallpaperModel(TableModel):
     def __init__(self, page):
         self.page = page
-        super().__init__((Column("Folder", thumb="rowxs"), Column("Author", 150),
+        super().__init__((Column("Folder", thumb="rowxs", min_width=200), Column("Author", 150),
                           Column("Type", 80), Column("Size", 100, mono=True, align="right"),
-                          Column("Date", 136, mono=True), Column("", 70, sortable=False)), parent=page)
+                          Column("Date", 136, mono=True), Column("Tags", theme.WALLPAPER_TAGS_WIDTH),
+                          Column("Age", theme.WALLPAPER_AGE_WIDTH), Column("", 70, sortable=False)), parent=page)
 
     def cell(self, row, column):
         if column == 0:
@@ -42,6 +43,10 @@ class WallpaperModel(TableModel):
         if column == 4:
             return (Cell(row.created.strftime("%Y-%m-%d"), sub=row.created.strftime("%H:%M:%S"))
                     if row.created else fmt.DASH)
+        if column == 5:
+            return TagsCell(row.tags) if row.tags else fmt.DASH
+        if column == 6:
+            return row.age or fmt.DASH
         enabled = not self.page.scanning and not self.page.acting
         return ButtonsCell((CellButton("delete", "trash", delete_tip(row.folder), enabled),
                             CellButton("reserve", "plus", "Move to reserve…", enabled)))

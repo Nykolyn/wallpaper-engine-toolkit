@@ -790,14 +790,14 @@ check("MARK is the card's chip",
       and lm.cell(rows[2], 4) == ChipCell("Duplicated", "Already have")
       and lm.cell(rows[3], 4) == ChipCell("Subscribed"))
 check("the last column: Subscribe, a dash for one you have, a check for one subscribed",
-      lm.cell(rows[0], 5) == ButtonCell("Subscribe")
-      and lm.cell(rows[2], 5).text == "—" and isinstance(lm.cell(rows[3], 5), DiscCell))
+      lm.cell(rows[0], 7) == ButtonCell("Subscribe")
+      and lm.cell(rows[2], 7).text == "—" and isinstance(lm.cell(rows[3], 7), DiscCell))
 check("and Open in Steam when that is what a click does",
       gal.action_cell(rows[0], None, opens_page=True) == ButtonCell("Open in Steam"))
 list_source.mark_busy("l0", gal.SUBSCRIBING)
 list_source.mark_busy("l1", gal.WAITING)
 check("and the work under way: Subscribing… turning, Waiting… still",
-      lm.cell(rows[0], 5) == BusyCell("Subscribing…") and lm.cell(rows[1], 5).text == "Waiting…"
+      lm.cell(rows[0], 7) == BusyCell("Subscribing…") and lm.cell(rows[1], 7).text == "Waiting…"
       and listing.spins(0) == animations.ENABLED and not listing.spins(1))
 list_source.mark_busy("l0", None)
 list_source.mark_busy("l1", None)
