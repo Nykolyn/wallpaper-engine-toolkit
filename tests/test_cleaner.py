@@ -211,10 +211,25 @@ class CleanerTests(unittest.TestCase):
              patch("app.pages.cleaner.delete_wallpaper", return_value=Deleted(other.folder, "1002")):
             self.assertTrue(page._action(0, 5, "delete"))
             self.assertTrue(wait_for(lambda: not page.acting))
-        self.assertEqual(page.nav_state().text, "0")
+        self.assertEqual((page.nav_state().kind, page.nav_state().text), ("none", ""))
         self.assertEqual(page.empty.title(), "Nothing to process")
         page.deleteLater()
         services.install(None)
+
+    def test_zero_results_hide_badge_in_live_page_and_fixtures(self):
+        page = CleanerPage(Settings({}))
+        self.assertEqual(page.nav_state().text, "waiting")
+        page.scanning = True
+        page._render()
+        self.assertEqual(page.nav_state().text, "checking")
+        page._scanned(engine.Scan([], {}, 10))
+        self.assertEqual((page.nav_state().kind, page.nav_state().text), ("none", ""))
+        for state in page.FIXTURES:
+            page.load_fixture(state)
+            self.assertEqual(page.nav_state().kind == "badge", state == "found")
+            self.assertEqual(page.frame_fixture(state)["nav"][page.key]["kind"],
+                             "badge" if state == "found" else "none")
+        page.deleteLater()
 
     def test_startup_is_background_once_and_disabled_for_fixtures(self):
         page = CleanerPage(Settings({}))
@@ -361,7 +376,7 @@ class CleanerTests(unittest.TestCase):
             self.assertEqual([call.args for call in move.call_args_list],
                              [(row.folder, page.config.source) for row in rows])
         self.assertEqual(page.model.rowCount(), 0)
-        self.assertEqual(page.nav_state().text, "0")
+        self.assertEqual((page.nav_state().kind, page.nav_state().text), ("none", ""))
         page.deleteLater()
 
 

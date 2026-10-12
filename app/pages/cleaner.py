@@ -223,8 +223,9 @@ class CleanerPage(Page):
         self.delete_selected.setEnabled(enabled and bool(self.selected))
         self.reserve_selected.setEnabled(enabled and bool(self.selected))
         self.table.viewport().update()
-        self.set_nav_state(NavState.badge(total) if total or self._checked is not None
-                           else NavState.status("checking" if self.scanning else "waiting"))
+        self.set_nav_state(NavState.badge(total) if total else NavState()
+                           if self._checked is not None else
+                           NavState.status("checking" if self.scanning else "waiting"))
         self.set_subtitle("Checking your Workshop library…" if self.scanning else
                           f"{fmt.counted(total, 'wallpaper')} to process"
                           + (f" · {fmt.count(self._checked)} checked" if self._checked is not None else ""))
@@ -381,7 +382,8 @@ class CleanerPage(Page):
             toasts.show_toast(words, tone)
 
     def frame_fixture(self, state):
-        return {"frame": "idle", "nav": {self.key: {"kind": "badge", "value": 2 if state == "found" else 0}}}
+        return {"frame": "idle", "nav": {self.key: {"kind": "badge", "value": 2}
+                                               if state == "found" else {"kind": "none"}}}
 
     def load_fixture(self, state):
         if state not in self.FIXTURES:
