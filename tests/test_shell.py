@@ -163,8 +163,9 @@ check("the pages are in the order of the loop, Settings last",
       w.sidebar.keys() == list(PAGE_ORDER) and PAGE_ORDER[-1] == "settings")
 check("the window opens on Overview", w.current_page() == DEFAULT_PAGE == "overview"
       and w.header.title() == "Overview" and w.sidebar.current() == "overview")
-check("at 1280 × 860, no smaller than 1040 × 720",
-      (w.width(), w.height()) == (1280, 860)
+check("opens 500 px wider, within the screen and no smaller than 1040 × 720",
+      theme.WINDOW_SIZE == (1780, 860)
+      and (w.width(), w.height()) == (max(1040, min(1780, w.screen().availableGeometry().width())), 860)
       and (w.minimumWidth(), w.minimumHeight()) == (1040, 720))
 w.sidebar.item("tracker").click()
 check("a click in the sidebar goes to its page",
@@ -565,6 +566,37 @@ try:
     check("a kind that is neither is refused", False)
 except ValueError:
     check("a kind that is neither is refused", True)
+
+print("-- saved window width --")
+from unittest.mock import patch
+from PySide6.QtCore import QRect
+room = SimpleNamespace(availableGeometry=lambda: QRect(0, 0, 3840, 2160))
+remember = make_window()
+remember.settings = Settings({"tracker": {"heartbeat": 17}})
+remember.settings.save()
+remember.resize(1540, 860)
+remember.close()
+persisted = Settings.load()
+check("closing saves the chosen width without losing other settings",
+      persisted.get("window", "width", None) == 1540
+      and persisted.get("tracker", "heartbeat", None) == 17)
+remember.settings = persisted
+with patch.object(remember, "screen", return_value=room):
+    check("reopening uses the last width, even below the wider default", remember.opening_size().width() == 1540)
+    for bad in (None, "1540", True, -1, 200):
+        remember.settings.set("window", "width", bad)
+        check(f"invalid saved width {bad!r} uses the new default", remember.opening_size().width() == 1780)
+    remember.settings.set("window", "width", 9000)
+    check("a saved width is limited to available screen space", remember.opening_size().width() == 3840)
+remember.settings.set("window", "width", 1540)
+remember.show()
+remember.showMaximized()
+wait(50)
+normal_width = remember.normalGeometry().width()
+remember.close()
+check("closing maximised preserves the restored width",
+      remember.settings.get("window", "width", None) == normal_width)
+remember.deleteLater()
 
 print("-- snapshots --")
 s = make_window("rotator")

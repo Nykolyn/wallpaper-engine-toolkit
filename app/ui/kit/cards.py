@@ -8,7 +8,7 @@
 - MonitorCard is what a monitor is showing and how far through the playlist
   it is. **compact** (Overview): a 100 × 100 thumb, the title, "author · 14 min
   in", and a bar with "4 / 201". **detail** (Tracker): a ring and the count,
-  a 400 × 400 preview, the title, the author with a chip, and a footer of SHOWN
+  a 200 × 200 preview, the title, the author with a chip, and a footer of SHOWN
   FOR / REMAINING / CYCLE STARTED. Its states are the monitor's: leading,
   summary (a second monitor, following its own order), paused and
   disconnected. A playlist shown to its end closes the ring in ok, turns the
