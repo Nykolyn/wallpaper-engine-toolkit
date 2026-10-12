@@ -43,7 +43,7 @@ def run_record(run_id, moved=(), reset=False, failed=()):
 
 cfg, history, store = world("tail", reserve=("b",), current=("a",),
                             runs=[run_record("old", ["a"])])
-store.initialize(history.runs, ["a"], {"a": 3})
+store.set_multiplier("a", 3)
 usage = store.usage(history.runs)
 assert (usage.multiplier("a"), usage.used("a"), usage.remaining("a")) == (3, 1, 2)
 assert usage.remaining("b") == 1
@@ -196,13 +196,17 @@ assert (Path(cfg.source) / "a").is_dir() and not (Path(cfg.destination) / "a").e
 
 store.path.unlink()
 store.reload()
-store.initialize(history.runs, ["a"], {"a": 20})
+store.path.write_text(json.dumps({"version": 1, "multipliers": {"a": 20},
+    "baseline": {"run_id": "", "moved_count": 0, "active": ["a"]}, "retries": []}), encoding="utf-8")
+store.reload()
 assert store.usage(history.runs).remaining("a") == 19
 history.runs = [run_record("new", ["b"])]
 assert store.usage(history.runs).remaining("a") == 19
 
 cfg, history, store = world("missing-baseline", runs=[run_record("baseline", ["a"])])
-store.initialize(history.runs, ["a"], {"a": 2})
+store.path.write_text(json.dumps({"version": 1, "multipliers": {"a": 2},
+    "baseline": {"run_id": "baseline", "moved_count": 1, "active": ["a"]}, "retries": []}), encoding="utf-8")
+store.reload()
 try:
     store.usage([])
     raise AssertionError("Lost baseline was accepted")
@@ -217,29 +221,6 @@ with patch.object(rc, "_write_atomically", side_effect=PermissionError("read-onl
     except OSError:
         pass
 assert store.multiplier("a") == 2
-
-cfg, history, store = world("unfinished-migration")
-transaction = store.path.parent / "multiplier-migration" / "pending"
-transaction.mkdir(parents=True)
-manifest = transaction / "manifest.json"
-for status in ("preparing", "prepared", "applying", "committed", "finalizing", "rolling-back"):
-    manifest.write_text(json.dumps({"version": 1, "id": transaction.name, "status": status,
-                                   "plan": {"roots": [cfg.source, cfg.destination, cfg.duplicates]},
-                                   "groups": [], "sources": [], "files": []}), encoding="utf-8")
-    rotator = core.Rotator(cfg, history)
-    assert "unfinished copy migration" in rotator.validate()
-    for action in (rotator.run, lambda: rotator.retry(run_record("pending-retry", failed=["a"]), [], ["a"])):
-        try:
-            action()
-            raise AssertionError("Rotation or retry ignored pending migration")
-        except ValueError as error:
-            assert "unfinished copy migration" in str(error)
-    assert (Path(cfg.source) / "a").is_dir() and not list(Path(cfg.destination).iterdir())
-for status in ("complete", "rolled-back"):
-    data = json.loads(manifest.read_text(encoding="utf-8"))
-    data["status"] = status
-    manifest.write_text(json.dumps(data), encoding="utf-8")
-    assert core.Rotator(cfg, history).validate() is None
 
 shutil.rmtree(TMP)
 print("PASS multiplier persistence, quotas, tail cycles, weighted uniqueness and retries")

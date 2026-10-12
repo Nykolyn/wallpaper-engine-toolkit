@@ -326,7 +326,7 @@ everything else. (Until 3.0.0 a source run kept them apart, in
 - `data/config.json` — the five settings above.
 - `data/history.json` — one record per run: which folders moved,
   which were duplicates, how many came back, what failed.
-- `data/multipliers.json` — permanent multipliers, the migration cycle
+- `data/multipliers.json` — permanent multipliers, an optional cycle
   baseline and the quota entries for successful retries of older runs.
 - `data/run_meta.json` and `data/logs/rotator/run-<id>.log` — see
   [below](#what-a-run-leaves-behind).
@@ -426,5 +426,5 @@ Multiplier selects in Reserve, Current and Tracker edit the same persistent stat
 Live edits preserve already used appearances, and a running rotation keeps its captured
 selection settings until its next run.
 
-Use **Migrate copies** in the header to inspect and consolidate verified physical copies.
-See [Migration and rollback](multiplier-migration.md) before upgrading an existing library.
+Consolidating existing physical copies is a separate one-time manual operation.
+The Rotator only selects wallpapers and edits their multiplier quotas.

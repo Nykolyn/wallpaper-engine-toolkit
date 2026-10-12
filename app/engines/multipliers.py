@@ -133,27 +133,8 @@ class MultiplierStore:
         if type(value) is not int or value < 1:
             raise ValueError("Multiplier must be a positive whole number.")
         with _LOCK:
-            from .multiplier_migration import pending_migrations
-            if pending_migrations(self.path.parent / "multiplier-migration"):
-                raise ValueError("Recover the unfinished copy migration before changing multipliers.")
             self.reload()
             self._data["multipliers"][key] = value
-            self._save()
-
-    def initialize(self, runs, current_names, multipliers: dict[str, int]) -> None:
-        values = {}
-        for name, value in multipliers.items():
-            if type(value) is not int or value < 1:
-                raise ValueError("Multiplier must be a positive whole number.")
-            values[identity(name)] = value
-        active = sorted({identity(name) for name in current_names})
-        with _LOCK:
-            self.reload()
-            self._data["multipliers"].update(values)
-            self._data["baseline"] = {"run_id": runs[0].id if runs else "",
-                                      "moved_count": len(runs[0].moved) if runs else 0,
-                                      "active": active}
-            self._data["retries"] = []
             self._save()
 
     def usage(self, runs) -> QuotaUsage:

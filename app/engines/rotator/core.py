@@ -468,9 +468,6 @@ class Rotator:
             return self.history.problem
         try:
             self.multipliers = MultiplierStore()
-            from ..multiplier_migration import pending_migrations
-            if pending_migrations(self.multipliers.path.parent / "multiplier-migration"):
-                return "Recover the unfinished copy migration before rotating wallpapers."
             self._quota_usage = self.multipliers.usage(self.history.runs)
         except (OSError, ValueError) as err:
             return f"Wallpaper multipliers could not be read: {err}"

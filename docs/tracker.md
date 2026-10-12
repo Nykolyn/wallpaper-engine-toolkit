@@ -706,8 +706,8 @@ the number that answers "when can I rotate?".
 | `data/multipliers.json` | permanent reserve multipliers shared with Rotator, changed by the table's Multiplier select |
 
 It **reads** the Rotator's `history.json` to date a cycle and never writes to
-it. The tracker writes nothing back to Wallpaper Engine; rotations and copy
-migration update its playlists (see [the Rotator](rotator.md#wallpaper-engines-playlist)).
+it. The tracker writes nothing back to Wallpaper Engine; rotations
+update its playlists (see [the Rotator](rotator.md#wallpaper-engines-playlist)).
 The page saves multiplier edits, renames folders in myprojects when you
 **Mark [protected]**, and recycles folders when you use **Delete**.
 

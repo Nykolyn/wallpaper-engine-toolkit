@@ -1767,7 +1767,6 @@ class RotatorPage(Page):
     # The page saved the batch or the playlist switch: the Settings page shows it.
     config_edited = Signal()
     multiplier_changed = Signal(str, int)
-    migration_requested = Signal()
 
     def __init__(self, config: Config, services=None, parent: QWidget | None = None, *,
                  now: Callable[[], datetime] | None = None, index: LibraryIndex | None = None,
@@ -1795,7 +1794,6 @@ class RotatorPage(Page):
         self._check_found: tuple[int, int] | None = None
         self._rotate_after_check = False
         self._starting = False
-        self._migration_busy = False
         self._showing = False
         self._cancelled = False
         self._fixture_left: str | None = None
@@ -1963,12 +1961,9 @@ class RotatorPage(Page):
         settings.clicked.connect(lambda: self.navigate.emit("settings"))
         history = GhostButton("Run history", self, outlined=True)
         history.clicked.connect(lambda: self.show_view("history"))
-        migration = GhostButton("Migrate copies", self, outlined=True)
-        migration.clicked.connect(self.migration_requested.emit)
-        self._header = {"duplicates": duplicates, "settings": settings, "history": history,
-                        "migration": migration}
+        self._header = {"duplicates": duplicates, "settings": settings, "history": history}
         self._render_header()
-        return [migration, duplicates, settings, history]
+        return [duplicates, settings, history]
 
     # -- the Rotator's own files, read when first needed
 
@@ -2005,7 +2000,7 @@ class RotatorPage(Page):
         for view in ("reserve", "current"):
             model = self.models[view]
             model.quota = usage
-            model.quota_ready = self.multiplier_edits.ready and not self.multiplier_edits.locked
+            model.quota_ready = self.multiplier_edits.ready
             model.multiplier_pending = self.multiplier_edits.pending
             if model.sort_column() in (LIBRARY_MULTIPLIER, LIBRARY_REMAINING):
                 self.tables[view].sort_by(model.sort_column(), model.sort_order())
@@ -2473,7 +2468,7 @@ class RotatorPage(Page):
         self._begin_check(then_rotate=False)
 
     def _busy(self) -> bool:
-        return (self.state == "running" or self._starting or self._migration_busy
+        return (self.state == "running" or self._starting
                 or (self._services is not None and self._services.jobs.is_running("cleaner")))
 
     def _begin_check(self, then_rotate: bool) -> None:
@@ -3143,7 +3138,7 @@ class RotatorPage(Page):
     def _render_header(self) -> None:
         if not self._header:
             return
-        running = self.state == "running" or self._migration_busy or self._rotating_elsewhere()
+        running = self.state == "running" or self._rotating_elsewhere()
         problems = self.state == "done" and self.done_view is not None and \
             self.done_view.result != "clean"
         count = self.facts.duplicates if self.facts is not None else None
@@ -3154,7 +3149,6 @@ class RotatorPage(Page):
         duplicates.setEnabled(not busy)
         self._header["settings"].setVisible(running or problems)
         self._header["history"].setVisible(not running)
-        self._header["migration"].setEnabled(not running and not busy)
 
     def _render_subtitle(self) -> None:
         now = self._now()

@@ -96,13 +96,6 @@ def build_pages(window) -> list[Page]:
     tracker_page.multiplier_changed.connect(rotator_page.refresh_multipliers)
     rotator_page.multiplier_changed.connect(tracker_page.refresh_multipliers)
     services.jobs.finished.connect(tracker_page.refresh_multipliers)
-    from .multiplier_migration import MigrationController
-    migration = MigrationController(rotator_page, settings, services, config, multipliers,
-                                    on_done=lambda: (rotator_page.refresh(), tracker_page.refresh(),
-                                                     tracker_page.refresh_multipliers()),
-                                    editors=(rotator_page.multiplier_edits, tracker_page.multiplier_edits))
-    rotator_page.migration_requested.connect(migration.start)
-    rotator_page._migration_controller = migration
     on_steam_found(settings_page, steam_found)
     return [OverviewPage(services, feed, settings=settings), rotator_page, tracker_page,
             review_page, cleaner, creator_page, settings_page]

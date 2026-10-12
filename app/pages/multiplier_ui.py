@@ -25,7 +25,6 @@ class MultiplierEdits(QObject):
         self.runs = []
         self.pending: set[str] = set()
         self.ready = False
-        self.locked = False
         self._generation = 0
         self._problem = ""
 
@@ -80,7 +79,7 @@ class MultiplierEdits(QObject):
         self._offload.run(read, done)
 
     def set(self, name: str, value: int) -> None:
-        if self.locked or name in self.pending or not self.ready:
+        if name in self.pending or not self.ready:
             return
         self.pending.add(name)
         self._snapshot()

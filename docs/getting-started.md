@@ -65,9 +65,9 @@ Wallpaper Engine (app `431960`), and from there the layout is fixed:
 | Workshop content (Review) | `…/steamapps/workshop/content/431960` |
 | Wallpaper Engine `config.json` (Tracker) | `…/steamapps/common/wallpaper_engine/config.json` |
 
-Copier has been replaced by **Multiplier** in Tracker and Rotator. For a
-library with existing physical copies, inspect **Migrate copies** in Rotator
-before the first new rotation; see [migration and recovery](multiplier-migration.md).
+Copier has been replaced by **Multiplier** in Tracker and Rotator. Existing
+physical copies can be consolidated in a separate one-time manual operation;
+there is no copy migration tool in the application.
 
 If Steam is not installed, or Wallpaper Engine is in a library Steam has not
 recorded, these arrive empty and the [Settings](settings.md) page asks for

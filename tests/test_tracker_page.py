@@ -901,7 +901,7 @@ check("a state it does not have is refused", raises(lambda: fixture_page.load_fi
 # ---- a row's actions: Mark [protected], Delete ------------------------------------------
 
 print("-- a row's actions: which rows offer what --")
-from app.engines.rotator.config import Config              # noqa: E402
+from app.engines.rotator.config import Config, History, RunRecord              # noqa: E402
 from app.pages.tracker import (                             # noqa: E402
     ACTIONS, DELETE, MARKED, OFFER, PROTECT, MULTIPLIER, REMAINING, STALE_NOTE, PlaylistRow, action_cell,
     protect_state, protected_name,
@@ -1190,6 +1190,7 @@ class WindowFeed(Feed):
         pass
 
 
+History([RunRecord("active-quota", "2026-10-12 10:00:00", ["w_quota"])]).save()
 window_settings = Settings({})
 window_services = services_module.Services(data_dir=TMP / "data", settings=window_settings)
 window = MainWindow(settings=window_settings, feed=WindowFeed(), services_=window_services,
@@ -1202,7 +1203,6 @@ rotator_in_window = window.pages["rotator"]
 store = tracker_in_window.multiplier_edits.store
 check("Copier is removed and both tables share the multiplier store",
       "copier" not in window.pages and store is rotator_in_window.multiplier_edits.store)
-store.initialize([], ["w_quota"], {})
 quota_row = PlaylistRow(entry(MYP / "w_quota"), "shown", 1, folder=str(MYP / "w_quota"),
                         title="Harbour Lights", on_screen=True)
 tracker_in_window.model.set_playlist([quota_row], False, NOW)

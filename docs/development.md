@@ -58,7 +58,6 @@ app/
 │   ├── engine_control.py closing Wallpaper Engine as its tray does, starting it again
 │   ├── playlist_refresh.py the rotation's playlist: found by contents, refilled, restarted
 │   ├── multipliers.py    persistent preferences and cached cycle quota snapshots
-│   ├── multiplier_migration.py verified copy consolidation, resume and rollback
 │   ├── file_copy.py      shared verified file-copy helpers
 │   ├── steam_api.py      the Steam Web API
 │   ├── steam_ugc.py      Steamworks, for subscribing
@@ -455,9 +454,9 @@ renamed to `activity.1.jsonl`. An append measured 0.15 ms (p95 0.23 ms), and
 
 The kinds: a piece of work ends as `<activity>.<outcome>` (`ACTIVITIES`:
 `run`, `check`, `cleanup`, `duplicates_delete`, `duplicates_return` for the
-Rotator, plus `retry`, `rebuild` and `migration`; `scan`, `count`, `database`
+Rotator, plus `retry` and `rebuild`; `scan`, `count`, `database`
 for Review; `build` for Creator; `reserve_move` and `unavailable_delete`
-for Cleaner). Legacy `copy` kinds remain readable; no page starts them. `EVENTS`
+for Cleaner). Legacy `copy` and `migration` kinds remain readable; no page starts them. `EVENTS`
 are the rest: `run.started`, `duplicates.set_aside`, and the Tracker's
 `playlist.advanced` (the leading monitor only), `playlist.finished` and
 `playlist.restarted`, which `PlaylistWatch` writes from the window's
@@ -1178,14 +1177,13 @@ it stands.
 
 `engines/multipliers.py` persists preferences separately from rebuildable library caches.
 Cycle usage comes from successful incoming moves in the unchanged legacy history shape;
-the migration baseline excludes old runs and counts active entities once. Protection renames
-retain identity. Table cells render cached quota snapshots and save edits on workers.
+an optional persisted baseline remains readable for existing quota state. Protection
+renames retain identity. Table cells render cached quota snapshots and save edits on workers.
 Remaining is `max(multiplier - used, 0)`. Weighted distinct selection drains small
 tail batches; a cycle resets only after all eligible quotas are exhausted. A running
 rotation keeps its quota snapshot, so live edits affect the next run. Historical retries
 write a quota intent before moving, and only a matching successful history entry
 confirms its debit; failed moves and playlist rebuilds spend none.
 
-`engines/multiplier_migration.py` plans by hashing content, applies with a durable recovery
-manifest, repairs playlist references, and supports resume and rollback. Shared verified
-copy primitives live in `engines/file_copy.py`; Cleaner no longer depends on Copier.
+Verified copy primitives used by Cleaner live in `engines/file_copy.py`. Physical-copy
+consolidation is a one-time manual operation outside the application.
