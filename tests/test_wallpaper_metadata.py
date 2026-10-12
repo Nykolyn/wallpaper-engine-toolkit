@@ -76,7 +76,7 @@ class MetadataTests(unittest.TestCase):
         rotator = LibraryModel()
         rotator.infos["clip"] = describe(self.folder, "clip", 1)
         cleaner = WallpaperModel(None)
-        cleaner.page = SimpleNamespace(scanning=False, acting=False)
+        cleaner.page = SimpleNamespace(scanning=False, acting=False, selected=set())
         local = Wallpaper(str(self.folder), "Clip", tags=("Nature",), age="Mature")
         review = GalleryListModel(GalleryModel())
         remote = Reviewed(ItemDetails("1", True, tags=("Nature",), age="Mature"))

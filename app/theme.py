@@ -733,7 +733,7 @@ THUMB: dict[str, tuple[int, int, int]] = {
     "row": (200, 200, 8),    # a table's thumb column: square, as Wallpaper Engine's browser
     "rowsm": (120, 120, 6),  # the same, in a table too narrow for it (THUMB_NARROWER)
     "rowxs": (72, 72, 5),    # and narrower still
-    "wide": (400, 400, 5),   # the leading monitor's preview (Tracker)
+    "wide": (200, 200, 5),   # the leading monitor's preview (Tracker)
     "grid": (160, 90, 6),    # 16:9 in a grid; the width follows the cell
 }
 # Sizes that fill their box, the picture cropped about its middle, rather than
@@ -911,7 +911,7 @@ CONFIRM_LINES_PAD = (8, 11)  # their well: vertical, horizontal
 
 # -- the frame: title bar, sidebar, page header (the status line is above)
 
-WINDOW_SIZE = (1280, 860)     # at first start
+WINDOW_SIZE = (1780, 860)     # at first start
 WINDOW_MIN = (1040, 720)
 
 # The design sizes the frame's bands by their content (CSS content-box): each
@@ -981,7 +981,7 @@ ACTIVITY_LIST_PAD = 6             # the rows' inset from the panel's sides and f
 
 # -- the Tracker (TrackerBody)
 
-TRACKER_SIDE = 430            # a 400 px preview plus the monitor card's margins
+TRACKER_SIDE = 330            # room for the monitor metadata and a 200 px preview
 PACE_PAD = (12, 14)           # the Pace panel: vertical, horizontal
 PACE_GAP = 10                 # its overline, figure, rule, sentence and notes
 PACE_ICON = 14                # the clock before the finish sentence

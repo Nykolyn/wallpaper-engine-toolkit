@@ -21,6 +21,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from PySide6.QtCore import Qt
+from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication
 from app import animations, services, theme
 from app.engines import unavailable as engine
@@ -180,7 +181,7 @@ class CleanerTests(unittest.TestCase):
         self.assertEqual((page.model.rowCount(), page.nav_state().text), (2, "2"))
         page.source.setCurrentIndex(page.source.findData("new"))
         self.assertEqual((page.model.rowCount(), page.nav_state().text), (1, "2"))
-        self.assertIn(str(self.folder), page.model.data(page.model.index(0, 0), Qt.ToolTipRole))
+        self.assertIn(str(self.folder), page.model.data(page.model.index(0, 1), Qt.ToolTipRole))
         with patch("app.pages.cleaner.open_in_explorer") as explorer:
             page._open(page.model.index(0, 1))
             page._open(page.model.index(0, 1))
@@ -250,6 +251,76 @@ class CleanerTests(unittest.TestCase):
             self.assertFalse(fixture._action(0, 5, "delete"))
         fixture.deleteLater()
 
+    def test_selection_filter_sort_keyboard_and_batch_partial_failure(self):
+        svc = services.Services(data_dir=TMP / "data")
+        services.install(svc)
+        page = CleanerPage(Settings({}), svc, Config(source=str(self.root / "reserve"), destination=""))
+        rows = [engine.Wallpaper(str(self.folder), "Garden", size=300),
+                engine.Wallpaper(str(self.folder.parent / "1002"), "Other", size=2),
+                engine.Wallpaper(str(self.folder.parent / "1003"), "Third", size=20)]
+        page._scanned(engine.Scan(rows, {"new": ["1001"]}, 3))
+        page.show()
+        qt.processEvents()
+        with patch("app.pages.cleaner.open_in_explorer") as explorer:
+            QTest.mouseClick(page.table.viewport(), Qt.LeftButton,
+                             pos=page.table.visualRect(page.model.index(0, 0)).center())
+            self.assertEqual(page.selected, {rows[0].folder})
+            self.assertEqual(page.all_rows.checkState(), Qt.PartiallyChecked)
+            explorer.assert_not_called()
+        page.model.sort(4, Qt.AscendingOrder)
+        self.assertTrue(page.model.cell(rows[0], 0).checked)
+        QTest.keyClick(page.table, Qt.Key_A, Qt.ControlModifier)
+        self.assertEqual(page.selected, {row.folder for row in rows})
+        QTest.keyClick(page.table, Qt.Key_A, Qt.ControlModifier)
+        self.assertFalse(page.selected)
+        page.table.setCurrentIndex(page.model.index(0, 1))
+        QTest.keyClick(page.table, Qt.Key_Space)
+        self.assertEqual(page.selected, {rows[1].folder})
+        page.all_rows.click()
+        self.assertEqual(page.all_rows.checkState(), Qt.Checked)
+        page.source.setCurrentIndex(page.source.findData("new"))
+        self.assertEqual(page.selected, {rows[0].folder})
+        page.source.setCurrentIndex(0)
+        self.assertEqual(page.selected, {rows[0].folder})
+        page.all_rows.click()
+        with patch.object(page, "_answer", return_value=False) as answer, \
+             patch("app.pages.cleaner.delete_wallpaper") as remove:
+            self.assertFalse(page._selected_action("delete"))
+            answer.assert_called_once()
+            remove.assert_not_called()
+        calls, threads = [], []
+        def remove(folder):
+            calls.append(folder)
+            threads.append(threading.get_ident())
+            if folder == rows[1].folder:
+                raise OSError("in use")
+            return Deleted(folder, Path(folder).name)
+        with patch.object(page, "_answer", return_value=True) as answer, \
+             patch("app.pages.cleaner.delete_wallpaper", side_effect=remove):
+            self.assertTrue(page._selected_action("delete"))
+            self.assertFalse(page.delete_selected.isEnabled())
+            self.assertFalse(page.source.isEnabled())
+            self.assertFalse(page._selected_action("delete"))
+            self.assertTrue(wait_for(lambda: not page.acting))
+            answer.assert_called_once()
+        self.assertEqual(set(calls), {row.folder for row in rows})
+        self.assertTrue(all(ident != threading.get_ident() for ident in threads))
+        self.assertEqual(page.model.items(), [rows[1]])
+        self.assertEqual(page.selected, {rows[1].folder})
+        self.assertEqual(svc.jobs.last_finished("cleaner").result, "problems")
+        self.assertTrue(page.delete_selected.isEnabled())
+        # Retry uses the same verified reserve engine as individual actions.
+        with patch.object(page, "_answer", return_value=True) as answer, \
+             patch.object(engine, "move_to_reserve", return_value="verified reserve") as move:
+            self.assertTrue(page._selected_action("reserve"))
+            self.assertTrue(wait_for(lambda: not page.acting))
+            answer.assert_called_once()
+            move.assert_called_once_with(rows[1].folder, page.config.source)
+        self.assertFalse(page.selected)
+        self.assertFalse(page.reserve_selected.isEnabled())
+        page.deleteLater()
+        services.install(None)
+
     def test_cleaner_and_rotation_do_not_move_folders_together(self):
         from app.pages.rotator import RotatorPage
         svc = services.Services(data_dir=TMP / "data")
@@ -271,6 +342,27 @@ class CleanerTests(unittest.TestCase):
         window.feed.stop()
         window.deleteLater()
         services.install(None)
+
+    def test_batch_reserve_requires_destination_and_moves_all_once(self):
+        page = CleanerPage(Settings({}))
+        rows = [engine.Wallpaper(str(self.folder), "Garden"),
+                engine.Wallpaper(str(self.folder.parent / "1002"), "Other")]
+        page._scanned(engine.Scan(rows, {}, 2))
+        page.select_all()
+        with patch.object(page, "_answer") as answer:
+            self.assertFalse(page._selected_action("reserve"))
+            answer.assert_not_called()
+        page.config.source = str(self.root / "reserve")
+        with patch.object(page, "_answer", return_value=True) as answer, \
+             patch.object(engine, "move_to_reserve", return_value="verified copy") as move:
+            self.assertTrue(page._selected_action("reserve"))
+            self.assertTrue(wait_for(lambda: not page.acting))
+            answer.assert_called_once()
+            self.assertEqual([call.args for call in move.call_args_list],
+                             [(row.folder, page.config.source) for row in rows])
+        self.assertEqual(page.model.rowCount(), 0)
+        self.assertEqual(page.nav_state().text, "0")
+        page.deleteLater()
 
 
 if __name__ == "__main__":

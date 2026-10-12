@@ -935,7 +935,7 @@ thumb.set_source(str(bare))
 check("and a folder with none is the placeholder again",
       wait_for(lambda: thumb.state() == "placeholder"))
 check("sizes are the design's", raises(lambda: Thumb("poster"), KeyError)
-      and Thumb("card").size() == QSize(100, 100) and Thumb("wide").size() == QSize(400, 400))
+      and Thumb("card").size() == QSize(100, 100) and Thumb("wide").size() == QSize(200, 200))
 thumb_host.close()
 
 animated_host = Host(500, 650)

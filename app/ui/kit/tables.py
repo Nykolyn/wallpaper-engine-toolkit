@@ -1231,6 +1231,13 @@ class RowDelegate(QStyledItemDelegate):
         editor.setValue(int(index.data(Qt.EditRole)))
         editor.selectAll()
 
+    def updateEditorGeometry(self, editor, option, index):
+        left, right = self._table._pads(index.column(), index.model().columnCount() - 1)
+        box = option.rect.adjusted(left, 0, -right, 0)
+        box.setTop(option.rect.center().y() - theme.CONTROL_HEIGHT // 2)
+        box.setHeight(theme.CONTROL_HEIGHT)
+        editor.setGeometry(box)
+
     def setModelData(self, editor, model, index):
         if isinstance(editor, Dropdown):
             model.setData(index, editor.currentData(), Qt.EditRole)
