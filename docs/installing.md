@@ -72,10 +72,14 @@ window startup by default, or when you click **Check for updates**. Click
 **Download update**, then **Install and restart**. The download is checked
 against GitHub's size and SHA-256, and checked again before setup runs.
 Cancellation and retry are available while downloading; installation can be
-postponed while waiting for active tasks. The installer then shows progress
-without its wizard and opens Toolkit after success. It never restarts Windows.
+postponed while waiting for active tasks. Toolkit then closes its window and
+tray, updates in the background without a setup wizard or progress window,
+and opens again after success. It never restarts Windows. An installation
+failure still shows an error message, and `updates\install.log` records it.
 
 The first release that adds this feature must be installed manually once.
+Versions before 4.0.2 still show setup progress for the update that brings
+them to this version; subsequent in-app updates run in the background.
 Source runs and standalone builds can check for releases but need the setup
 to enable in-app installation. Automatic rollback is not included.
 
@@ -136,11 +140,13 @@ WallpaperEngineToolkit-Setup-X.Y.Z.exe /VERYSILENT /MERGETASKS=!autostart
 the installer's log there; without it the log is in `%TEMP%`, as `Setup Log
 <date> #<n>.txt`, with a line for each step the app took and what it said.
 
-The in-app updater passes `/SILENT /SP- /NORESTART /UpdateFromApp=1` and writes
+The in-app updater passes `/VERYSILENT /SP- /NORESTART /UpdateFromApp=1` and writes
 `install.log` beside its downloaded installer, in the data folder's `updates`
 directory. `/UpdateFromApp=1` opens the application after a successful install,
 including a silent one. A failure to adopt or back up data returns exit code
 20 and does not start the application or tracker; setup explains the error.
+`/SUPPRESSMSGBOXES` is deliberately omitted so errors remain visible even
+after the application closes.
 
 ## When something goes wrong
 

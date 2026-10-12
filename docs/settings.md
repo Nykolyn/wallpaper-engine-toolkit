@@ -96,10 +96,12 @@ GitHub's release metadata. Release notes are shown as plain text; the link
 opens the complete notes on GitHub.
 
 **Install and restart** asks first, waits for active tasks to finish, then
-starts setup without its wizard. Setup closes the window and tray, keeps and
-backs up your data, installs the new version and opens Toolkit again. Windows
-is never restarted automatically. You can cancel while waiting for tasks;
-once setup starts, it has its own progress and error messages.
+closes the window and tray, keeps and backs up your data, installs the new
+version in the background and opens Toolkit again. No setup wizard or
+installation progress window appears. Windows is never restarted
+automatically. You can cancel while waiting for tasks; after installation
+starts, only a failure shows an error message. The installation log is in
+`updates\install.log` inside the data folder.
 
 Source runs and standalone builds can check releases, but cannot install an
 update over another copy. Install the release's setup once to enable this

@@ -126,7 +126,11 @@ with patch.object(u.install_info, "is_installed_copy", return_value=True), patch
     check("installer errors reach the caller", u.install(installer, release) == 20)
     check("setup receives update mode, logging and no Windows restart",
           "/UpdateFromApp=1" in calls[-1][0] and "/NORESTART" in calls[-1][0]
-          and "/SILENT" in calls[-1][0] and any(a.startswith("/LOG=") for a in calls[-1][0]))
+          and any(a.startswith("/LOG=") for a in calls[-1][0]))
+    check("in-app updates hide the wizard, progress window and startup prompt",
+          "/VERYSILENT" in calls[-1][0] and "/SP-" in calls[-1][0] and "/SILENT" not in calls[-1][0])
+    check("installation failure messages remain visible after the app closes",
+          "/SUPPRESSMSGBOXES" not in calls[-1][0])
     installer.write_bytes(b"x" * len(payload))
     check("tampering after download prevents execution", raises(lambda: u.install(installer, release)) and len(calls) == 1)
 installer.write_bytes(payload)
