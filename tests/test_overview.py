@@ -124,8 +124,8 @@ check("before its first reading a card shimmers", reserve_card(Reading()).loadin
       and rotation_card(Reading()).loading and playlist_card(Reading()).loading
       and review_card(Reading(), NOW).loading)
 text = reserve_card(read(RESERVE_COUNTS))
-check("RESERVE: the folders and how many were never used, and a click opens the Rotator",
-      text == CardText(33421, f"8{NB}204 never used", None, target="rotator"))
+check("RESERVE: the folders and how many have quota remaining, and a click opens the Rotator",
+      text == CardText(33421, f"8{NB}204 with quota remaining", None, target="rotator"))
 text = reserve_card(read(RESERVE_COUNTS, error="the disk went away", reason="missing"))
 check("a count read before but not now is the last known, in text.lo",
       text.value == 33421 and text.tone == "lo" and text.caption.endswith("· last known"))
@@ -139,9 +139,9 @@ check("and so it does when the very first reading failed (no shimmer for ever)",
 check("a reserve not found says so, and links to Settings too",
       reserve_card(read(None, error="x", reason="missing")).caption
       == "reserve folder not found — check Settings")
-check("an unreadable history is said as such, and is not a link",
+check("unreadable rotation data is said as such, and is not a link",
       reserve_card(read(None, error="x", reason="unreadable"))
-      == CardText(caption="the rotation history could not be read", target="rotator"))
+      == CardText(caption="the rotation data could not be read", target="rotator"))
 check("never a 0 for a count that is not known",
       all(reserve_card(read(None, error="x", reason=r)).value is None
           for r in ("unset", "missing", "unreadable", "error")))
@@ -268,10 +268,16 @@ check("with nothing running, the last run; or none yet; or nothing while reading
       and loop_subtitle(None, Reading(), NOW) == "")
 check("the sentence: what the next run draws (manual: never 'when the playlist runs out')",
       loop_sentence(read(RESERVE_COUNTS))
-      == f"The next run draws 1{NB}000 at random from the 8{NB}204 never used.")
-resets = ReserveCounts(**{**RESERVE_COUNTS.__dict__, "never_used": 640, "will_reset": True})
-check("and the history-reset wording when too few were never used",
-      "resets on the next run" in loop_sentence(read(resets)) and "640" in loop_sentence(read(resets)))
+      == f"The next run draws 1{NB}000 from 8{NB}204 wallpapers with quota remaining, "
+         "weighted by their remaining appearances.")
+tail = ReserveCounts(**{**RESERVE_COUNTS.__dict__, "never_used": 640})
+check("a small tail batch keeps drawing from this cycle",
+      loop_sentence(read(tail)).startswith("The next run draws 640 from 640")
+      and "new cycle" not in loop_sentence(read(tail)))
+resets = ReserveCounts(**{**RESERVE_COUNTS.__dict__, "never_used": 0, "will_reset": True})
+check("a new cycle starts only when every quota is exhausted",
+      "quotas are exhausted" in loop_sentence(read(resets))
+      and "new cycle" in loop_sentence(read(resets)))
 check("unset, it says where to set the folders; while counting it says nothing",
       "Settings" in loop_sentence(read(None, error="x", reason="unset"))
       and loop_sentence(Reading()) == "")
@@ -439,7 +445,7 @@ svc.snapshot.put(PLAYLIST, PLAYLIST_LIVE)
 svc.snapshot.put(REVIEW, REVIEW_OPEN)
 reserve = page.cards[RESERVE]
 check("RESERVE shows its count as read", reserve.card_state() in ("default", "hover")
-      and reserve.value() == f"33{NB}421" and reserve.caption() == f"8{NB}204 never used")
+      and reserve.value() == f"33{NB}421" and reserve.caption() == f"8{NB}204 with quota remaining")
 rotation = page.cards[ROTATION]
 check("IN ROTATION unset: a dash, and a link to Settings",
       rotation.value() == fmt.DASH and rotation.caption() == "set the myprojects folder in Settings"
@@ -452,7 +458,8 @@ check("the tiles, from the same readings",
       and page.tiles["review"].texts()["status"] == "10 authors waiting"
       and not any(t.active() for t in page.tiles.values()))
 check("the loop's subtitle and sentence", page.loop_title.subtitle() == "last run 38 · 13:21"
-      and page.sentence.text() == f"The next run draws 1{NB}000 at random from the 8{NB}204 never used.")
+      and page.sentence.text() == f"The next run draws 1{NB}000 from 8{NB}204 wallpapers with quota remaining, "
+          "weighted by their remaining appearances.")
 check("a card per monitor, the leading one first",
       [c.texts()["name"] for c in page.monitor_cards] == ["Monitor1", "Monitor2"]
       and page.monitor_cards[0].texts()["badge"] == "LEADING"

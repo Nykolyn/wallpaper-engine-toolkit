@@ -18,8 +18,7 @@ from .. import external
 from ..engines.wallpaper_delete import DeleteError, Deleted, workshop_id
 from ..ui.kit import ConfirmDialog
 
-SEND, DELETE = "copier", "delete"           # the buttons' keys
-SEND_TIP = "Send to Copier"
+DELETE = "delete"
 DELETE_TIP = "Delete…"
 WORKSHOP_DELETE_TIP = "Unsubscribe and delete…"
 

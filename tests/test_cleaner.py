@@ -136,7 +136,7 @@ class CleanerTests(unittest.TestCase):
 
     def test_copy_failure_and_collision_preserve_source(self):
         reserve = self.root / "reserve"
-        with patch.object(engine.CopyEngine, "_verify", side_effect=OSError("size differs")):
+        with patch.object(engine, "verify_copy", side_effect=OSError("size differs")):
             with self.assertRaisesRegex(OSError, "size differs"):
                 engine.move_to_reserve(str(self.folder), str(reserve), remove=lambda _: self.fail("remove"))
         self.assertTrue(self.folder.exists())

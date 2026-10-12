@@ -111,8 +111,8 @@ check("start tells whoever listens, and the job is running",
       changed == [job] and job.running and center.current() is job)
 check("a job knows its tool, title and page", (job.tool, job.title, job.page)
       == ("creator", "Building 3 wallpapers", "creator"))
-extra = center.start("copier", "x")
-check("a page defaults to the tool", extra.page == "copier")
+extra = center.start("cleaner", "x")
+check("a page defaults to the tool", extra.page == "cleaner")
 extra.finish("clean")
 changed.clear()
 ended.clear()
@@ -146,14 +146,14 @@ failing.fail("Steam refused the key")
 check("fail is finish('failed', message)",
       failing.result == "failed" and failing.summary == "Steam refused the key")
 check("last_finished() with no tool is the latest of any tool",
-      center.last_finished() is failing and center.last_finished("copier") is not None)
+      center.last_finished() is failing and center.last_finished("cleaner") is not None)
 check("a tool that never ran has no last job", center.last_finished("rotator") is None)
 
 print("-- JobCenter: which job leads --")
 center = JobCenter(throttle=0)
 scan = center.start("review", "Scanning")
 check("one running job is the current one", center.current() is scan)
-copy = center.start("copier", "Copying")
+copy = center.start("cleaner", "Copying")
 check("a copy leads a Review scan", center.current() is copy)
 rotation = center.start("rotator", "Run 39")
 check("a rotation leads everything", center.current() is rotation)
@@ -164,9 +164,9 @@ check("running() lists them most important first",
       center.running() == [rotation, copy, build, scan])
 rotation.finish("clean")
 check("when the rotation ends the copy leads", center.current() is copy)
-second = center.start("copier", "Copying again")
+second = center.start("cleaner", "Copying again")
 check("between two of one tool the one started last leads", center.current() is second)
-check("is_running follows the tools", center.is_running("copier")
+check("is_running follows the tools", center.is_running("cleaner")
       and not center.is_running("rotator"))
 own = center.start("tracker", "Rebuilding", priority=-1)
 check("a priority can be given outright", center.current() is own)
@@ -220,7 +220,7 @@ check("an uncounted phase has no time left", job.eta() is None)
 
 clock = Clock()
 center = JobCenter(clock=clock, throttle=0)
-fast = center.start("copier", "Copying")
+fast = center.start("cleaner", "Copying")
 fast.update("copying", 0, 1000)
 for i in range(1, 8):
     clock.now += 0.1
@@ -352,8 +352,11 @@ source = "\n".join(p.read_text(encoding="utf-8") for p in
 used = set(re.findall(r'activity="(\w+)"', source))
 used |= set(re.findall(r'_start_job\(f?"[^"]*",\s*"(\w+)"[,)]', source))
 used |= set(re.findall(r'job=\(f?"[^"]*",\s*"(\w+)"\)', source))
-check("the pages start every activity documented, and no other",
-      used == set(activity.ACTIVITIES))
+check("the pages start every current activity documented, and no other",
+      used == set(activity.ACTIVITIES) - {"copy"})
+check("legacy Copier journal entries remain readable",
+      activity.known_kind("copy.clean") and activity.known_kind("copy.job.done")
+      and activity.ACTIVITIES["copy"][0] == "copier")
 notes = set(re.findall(r'\.note\("([\w.]+)"', source))
 check("every note a tab or page writes is documented",
       notes and notes <= set(activity.EVENTS))
@@ -743,7 +746,7 @@ job = center.start("rotator", "Run 3")
 job.finish("clean")
 check("a finished rotation reads the reserve again", wait_for(lambda: len(calls) == 1)
       and wait_for(lambda: not snap.refreshing()))
-job = center.start("copier", "Copying")
+job = center.start("cleaner", "Copying")
 job.finish("clean")
 check("so does a finished copy (it writes into myprojects)",
       wait_for(lambda: len(calls) == 2) and wait_for(lambda: not snap.refreshing()))
@@ -827,29 +830,7 @@ check("fail journals <activity>.failed, titled from the run",
       (entry.kind, entry.title, entry.detail)
       == ("scan.failed", "Scanning folder “new” failed", "Steam refused the key"))
 
-print("-- the Copier tab, end to end --")
-from app.pages.copier import CopierPage                                       # noqa: E402
-
-source = folder("wired", "copy-source", "wallpaper-a")
-(source / "project.json").write_text("{}", encoding="utf-8")
-(source / "preview.gif").write_bytes(b"GIF89a")
-dest = folder("wired", "copy-dest")
-copier = CopierPage(Settings({"copier": {"dest": str(dest)}}), installed)
-copier.add_jobs([str(source)], 2)
-copier._begin()
-check("Start makes a Copier job", installed.jobs.is_running("copier")
-      or installed.jobs.last_finished("copier") is not None)
-check("… which ends when the copies are made",
-      wait_for(lambda: installed.jobs.last_finished("copier") is not None, 10000))
-done = installed.jobs.last_finished("copier")
-check("… clean, with the count in its summary",
-      done.result == "clean" and done.summary == "2 of 2 copies made" and done.total == 16)
-entry = installed.journal.recent(1)[0]
-check("… journalled as copy.clean", entry.kind == "copy.clean" and entry.tool == "copier")
-copier_lines = [(k, m) for _, k, m in installed.logs.tail("copier", 50)]
-check("… and its log lines are in the copier's file, tags turned into kinds",
-      copier_lines[0][0] == "start" and ("done", "2 of 2 copies made") == copier_lines[-1]
-      and any(k == "done" and "wallpaper-a_copy1" in m for k, m in copier_lines))
+dest = folder("wired", "creator-dest")
 
 print("-- the Creator page's report --")
 from app.pages.creator import CreatorPage                                     # noqa: E402

@@ -373,15 +373,16 @@ class History:
 
     def used_set(self) -> set[str]:
         """All folder names ever moved, lower-cased, since the last history reset."""
+        from ..multipliers import identity
         used: set[str] = set()
         for r in self.runs:  # newest first
             if r.history_reset:
                 # everything from this run onward (older) was before a reset boundary
                 for name in r.moved:
-                    used.add(name.lower())
+                    used.add(identity(name))
                 break
             for name in r.moved:
-                used.add(name.lower())
+                used.add(identity(name))
         return used
 
 
@@ -401,23 +402,26 @@ class Usage:
     tables. Worked out once from the runs, so a lookup costs nothing across
     33 000 rows.
 
-    `never_used` is what the next run draws from: not moved in since the
-    history last started over (`used_set`). A folder can have a last use from
+    `never_used` means not moved in since the history last started over
+    (`used_set`). A folder can have a last use from
     before that and still be never used in this sense; the page shows both.
     """
 
     def __init__(self, runs: list[RunRecord]):
+        from ..multipliers import identity
         self._last: dict[str, datetime] = {}
         for record in runs:                       # newest first
             when = _stamp(record.timestamp)
             if when is None:
                 continue
             for name in record.moved:
-                self._last.setdefault(name.lower(), when)
+                self._last.setdefault(identity(name), when)
         self._used = History(runs).used_set()
 
     def last_used(self, name: str) -> datetime | None:
-        return self._last.get(name.lower())
+        from ..multipliers import identity
+        return self._last.get(identity(name))
 
     def never_used(self, name: str) -> bool:
-        return name.lower() not in self._used
+        from ..multipliers import identity
+        return identity(name) not in self._used

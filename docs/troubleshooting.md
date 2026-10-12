@@ -212,8 +212,9 @@ tracker — they are separate programs.
 
 ## Where the logs are
 
-- **`data/logs/<tool>/YYYY-MM-DD.log`** — what the Rotator, the Creator, the
-  Copier and Review did, a line per event, a file a day for each (from 3.1.0).
+- **`data/logs/<tool>/YYYY-MM-DD.log`** — what the Rotator, the Creator,
+  Cleaner and Review did, a line per event, a file a day for each (from 3.1.0).
+  Older Copier logs remain available.
   A rotation writes every folder it returned, moved or set aside, and every one
   it could not move, with the reason. The tabs show the same lines, but only
   until the window is closed; the files are kept for 30 days.

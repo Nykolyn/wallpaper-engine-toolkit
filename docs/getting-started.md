@@ -47,7 +47,7 @@ The background playlist tracker is the same entry point with a flag:
 clicking its icon opens the main window on the Tracker page.
 
 `--tab <page>` opens the window on a page — `overview`, `rotator`, `tracker`,
-`review`, `cleaner`, `creator`, `copier` or `settings`, in any case, the old tab names
+`review`, `cleaner`, `creator` or `settings`, in any case, the old tab names
 included. The window opens on [Overview](overview.md) otherwise — where the
 loop stands, at a glance — and on Overview for a name that is no page. How to get around once it is open:
 [Getting around](README.md#getting-around).
@@ -60,11 +60,14 @@ Wallpaper Engine (app `431960`), and from there the layout is fixed:
 
 | Setting | Filled in from |
 |---|---|
-| Copier destination | `…/steamapps/common/wallpaper_engine/projects/myprojects` |
 | Creator target | the same folder |
 | Rotator destination | the same folder |
 | Workshop content (Review) | `…/steamapps/workshop/content/431960` |
 | Wallpaper Engine `config.json` (Tracker) | `…/steamapps/common/wallpaper_engine/config.json` |
+
+Copier has been replaced by **Multiplier** in Tracker and Rotator. For a
+library with existing physical copies, inspect **Migrate copies** in Rotator
+before the first new rotation; see [migration and recovery](multiplier-migration.md).
 
 If Steam is not installed, or Wallpaper Engine is in a library Steam has not
 recorded, these arrive empty and the [Settings](settings.md) page asks for

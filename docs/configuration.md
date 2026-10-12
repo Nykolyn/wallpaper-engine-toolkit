@@ -18,8 +18,9 @@ build that must not see the real data.
 ```
 data/
 ├── data-folder.json        marks this as the data folder, and says where it was moved from
-├── suite.json              Copier, Creator, Review and Tracker settings
+├── suite.json              Creator, Review and Tracker settings
 ├── config.json             the Rotator's five settings
+├── multipliers.json        Persistent multipliers and cycle baseline
 ├── history.json            one record per rotation run
 ├── history_backup/         the history as it was after each of the last 30 saves
 ├── run_meta.json           what each run did beyond its record: result, times, failures by step
@@ -83,8 +84,9 @@ means copying the folder back — see
 
 Since 3.1.0 the window writes its work down as it goes.
 
-**`logs/<tool>/YYYY-MM-DD.log`**, for `rotator`, `creator`, `copier` and
-`review`: every line the tool logs, a file a day. A line is
+**`logs/<tool>/YYYY-MM-DD.log`**, for `rotator`, `creator`, `cleaner` and
+`review`: every line the tool logs, a file a day. Existing `copier` logs and
+journal entries remain readable after Copier's removal. A line is
 `HH:MM:SS<TAB>kind<TAB>message` — the kind a word for what happened
 (`moved`, `returned`, `dupe`, `skip`, `fail`, `error`, `done`, `step`,
 `start`, `info`, …). A rotation writes a line for every folder. A line takes
@@ -148,7 +150,6 @@ each through its own code, and they stay two files.
 | Duplicates | [Settings](settings.md#folders) | `config.json` (`duplicates`) | empty — pick it |
 | Folders per run | [Settings](settings.md#folders) | `config.json` (`count`) | 1000 |
 | Rebuild Wallpaper Engine's playlist | [Rotator](rotator.md#wallpaper-engines-playlist) | `config.json` (`refresh_playlist`) | on |
-| Copier destination | [Settings](settings.md#folders) | `suite.json` (`copier.dest`) | `myprojects`, detected |
 | Creator source | [Settings](settings.md#folders) | `suite.json` (`creator.source`) | empty — pick it |
 | Creator output | [Settings](settings.md#folders) | `suite.json` (`creator.target`) | `myprojects`, detected |
 | Creator mode | [Creator](creator.md) | `suite.json` (`creator.mode`) | `Move` |
@@ -228,7 +229,9 @@ have.
 | | Why |
 |---|---|
 | `data/tracker.json` | the only record of what has been shown |
-| `data/history.json` and `data/history_backup/` | what keeps a rotation from repeating the last ones, and what dates every cycle; it cannot be rebuilt. The snapshots are made for you — see [the Rotator](rotator.md#the-history-is-not-lost-quietly). |
+| `data/history.json` and `data/history_backup/` | successful selections used to derive remaining quotas, and the dates of playlist cycles; it cannot be rebuilt. The snapshots are made for you — see [the Rotator](rotator.md#the-history-is-not-lost-quietly). |
+| `data/multipliers.json` | permanent multipliers, the migration cycle baseline and historical retry quota entries; restore it together with its rotation history |
+| `data/multiplier-migration/` | migration manifests and preference backups; the manifest also locates the verified wallpaper recovery payloads outside the library roots |
 | `data/authors.sqlite` and `data/authors_backup/` | every author you have visited, and when — years of review, and nowhere else. The backups are made for you; **Second copy of the authors backups** in Review settings puts them on another disk as well. See [Backups](authors-database.md#backups). |
 | `data/suite.json`, `data/config.json` | your settings; small, easily lost |
 | `data/run_meta.json` | each run's result, times and failures by step; estimates and Retry read it. Losing it loses those, never the history |
@@ -243,7 +246,7 @@ wherever you keep your other credentials.
 
 ## What is written outside this folder
 
-Exactly one thing: the autostart entry, when you turn it on.
+The autostart entry is written when you turn it on:
 
 - A scheduled task named `WallpaperEngineToolkitTracker`, or
 - `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` under the same name.
@@ -251,4 +254,6 @@ Exactly one thing: the autostart entry, when you turn it on.
 Turning autostart off removes both, including anything left under the app's
 former name. See [Starting with Windows](tracker.md#starting-with-windows).
 
-Nothing is ever written into Wallpaper Engine's own files.
+Rotations can rewrite Wallpaper Engine's playlist configuration and binary
+playlist state, with backups. Copy migration remaps those files when verified
+folders are consolidated, with a manifest for resume and rollback.

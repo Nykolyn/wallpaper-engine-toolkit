@@ -8,7 +8,7 @@ and `Settings` (`data/suite.json`) for everything else. The two stores stay
 two (REDESIGN_PLAN §2.3).
 
 - Folders: the reserve, myprojects, the duplicates folder and the folders per
-  run (the Rotator's), the Copier's destination, the Creator's source and
+  run (the Rotator's), the Creator's source and
   output. Each path is checked on a worker, never on the window's thread. The
   Rotator's are read-only while a rotation runs: the run is using them.
 - Wallpaper Engine: its config.json, and how often to look when nothing
@@ -35,7 +35,7 @@ from ..engines.rotator.config import Config
 from ..engines import updates
 from ..services.snapshot import PLAYLIST, RESERVE, ROTATION
 from ..settings import (
-    DEFAULT_CREATOR_SOURCE, Settings, app_data_dir, default_copier_dest, default_creator_target,
+    DEFAULT_CREATOR_SOURCE, Settings, app_data_dir, default_creator_target,
 )
 from ..tracker_feed import heartbeat_setting
 from ..ui.kit import (
@@ -99,7 +99,7 @@ class SettingsPage(Page):
     icon = "settings"
     FIXTURES = ("default", "running", "update-available", "update-ready", "update-downloading")
 
-    # Which store changed: "rotator", "copier", "creator" or "tracker".
+    # Which store changed: "rotator", "creator" or "tracker".
     changed = Signal(str)
     _update_progress = Signal(int, int)
 
@@ -178,7 +178,7 @@ class SettingsPage(Page):
         return panel, column
 
     def _folders_panel(self) -> GlassPanel:
-        panel, column = self._panel("Folders", "Where the Rotator, the Creator and the Copier work")
+        panel, column = self._panel("Folders", "Where the Rotator and the Creator work")
         c = self.config
         self.reserve = PathField(c.source, placeholder="Choose the reserve folder",
                                  dialog_title="The reserve")
@@ -204,17 +204,12 @@ class SettingsPage(Page):
         for row in self._rotator_rows:
             column.addWidget(row)
 
-        self.copier_dest = PathField(
-            self.settings.get("copier", "dest", default_copier_dest()),
-            placeholder="Choose where the Copier writes", dialog_title="Copier destination")
         self.creator_source = PathField(
             self.settings.get("creator", "source", DEFAULT_CREATOR_SOURCE),
             placeholder="Choose a folder of video clips", dialog_title="Creator source")
         self.creator_target = PathField(
             self.settings.get("creator", "target", default_creator_target()),
             placeholder="Choose where new wallpapers go", dialog_title="Creator output")
-        column.addWidget(_Row("Copier destination", self.copier_dest,
-                              "Where the Copier writes its copies."))
         column.addWidget(_Row("Creator source", self.creator_source,
                               "The video clips the Creator builds wallpapers from."))
         column.addWidget(_Row("Creator output", self.creator_target,
@@ -224,7 +219,6 @@ class SettingsPage(Page):
         self.myprojects.path_changed.connect(lambda p: self._set_rotator("destination", p))
         self.duplicates.path_changed.connect(lambda p: self._set_rotator("duplicates", p))
         self.batch.valueChanged.connect(lambda n: self._set_rotator("count", int(n)))
-        self.copier_dest.path_changed.connect(lambda p: self._set("copier", "dest", p))
         self.creator_source.path_changed.connect(lambda p: self._set("creator", "source", p))
         self.creator_target.path_changed.connect(lambda p: self._set("creator", "target", p))
         return panel
@@ -548,8 +542,7 @@ class SettingsPage(Page):
         """Steam's folders are known (steam_paths.when_found): the defaults that
         waited for them, in the fields where nothing is chosen."""
         for field, section, key, default in (
-                (self.copier_dest, "copier", "dest", default_copier_dest),
-                (self.creator_target, "creator", "target", default_creator_target)):
+                (self.creator_target, "creator", "target", default_creator_target),):
             if not self.settings.get(section, key, None) and field.path() != default():
                 field.set_path(default())
         self.show_rotator()
@@ -570,7 +563,7 @@ class SettingsPage(Page):
         self.settings.set(section, key, value)
         self.settings.save()
         self.changed.emit(section)
-        if section in ("copier", "creator") and self._services is not None:
+        if section == "creator" and self._services is not None:
             self._services.snapshot.refresh([ROTATION])
 
     def _set_we_config(self, path: str) -> None:
@@ -755,7 +748,6 @@ class SettingsPage(Page):
         self.myprojects.set_path(r"X:\Steam\steamapps\common\wallpaper_engine\projects\myprojects")
         self.duplicates.set_path(r"X:\Toolkit\duplicates")
         self.batch.setValue(1000)
-        self.copier_dest.set_path(r"X:\Steam\steamapps\common\wallpaper_engine\projects\myprojects")
         self.creator_source.set_path(r"X:\Videos\clips")
         self.creator_target.set_path(r"X:\Steam\steamapps\common\wallpaper_engine\projects\myprojects")
         self.we_config.set_path(r"X:\Steam\steamapps\common\wallpaper_engine\config.json")

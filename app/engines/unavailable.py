@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
-from .copier import CopyEngine, destination_info, manifest
+from .file_copy import destination_info, discard_output, manifest, verify_copy
 from .library import find_workshop_content
 from .review import we_folders
 from .steam_api import SteamClient, SteamError
@@ -120,12 +120,12 @@ def move_to_reserve(folder: str, reserve: str, *, remove=delete_wallpaper) -> st
     staging = Path(tempfile.mkdtemp(prefix=".toolkit-reserve-", dir=root.parent))
     try:
         shutil.copytree(source, staging, dirs_exist_ok=True)
-        CopyEngine._verify(str(source), str(staging), files)
+        verify_copy(str(source), str(staging), files)
         json.loads((staging / "project.json").read_text(encoding="utf-8-sig"))
         os.rename(staging, target)       # Windows refuses an existing destination
     except Exception as err:
         try:
-            CopyEngine._discard(str(staging), str(root.parent))
+            discard_output(str(staging), str(root.parent))
         except OSError as cleanup:
             raise OSError(f"{err}; partial copy remains at {staging}: {cleanup}") from err
         raise

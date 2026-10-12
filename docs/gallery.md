@@ -262,7 +262,7 @@ So no decoder reads a Python-made device, on any thread:
 - the worker decodes the still from the file the download is kept in,
   `data/thumbs/<id>.img`;
 - a grid player plays that same file;
-- a table's player (the Tracker's, the Rotator's, the Copier's, the
+- a table's player (the Tracker's, the Rotator's, the
   Creator's) plays a copy of the folder's `preview.gif` under
   `data/thumbs/local/anim/`. It plays a copy, not the preview itself, because
   an open `preview.gif` would keep its folder from the Recycle Bin. Copies stay within 256 MB, and the least recently

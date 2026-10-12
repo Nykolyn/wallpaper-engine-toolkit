@@ -45,7 +45,7 @@ from app import animations, theme  # noqa: E402
 from app.main_window import PAGE_ORDER, load_shell_fixture, page_for  # noqa: E402
 from app.ui.kit import Elided, Table  # noqa: E402
 from app.ui.kit.base import TONE_TOKENS, tab_stops  # noqa: E402
-import app.pages, app.pages.copier, app.pages.creator, app.pages.overview  # noqa: E401,E402,F401
+import app.pages, app.pages.creator, app.pages.overview  # noqa: E401,E402,F401
 import app.pages.review, app.pages.rotator, app.pages.settings, app.pages.tracker  # noqa: E401,E402,F401
 
 results: list[bool] = []
@@ -134,7 +134,7 @@ for key in PAGE_ORDER:
         # Tab: down the sidebar, the header's actions, the page, the status line's link
         nav = [window.sidebar.item(k) for k in window.sidebar.keys()]
         order = tab_round(nav[0])
-        expected = (nav + [w for w in page.header_actions() if w.isVisible()]
+        expected = (nav + [w for w in page.header_actions() if w.isVisible() and w.isEnabled()]
                     + [w for w in tab_stops(page) if w.isVisible() and w.isEnabled()])
         link = window.status.link()
         if link.isVisible():
@@ -164,7 +164,7 @@ for number, key in enumerate(PAGE_ORDER, start=1):
     settle(5)
     if window.current_page() != key:
         break
-check("Ctrl+1 … Ctrl+8 go to the eight pages in the sidebar's order", window.current_page() == PAGE_ORDER[-1])
+check("Ctrl+1 … Ctrl+7 go to the seven pages in the sidebar's order", window.current_page() == PAGE_ORDER[-1])
 
 found = {}
 for key in ("tracker", "rotator", "review"):
@@ -183,7 +183,7 @@ for key in ("tracker", "rotator", "review"):
     field.clear()
 check("Ctrl+F puts the cursor in the page's filter, its words selected to type over "
       "(Tracker, Rotator, Review)", all(found.values()))
-window.show_page("copier", animate=False)
+window.show_page("settings", animate=False)
 settle(30)
 before = QApplication.focusWidget()
 check("on a page with no filter Ctrl+F does nothing", not window.focus_filter()

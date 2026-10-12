@@ -957,15 +957,15 @@ def chips_section() -> Section:
     section.body.addLayout(states)
 
     section.body.addSpacing(10)
-    section.body.addWidget(overline("Job and file state — Creator and Copier"))
+    section.body.addWidget(overline("Job and file state — Creator and Cleaner"))
     section.body.addLayout(strip(jobs))
     section.body.addLayout(named(jobs, 3, {
         "Tagged": "Creator — file already carries tags",
         "NeedsTags": "Creator — blocks the build unless skipped",
         "AutoTagged": "Creator — tags guessed, not confirmed",
-        "Copying": "Copier — job in flight",
-        "Done": "Copier and Creator — finished item",
-        "Failed": "Copier — job stopped, retry offered",
+        "Copying": "Cleaner — job in flight",
+        "Done": "Cleaner and Creator — finished item",
+        "Failed": "Cleaner — job stopped, retry offered",
     }))
     return section
 
@@ -1557,7 +1557,7 @@ def tables_section() -> Section:
 
     from app.ui.kit import SpinCell
     from PySide6.QtWidgets import QAbstractItemView
-    section.body.addWidget(overline("Copy counts — editable (F2) · disabled · minimum · maximum"))
+    section.body.addWidget(overline("Quantities — editable (F2) · disabled · minimum · maximum"))
 
     class Counts(TableModel):
         def flags(self, index):
@@ -1579,14 +1579,13 @@ def tables_section() -> Section:
             return True
 
     counts = Table()
-    counts.setModel(Counts([Column("State"), Column("Copies", theme.COPIER_COLUMNS[1]),
-                            Column("Progress", theme.COPIER_COLUMNS[4])],
+    counts.setModel(Counts([Column("State"), Column("Quantity", 96),
+                            Column("Progress", None)],
                           [["Queued", SpinCell(3), ProgressCell()],
                            ["Copying", SpinCell(3, enabled=False), ProgressCell(.62, caption="62% · 148 MB/s")],
                            ["Minimum", SpinCell(1), ProgressCell(1, "ok", caption="took 2 min 08 s")],
                            ["Maximum", SpinCell(99_999), ProgressCell(.33, "danger", caption="1 of 3 · failed")]]))
     counts.setEditTriggers(QAbstractItemView.DoubleClicked | QAbstractItemView.EditKeyPressed)
-    counts.set_row_height(theme.COPIER_ROW_HEIGHT)
     counts.setFixedHeight(counts.horizontalHeader().sizeHint().height() + 4 * counts.row_height())
     section.body.addWidget(counts)
 
@@ -2189,7 +2188,7 @@ def shell_section() -> Section:
                                  ("review", "Review", NavState.badge(12))):
             sidebar.add_item(key, name, key).set_state(state)
         sidebar.add_section("Utilities")
-        for key, name in (("creator", "Creator"), ("copier", "Copier")):
+        for key, name in (("cleaner", "Cleaner"), ("creator", "Creator")):
             sidebar.add_item(key, name, key).set_state(NavState.status("idle"))
         sidebar.add_item("settings", "Settings", "settings", footer=True)
         sidebar.next_in_loop.set_text(f"197 left on Monitor1 — rotate again ≈21{chr(0xA0)}Sep")

@@ -107,8 +107,8 @@ check("the check says how many folders it looks at first",
       captions["check"] == f"34{NB}421 folders looked at before anything moves")
 check("the return: how many go back",
       captions["return"] == f"1{NB}000 folders go back")
-check("the move: how many, drawn from how many never used",
-      captions["move"] == f"1{NB}000 drawn from 8{NB}204 never used")
+check("the move: how many, drawn from how many with quota",
+      captions["move"] == f"1{NB}000 drawn from 8{NB}204 with quota")
 check("the playlist: Wallpaper Engine restarts once", captions["playlist"]
       == "Wallpaper Engine restarts once")
 dupes = preview(returning=997, duplicates_expected=3)
@@ -118,9 +118,9 @@ check("one folder goes back, in the singular",
       return_caption(preview(returning=1, in_dest=1)) == "1 folder goes back")
 check("an empty myprojects has nothing to return",
       return_caption(preview(returning=0, in_dest=0)) == "myprojects is empty: nothing goes back")
-reset = preview(available_unique=640, will_reset=True)
-check("a reset draws from all of them, and says the history resets",
-      move_caption(reset) == f"1{NB}000 drawn from all 34{NB}421 · the history resets")
+reset = preview(available_unique=0, will_reset=True)
+check("a new quota cycle draws from all of them",
+      move_caption(reset) == f"1{NB}000 drawn from all 34{NB}421 · new quota cycle")
 check("the playlists the run rebuilds are named",
       playlist_caption(("custom", "custom_1")) == "custom, custom_1 · Wallpaper Engine restarts once")
 check("and when none is made of myprojects, it says there is none to rebuild",
@@ -135,10 +135,14 @@ check("without the rebuild there are three", len(plan_rows(p, batch=1000, refres
 check("while the folders are being counted the captions are empty",
       all(c == "" for _, c in plan_rows(None, batch=5, refresh=True)))
 check("one strategy, as a line (gate G9 A)",
-      selection_line(p) == ("", f"Drawn at random from 8{NB}204 never used"))
-check("and a warning when the history will reset",
-      selection_line(reset) == ("warn", "Only 640 unused left — history resets and all folders "
-                                        "are eligible"))
+      selection_line(p) == ("", f"Drawn by remaining quota from 8{NB}204 wallpapers"))
+check("and a warning when a new quota cycle begins",
+      selection_line(reset) == ("warn", "All quotas exhausted — a new cycle restores every multiplier"))
+partial = preview(available_unique=640)
+check("the last small batch keeps the current quota cycle",
+      move_caption(partial) == "640 drawn from 640 with quota"
+      and selection_line(partial) == ("warn", "Only 640 wallpapers with quota — this batch contains 640")
+      and confirmation(partial, 39, refresh=False).notes[-1][2].startswith("This batch contains 640"))
 check("[protected] folders are a fact, not an option",
       protected_line(preview(protected=2)) == "2 [protected] folders stay in myprojects"
       and protected_line(preview(protected=1)) == "1 [protected] folder stays in myprojects"
@@ -152,7 +156,7 @@ c = confirmation(p, 39, refresh=True, labels=("custom",), duplicates_folder="X:\
 check("it names the run", c.title == "Start run 39?")
 check("and says what goes back and what is drawn",
       c.body == f"The 1{NB}000 folders now in myprojects go back to the reserve first, then "
-                f"1{NB}000 new ones are drawn at random from the 8{NB}204 never used.")
+                f"1{NB}000 ones are drawn by remaining quota from the 8{NB}204 wallpapers with quota.")
 check("its steps follow the engine, the check being done already",
       [s[0] for s in c.steps] == ["Return the previous batch to the reserve",
                                   f"Move 1{NB}000 new folders in",
@@ -170,8 +174,8 @@ check("duplicates are said to go to the duplicates folder",
                                                "to X:\\dupes, not back into the reserve."),))
 resets = confirmation(reset, 39, refresh=False)
 check("a reset draws from all, and says why, in warn",
-      "drawn at random from all 34" in resets.body and "fewer than" in resets.body
-      and resets.notes[-1][0] == "warn" and "history resets" in resets.notes[-1][2])
+      "drawn by remaining quota from all 34" in resets.body and "new cycle" in resets.body
+      and resets.notes[-1][0] == "warn" and "earlier runs stay" in resets.notes[-1][2])
 empty = confirmation(preview(in_dest=0, returning=0), 1, refresh=False)
 check("with nothing to return, it says so",
       empty.body.startswith("myprojects holds nothing to return, so 1"))
@@ -502,6 +506,17 @@ check("shown, it reads the history, lists the folders and counts the next run",
       and page.texts()["next"]["run"] == "run 1")
 check("an empty reserve says so, with nothing to draw", wait_for(
     lambda: page.summary.items()[:1] == ["0 folders"]))
+page.make_header_actions()
+page._migration_busy = True
+page._render()
+before_check = page.scan_worker
+page.start_rotation()
+check("migration prevents another rotation and disables its controls",
+      page._busy() and page.scan_worker is before_check
+      and not page.plan.start.isEnabled() and not page.check_button.isEnabled()
+      and not page._header["migration"].isEnabled())
+page._migration_busy = False
+page._render()
 
 print("-- a run end to end: check, clean up, confirm, rotate --")
 
@@ -829,7 +844,7 @@ for state in RotatorPage.FIXTURES:
         fixture_page.fixture_dialog = None
 check("idle: the next run, its steps and the reserve",
       said["idle"]["state"] == "idle" and said["idle"]["next"]["run"] == "run 39"
-      and said["idle"]["summary"][:2] == [f"33{NB}421 folders", f"8{NB}204 never used"])
+      and said["idle"]["summary"][:2] == [f"33{NB}421 folders", f"8{NB}204 with quota"])
 check("running: the run, its count and its time left",
       said["running"]["run"]["count"] == f"412 / 1{NB}000"
       and said["running"]["run"]["left"] == "≈6 min left"
@@ -842,7 +857,7 @@ check("done-problems: two problems, a retry, the playlist to rebuild",
       and said["done-problems"]["result"]["retry"] == "Retry the 2 failures")
 check("current: what is in rotation", said["current"]["subtitle"] == f"1{NB}000 folders in rotation")
 check("history: the runs", said["history"]["summary"][0] == "38 runs")
-check("will-reset: the warning", said["will-reset"]["next"]["reset"].startswith("Only 640 unused"))
+check("will-reset: the warning", said["will-reset"]["next"]["reset"].startswith("All quotas exhausted"))
 check("each names the frame's state it goes with",
       [fixture_page.frame_fixture(s)["frame"] for s in ("idle", "running", "done-clean",
                                                         "done-problems")]

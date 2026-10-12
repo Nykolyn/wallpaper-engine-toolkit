@@ -34,7 +34,8 @@ a duplicate, and what should never move at all.
    - **myprojects** — Wallpaper Engine's projects folder. Pre-filled from Steam.
    - **Duplicates** — where folders that turn out to be duplicates are moved.
      Starts empty.
-   - **Folders per run** — how many folders to bring across. Default 1000.
+   - **Folders per run** — the maximum number of distinct wallpapers to bring
+     across. Default 1000; the end of a cycle can produce smaller batches.
 2. On the Rotator page, **Next run** shows the reserve and `myprojects`, each
    with a ✓ once it has been found, the **batch** (the same setting as Folders
    per run, changeable here too), how the batch is drawn, and **Rebuild the
@@ -64,10 +65,11 @@ The left column is the run; the right, one table with three views.
 **Before a run** the left column is **Next run** — the folders, the batch, the
 draw and the playlist switch — and **What a run does**: the run's steps, each
 with what it will do this time, counted from the folders as they are now
-(*1 000 folders go back · 3 duplicates set aside*, *1 000 drawn from 8 204 never
-used*). *Drawn at random from 8 204 never used* is how every run draws; when
-fewer than a batch are left it says so in warn, *Only 640 unused left — history
-resets and all folders are eligible*. `[protected]` folders are a fact under
+(*1 000 folders go back · 3 duplicates set aside*, *1 000 drawn from 8 204 with
+quota remaining*). The draw is weighted by each wallpaper's remaining
+appearances. A tail of 640 eligible wallpapers produces a batch of 640;
+only exhausted quotas cause the next run to begin a new reserve cycle.
+`[protected]` folders are a fact under
 it, with a lock, never an option. Under **Start rotation**, *Takes about 15
 min* once there are runs like it to go by (see
 [below](#what-a-run-leaves-behind)), and nothing until then.
@@ -96,20 +98,21 @@ own pace). The table shows the history, the run just finished marked.
 **The table.**
 
 - **Reserve** and **Current** (what is in `myprojects` now): each folder with
-  its preview, author, type, size and when a run last moved it in; **New** on
-  the ones never used since the history last started over — what the next run
-  draws from — and **Unidentified** on one with no readable `project.json`.
+  its preview, author, type, size and when a run last moved it in; an editable
+  **Multiplier** and its read-only **Remaining** quota; **New** on the ones
+  not selected since the last recorded history reset; and **Unidentified**
+  on one with no readable `project.json`. Remaining determines eligibility;
+  a wallpaper already selected can still have quota left.
   `[protected]` folders are marked with a lock. The preview is a square
   200 × 200 (120 or 72 in a window too narrow for it), and a GIF one plays
   while its row is on screen. Rows appear as soon as the
   folders are listed; titles, authors and sizes fill in as they are read, the
   visible rows first. Clicking a row opens that folder in Explorer. Each row
-  ends with **Send to Copier**, which puts the folder on the
-  [Copier](copier.md)'s list for the usual copies, and **Delete**, which sends
+  ends with **Delete**, which sends
   it to the Recycle Bin after asking — a Workshop item unsubscribed first, as
   on the [Tracker](tracker.md#a-rows-actions) — and is refused while a run
-  is under way. The summary above counts the folders, the never-used
-  ones, and the size once every folder has been measured. **Check folders**
+  is under way. The summary above counts the folders, the unused ones from
+  history, and the size once every folder has been measured. **Check folders**
   runs [the reserve check](#the-reserve-check) on its own; **Open folder**
   opens it in Explorer.
 - **History**: a row per run — when it started, how long it took, what it
@@ -148,8 +151,9 @@ In this order, which is the order the page and the log show:
    back, except the `[protected]` ones; a folder whose name the reserve already
    has goes to the duplicates folder instead — duplicates are set aside here,
    not after the move.
-3. **Draw and move the new batch in**, at random from the folders never used
-   since the history last started over.
+3. **Draw and move the new batch in**, choosing distinct wallpapers weighted
+   by Remaining. Each successful incoming move spends one appearance. Smaller
+   tail batches drain the cycle before quotas are restored for the next one.
 4. **Rebuild the playlist in Wallpaper Engine** and start it again — only with
    the switch on.
 
@@ -164,7 +168,7 @@ after the return, nothing new is drawn; stopped after the move, the batch is in
 and **Rebuild playlist now** brings the playlist up to date. It cannot stop the
 playlist step, which is over in seconds. During the check it stops at once: the
 check only reads. A stopped run is in the history like any run, as *stopped*,
-so nothing it moved is drawn again by mistake; one stopped before it moved
+so its successful incoming moves still consume their appearances; one stopped before it moved
 anything is not recorded. There is no Pause: Wallpaper Engine is closed while a
 run moves folders, and a pause would keep it closed.
 
@@ -174,8 +178,11 @@ failures** tries each one again in the step it failed in: back to the reserve
 (or to the duplicates folder, if the reserve has that name by then), or into
 `myprojects`; then the playlist is rebuilt when anything moved. It asks first,
 naming the folders. A folder you have since moved or deleted by hand is taken
-off the list, not moved again. The run's record is updated in place, and its
-log gets the retry's lines at the end. A run from before 3.4.1 does not say
+off the list, not moved again. The run's record is updated in place, and
+successful incoming retries consume one appearance each. An exhausted quota
+leaves that incoming failure pending. Returning folders and resolving a move
+already completed by hand spend no appearances. The run's log gets the
+retry's lines at the end. A run from before 3.4.1 does not say
 which step each failure was in, and a retry leaves those alone rather than
 guess — the button is not offered: where a folder is now cannot tell a failed
 move from a failed return put right by hand.
@@ -244,8 +251,8 @@ Folders in `myprojects` whose name starts with **`[protected]`**
 the reserve, not treated as duplicates, and stay across runs.
 
 Use it for anything that should be in every playlist: wallpapers you actually
-like, a set you are working on, or [Copier](copier.md) copies that exist to
-weight the current playlist.
+like or a set you are working on. Protected wallpapers stay in the active
+playlist; they do not participate in reserve selections.
 
 Next run, the question before a run and the run's log all say how many stay,
 and the Current view marks each with a lock, so a protected folder is never
@@ -319,14 +326,18 @@ everything else. (Until 3.0.0 a source run kept them apart, in
 - `data/config.json` — the five settings above.
 - `data/history.json` — one record per run: which folders moved,
   which were duplicates, how many came back, what failed.
+- `data/multipliers.json` — permanent multipliers, the migration cycle
+  baseline and the quota entries for successful retries of older runs.
 - `data/run_meta.json` and `data/logs/rotator/run-<id>.log` — see
   [below](#what-a-run-leaves-behind).
 - `data/library_meta.json` — the tables' cache: each folder's title, type,
   workshop id, preview and size. It is a cache: deleting it only means reading
   every folder again.
 
-History is not only a log. It is what keeps a rotation from picking what the
-last ones already showed, and the [Tracker](tracker.md) reads it to date a cycle:
+History is not only a log. With multiplier state, it records which appearances
+the current reserve cycle has spent. A multiplier of 1 prevents reselection
+until the next cycle; a larger multiplier allows further selections. The
+[Tracker](tracker.md) also reads history to date a playlist cycle:
 the newest run sharing at least half its folders with a playlist *is* that
 playlist's starting moment, which is the difference between an exact cycle start
 and a guess. The Tracker never writes to it.
@@ -380,8 +391,9 @@ runs that went all the way with a batch within half of yours either way — and
 nothing at all until there is one. *≈6 min left* while a run goes is the live
 rate within the step under way.
 
-To start the history over on purpose, delete `history.json` *and*
-`history_backup/`; with a snapshot left, the history comes back.
+Reserve cycles start over automatically when their eligible quotas are
+exhausted. Keep `history.json` and `multipliers.json` together when restoring
+data: the multiplier baseline refers to a saved history record.
 
 ## Watch out for
 
@@ -396,3 +408,23 @@ To start the history over on purpose, delete `history.json` *and*
 - A playlist the rotation did not rebuild outlives its files: Wallpaper Engine
   goes on listing folders that are now back in the reserve. That is expected,
   and the Tracker [accounts for it](tracker.md#what-neither-can-see).
+
+## Multiplier quotas
+
+Every wallpaper has one physical folder and a permanent **Multiplier** (default 1).
+The **Remaining** column is its quota less successful selections in the current cycle.
+Each batch chooses distinct eligible wallpapers with probability proportional to Remaining;
+one wallpaper enters a batch and its Wallpaper Engine playlist at most once.
+A successful incoming move consumes one appearance. A failed move, returning a folder,
+or rebuilding a playlist consumes none. A successful retry consumes one appearance.
+
+The cycle ends only after all eligible wallpaper quotas are exhausted. Final batches
+can be smaller than Folders per run; quotas are never refilled merely to fill a batch.
+At the next cycle Remaining is restored from each configured Multiplier.
+
+Multiplier selects in Reserve, Current and Tracker edit the same persistent state.
+Live edits preserve already used appearances, and a running rotation keeps its captured
+selection settings until its next run.
+
+Use **Migrate copies** in the header to inspect and consolidate verified physical copies.
+See [Migration and rollback](multiplier-migration.md) before upgrading an existing library.

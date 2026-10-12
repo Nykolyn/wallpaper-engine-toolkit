@@ -230,7 +230,7 @@ check("a click on a balloon that was neither opens nothing", tray.opened == [])
 from app.main_window import page_for  # noqa: E402
 
 check("an old tab name finds its page, whatever its case",
-      [page_for(n) for n in ("Tracker", "review", "COPIER")] == ["tracker", "review", "copier"])
+      [page_for(n) for n in ("Tracker", "review", "CREATOR")] == ["tracker", "review", "creator"])
 check("and so does a page that was never a tab", page_for("settings") == "settings")
 check("a name that is no page finds nothing, so nothing changes", page_for("Nowhere") is None)
 

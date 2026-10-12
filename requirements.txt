@@ -1,6 +1,6 @@
-# Wallpaper Engine Toolkit — unified bundle of Copier, Creator and Rotator.
+# Wallpaper Engine Toolkit — unified bundle of Creator, Rotator, Tracker, Review and Cleaner.
 #
-# One GUI toolkit (PySide6/Qt) hosts all three features. The copy/build/rotate
+# One GUI toolkit (PySide6/Qt) hosts the application. The build/rotate
 # engines are the verbatim originals and add no dependencies of their own.
 
 PySide6>=6.5          # unified Qt GUI (all tabs)

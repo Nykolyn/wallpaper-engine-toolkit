@@ -47,7 +47,6 @@ from app.main_window import (                                                   
     DEFAULT_PAGE, PAGE_ORDER, MainWindow, next_in_loop, page_for,
 )
 from app.pages.base import Page                                           # noqa: E402
-from app.pages.copier import CopierPage                                                  # noqa: E402
 from app.pages.rotator import nav_state as rotator_nav                             # noqa: E402
 from app.pages.overview import OverviewPage                                           # noqa: E402
 from app.pages.settings import SettingsPage                                           # noqa: E402
@@ -149,7 +148,7 @@ svc = services.Services(data_dir=TMP / "data", settings=settings)
 
 def make_window(initial=None) -> MainWindow:
     stand_ins = [StandIn(key, key.title(), key) for key in
-                 ("rotator", "tracker", "review", "cleaner", "creator", "copier")]
+                 ("rotator", "tracker", "review", "cleaner", "creator")]
     pages = [OverviewPage(svc, feed), *stand_ins,
              SettingsPage(settings, config, feed=feed, services=svc)]
     return MainWindow(settings=settings, feed=feed, services_=svc, pages=pages,
@@ -173,21 +172,21 @@ check("a click in the sidebar goes to its page",
       and w.sidebar.item("tracker").selected() and not w.sidebar.item("overview").selected())
 check("the page that left heard it, and the one that came", w.pages["tracker"].shown == 1)
 check("an old tab's name goes to its page, whatever its case",
-      w.show_page("COPIER") and w.current_page() == "copier"
+      w.show_page("CLEANER") and w.current_page() == "cleaner"
       and w.pages["tracker"].hidden == 1)
 check("a name that is no page changes nothing",
-      not w.show_page("nowhere") and w.current_page() == "copier")
-w.pages["copier"].navigate.emit("settings")
+      not w.show_page("nowhere") and w.current_page() == "cleaner")
+w.pages["cleaner"].navigate.emit("settings")
 check("a page may ask for another", w.current_page() == "settings")
 
 w.show()
 w.activateWindow()
 wait_for(lambda: QApplication.activeWindow() is w, 1000)
-for key, number in (("rotator", Qt.Key_2), ("settings", Qt.Key_8), ("overview", Qt.Key_1),
+for key, number in (("rotator", Qt.Key_2), ("settings", Qt.Key_7), ("overview", Qt.Key_1),
                     ("review", Qt.Key_4)):
     QTest.keyClick(w, number, Qt.ControlModifier)
     app.processEvents()
-check("Ctrl+2, Ctrl+8, Ctrl+1 and Ctrl+4 go to Rotator, Settings, Overview, Review",
+check("Ctrl+2, Ctrl+7, Ctrl+1 and Ctrl+4 go to Rotator, Settings, Overview, Review",
       w.current_page() == "review")
 frame = (w.sidebar.geometry(), w.status.geometry(), w.title_bar.geometry())
 w.show_page("tracker")
@@ -196,9 +195,9 @@ check("the frame does not move when the page changes",
 
 print("-- --tab --")
 check("--tab takes the old tab names and the page keys, in any case",
-      [page_for(n) for n in ("Rotator", "tracker", "Review", "CREATOR", "copier",
+      [page_for(n) for n in ("Rotator", "tracker", "Review", "CREATOR", "cleaner",
                              "overview", "Settings")]
-      == ["rotator", "tracker", "review", "creator", "copier", "overview", "settings"])
+      == ["rotator", "tracker", "review", "creator", "cleaner", "overview", "settings"])
 check("and nothing else", [page_for(n) for n in ("", None, "junk", "tab")] == [None] * 4)
 check("a window started with --tab Review opens on Review",
       make_window("Review").current_page() == "review")
@@ -221,21 +220,21 @@ try:
     check("a verb that is no verb is refused", False)
 except ValueError:
     check("a verb that is no verb is refused", True)
-w.handle_command("show", "copier")
-check("show:copier brings the window to Copier", w.current_page() == "copier" and w.isVisible())
+w.handle_command("show", "cleaner")
+check("show:cleaner brings the window to Cleaner", w.current_page() == "cleaner" and w.isVisible())
 w.handle_command("frobnicate", "now")
 check("a verb this version does not know only brings the window forward",
-      w.current_page() == "copier" and w.isVisible())
+      w.current_page() == "cleaner" and w.isVisible())
 started: list[bool] = []
 w.pages["rotator"].start_rotation = lambda: started.append(True)
 w.handle_command("rotate", "other")
 check("rotate with an argument it does not know starts nothing",
-      started == [] and w.current_page() == "copier")
+      started == [] and w.current_page() == "cleaner")
 w.handle_command("rotate", "confirm")
 check("rotate:confirm shows the Rotator and asks its start question, once",
       w.current_page() == "rotator" and started == [True])
 del w.pages["rotator"].start_rotation
-w.show_page("copier")
+w.show_page("cleaner")
 
 # quit: is the installer's (app/quit_request.py). The application is stood in
 # for, so the windows this test goes on with stay open.
@@ -298,7 +297,7 @@ check("its count and percentage, and Show",
       w.status.count_text() == f"412 / 1{fmt.NBSP}000 · 41%" and w.status.link_text() == "Show")
 w.status._link.click()
 check("Show goes to the job's page", w.current_page() == "rotator")
-copy = jobs.start("copier", "Copying 4 folders")
+copy = jobs.start("cleaner", "Copying 4 folders")
 copy.update("2 of 4 jobs · 148 MB/s", 35, 97, "3.5 GB / 9.7 GB")
 wait(150)
 check("with two running, the one that matters leads, and the other is counted",
@@ -315,15 +314,15 @@ w.status._link.click()
 check("See problems goes to its page, and once seen the line is quiet again",
       w.current_page() == "rotator" and w.status.state() == "idle"
       and w.status.text().startswith("Nothing running · last run finished with problems"))
-failed = jobs.start("copier", "Copying 2 folders")
+failed = jobs.start("cleaner", "Copying 2 folders")
 failed.fail("access denied")
 wait(50)
 check("a job that failed is said in danger, with Show",
       w.status.state() == "error" and w.status.text() == "Copying 2 folders failed · access denied"
       and w.status.link_text() == "Show")
-w.show_page("copier")
+w.show_page("cleaner")
 check("until its page has been looked at", w.status.state() == "idle"
-      and w.status.text().startswith("Nothing running · Copier failed"))
+      and w.status.text().startswith("Nothing running · Cleaner failed"))
 stopped = jobs.start("rotator", "Run 4")
 stopped.finish("stopped", "stopped after the return")
 wait(50)
@@ -401,15 +400,13 @@ check("myprojects, the duplicates folder and the folders per run too",
       (saved["destination"], saved["duplicates"], saved["count"])
       == (str(TMP / "myprojects"), str(TMP / "dupes"), 250))
 check("a folder that is not there says so", wait_for(lambda: page.myprojects.valid() is False))
-page.copier_dest._chosen(str(TMP / "copies"))
 page.creator_source._chosen(str(TMP / "clips"))
 page.creator_target._chosen(str(TMP / "built"))
 suite = read_json(settings_module.SETTINGS_PATH)
-check("the Copier's and the Creator's folders are in data/suite.json",
-      suite["copier"]["dest"] == str(TMP / "copies")
-      and (suite["creator"]["source"], suite["creator"]["target"])
+check("the Creator's folders are in data/suite.json",
+      (suite["creator"]["source"], suite["creator"]["target"])
       == (str(TMP / "clips"), str(TMP / "built")))
-check("and never in the Rotator's file", "copier" not in read_json(rc.CONFIG_PATH))
+check("and never in the Rotator's file", "cleaner" not in read_json(rc.CONFIG_PATH))
 settings.section("tracker")["interval"] = 30
 page.heartbeat.setValue(7)
 suite = read_json(settings_module.SETTINGS_PATH)
@@ -439,7 +436,7 @@ busy = jobs.start("rotator", "Run 5")
 wait(50)
 check("while the Rotator works its folders are read-only, and it says why",
       not page.reserve.isEnabled() and not page.batch.isEnabled()
-      and page.rotator_note.isVisibleTo(page) and page.copier_dest.isEnabled())
+      and page.rotator_note.isVisibleTo(page) and page.creator_target.isEnabled())
 page._set_rotator("source", "Z:\\elsewhere")
 check("and nothing reaches the Config meanwhile", config.source == str(reserve))
 busy.finish("clean", "done")
@@ -518,9 +515,7 @@ check("after problems: how many, in warn", rotator_nav(center, snap)
 going = center.start("rotator", "Run 39")
 going.update("moving", 412, 1000)
 check("while it runs: its bar", rotator_nav(center, snap) == NavState.progress(412, 1000))
-copier_page = CopierPage(Settings({}))
-check("Copier owns its idle nav", copier_page.nav_state().text == "idle")
-copier_page.deleteLater()
+check("Copier is no longer a page", page_for("copier") is None)
 
 print("-- the title bar and Windows --")
 check("the offscreen window has no native frame to lean on",

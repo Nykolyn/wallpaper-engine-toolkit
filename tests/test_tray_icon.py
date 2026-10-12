@@ -275,14 +275,17 @@ check("the clause goes when the batch is not known",
       tw.finished_balloon("Monitor1", 201) == ("Playlist finished", "All 201 wallpapers on Monitor1 have been shown.")
       and tw.finished_balloon("Monitor1", 201, 0)[1] == "All 201 wallpapers on Monitor1 have been shown.")
 FRESH = {"never_used": 4210, "batch": 1000, "will_reset": False}
-check("with a fresh count of the reserve, it says how many have never been used",
+check("with a fresh count of the reserve, it says how many have quota remaining",
       tw.finished_balloon("Monitor1", 201, 1000, FRESH)[1]
       == f"All 201 wallpapers on Monitor1 have been shown. Rotate to swap in 1{NB}000 of the "
-         f"4{NB}210 folders that have never been used.")
-check("and when too few are left, that the run draws from the whole reserve again",
-      tw.finished_balloon("Monitor1", 201, 1000, {**FRESH, "never_used": 640, "will_reset": True})[1]
-      == f"All 201 wallpapers on Monitor1 have been shown. Rotate to swap in 1{NB}000: only 640 "
-         f"folders were never used, so the run draws from the whole reserve again.")
+         f"4{NB}210 wallpapers with quota remaining.")
+check("a small tail batch drains the current cycle",
+      "swap in 640 of the 640 wallpapers" in tw.finished_balloon(
+          "Monitor1", 201, 1000, {**FRESH, "never_used": 640})[1])
+check("a new cycle begins only when all quotas are exhausted",
+      tw.finished_balloon("Monitor1", 201, 1000, {**FRESH, "never_used": 0, "will_reset": True})[1]
+      == f"All 201 wallpapers on Monitor1 have been shown. Rotate to swap in up to 1{NB}000: "
+         "all wallpaper quotas are exhausted, so a new cycle begins.")
 check("a count made for another batch size is not said",
       tw.finished_balloon("Monitor1", 201, 750, FRESH)[1].endswith("750 folders from the reserve."))
 check("Playlist started over: the design's copy with the real numbers",
