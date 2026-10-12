@@ -1449,7 +1449,7 @@ class TrackerPage(Page):
         if self._fixture is not None:
             return
         self.model.quota = usage
-        self.model.quota_ready = self.multiplier_edits.ready and not self.multiplier_edits.locked
+        self.model.quota_ready = self.multiplier_edits.ready
         self.model.multiplier_pending = self.multiplier_edits.pending
         if self.model.sort_column() in (MULTIPLIER, REMAINING):
             self.table.sort_by(self.model.sort_column(), self.model.sort_order())

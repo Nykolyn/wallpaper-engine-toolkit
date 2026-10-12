@@ -506,17 +506,6 @@ check("shown, it reads the history, lists the folders and counts the next run",
       and page.texts()["next"]["run"] == "run 1")
 check("an empty reserve says so, with nothing to draw", wait_for(
     lambda: page.summary.items()[:1] == ["0 folders"]))
-page.make_header_actions()
-page._migration_busy = True
-page._render()
-before_check = page.scan_worker
-page.start_rotation()
-check("migration prevents another rotation and disables its controls",
-      page._busy() and page.scan_worker is before_check
-      and not page.plan.start.isEnabled() and not page.check_button.isEnabled()
-      and not page._header["migration"].isEnabled())
-page._migration_busy = False
-page._render()
 
 print("-- a run end to end: check, clean up, confirm, rotate --")
 

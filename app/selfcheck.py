@@ -44,8 +44,6 @@ def run() -> tuple[bool, str]:
                         ("app.engines.rotator.runner",
                          "a rotation's steps, stop, retry and run_meta.json"),
                         ("app.engines.multipliers", "persistent wallpaper multipliers and quota accounting"),
-                        ("app.engines.multiplier_migration", "copy consolidation and recovery"),
-                        ("app.pages.multiplier_migration", "reviewing copy migration and rollback"),
                         ("app.engines.library_index",
                          "titles, sizes and authors of the reserve's folders"),
                         ("PySide6.QtSvg", "icons"),

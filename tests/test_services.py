@@ -353,7 +353,7 @@ used = set(re.findall(r'activity="(\w+)"', source))
 used |= set(re.findall(r'_start_job\(f?"[^"]*",\s*"(\w+)"[,)]', source))
 used |= set(re.findall(r'job=\(f?"[^"]*",\s*"(\w+)"\)', source))
 check("the pages start every current activity documented, and no other",
-      used == set(activity.ACTIVITIES) - {"copy"})
+      used == set(activity.ACTIVITIES) - {"copy", "migration"})
 check("legacy Copier journal entries remain readable",
       activity.known_kind("copy.clean") and activity.known_kind("copy.job.done")
       and activity.ACTIVITIES["copy"][0] == "copier")

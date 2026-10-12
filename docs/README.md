@@ -51,7 +51,6 @@ still beside the word "working".
 | [Installing](installing.md) | The installer: what it does, your data through updates and uninstalls, coming from an earlier copy. |
 | [Getting started](getting-started.md) | First run, running from source, what needs setting up before which page works. |
 | [Configuration](configuration.md) | Every setting, every file written, where each one lives, and what to back up. |
-| [Multiplier migration](multiplier-migration.md) | Consolidating verified physical copies into one wallpaper with a multiplier, with resume and rollback. |
 | [Gallery](gallery.md) | The wall of previews the Review page opens: what the badges mean, and subscribing. |
 | [Authors database](authors-database.md) | The file behind Review — what is in it, its backups, and restoring one. |
 | [Building](building.md) | Producing a standalone `.exe`, and the installer. |
@@ -60,9 +59,8 @@ still beside the word "working".
 
 ## What this does not do
 
-Rotation and copy migration write to Wallpaper Engine — see
-[the Rotator](rotator.md#wallpaper-engines-playlist) and
-[migration](multiplier-migration.md). The Tracker reads
+Rotation writes to Wallpaper Engine — see
+[the Rotator](rotator.md#wallpaper-engines-playlist). The Tracker reads
 `config.json` and the files in `bin/`; it never changes them. Rotation moves
 *your* folders between *your* directories. The one action that reaches outside the machine is
 subscribing to a workshop item, which is a deliberate click in the

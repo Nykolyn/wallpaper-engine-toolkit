@@ -28,8 +28,8 @@ monitors and the newest log lines](docs/images/overview.png)
 Multiplier replaces physical copies used to increase rotation chances. The
 default is 1; each successful selection spends one appearance, and a reserve
 cycle resets after all eligible quotas are exhausted. Tracker and Rotator share
-the editable value. Existing libraries can use **Migrate copies** in Rotator;
-see [migration and rollback](docs/multiplier-migration.md).
+the editable value. Consolidating existing physical copies is a separate,
+one-time manual operation; the application does not provide a migration tool.
 
 ## Install
 
@@ -75,11 +75,10 @@ build the `.exe` and the installer yourself, see
 
 ## What it will not do
 
-Rotation and copy migration write to Wallpaper Engine, and say so first. A
+Rotation writes to Wallpaper Engine, and says so first. A
 rotation rebuilding its playlist closes it, rewrites that playlist in `config.json` and the pass in
 `bin/playliststate.bin`, and starts it again — with both files copied aside
-beforehand, and a checkbox to turn it off. Migration remaps copied-folder
-references with backups and recovery. The Tracker reads
+beforehand, and a checkbox to turn it off. The Tracker reads
 `config.json` and the two state files in `bin/`, and its memory probe is opened
 read-only. Rotation moves your folders between your own directories. The one action that reaches outside the machine is subscribing to a
 workshop item, which is a deliberate click.

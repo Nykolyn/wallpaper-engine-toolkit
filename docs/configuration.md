@@ -230,8 +230,7 @@ have.
 |---|---|
 | `data/tracker.json` | the only record of what has been shown |
 | `data/history.json` and `data/history_backup/` | successful selections used to derive remaining quotas, and the dates of playlist cycles; it cannot be rebuilt. The snapshots are made for you — see [the Rotator](rotator.md#the-history-is-not-lost-quietly). |
-| `data/multipliers.json` | permanent multipliers, the migration cycle baseline and historical retry quota entries; restore it together with its rotation history |
-| `data/multiplier-migration/` | migration manifests and preference backups; the manifest also locates the verified wallpaper recovery payloads outside the library roots |
+| `data/multipliers.json` | permanent multipliers, an optional cycle baseline and historical retry quota entries; restore it together with its rotation history |
 | `data/authors.sqlite` and `data/authors_backup/` | every author you have visited, and when — years of review, and nowhere else. The backups are made for you; **Second copy of the authors backups** in Review settings puts them on another disk as well. See [Backups](authors-database.md#backups). |
 | `data/suite.json`, `data/config.json` | your settings; small, easily lost |
 | `data/run_meta.json` | each run's result, times and failures by step; estimates and Retry read it. Losing it loses those, never the history |
@@ -255,5 +254,4 @@ Turning autostart off removes both, including anything left under the app's
 former name. See [Starting with Windows](tracker.md#starting-with-windows).
 
 Rotations can rewrite Wallpaper Engine's playlist configuration and binary
-playlist state, with backups. Copy migration remaps those files when verified
-folders are consolidated, with a manifest for resume and rollback.
+playlist state, with backups.

@@ -6,6 +6,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [4.0.1] - 2026-10-12
+
+### Removed
+
+- Remove the in-app copy migration, its Rotator action, recovery workers and quota-edit locks. Copy consolidation is a one-time manual operation outside the application; multiplier editing and rotation quotas are preserved.
+
 ## [4.0.0] - 2026-10-12
 
 ### Changed
@@ -1710,7 +1716,8 @@ restructured yet; the tabs keep their layout and take on the new look.
   was right for one library and wrong for every other. Nothing is tagged now
   unless you ask for it.
 
-[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v4.0.0...HEAD
+[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v4.0.1...HEAD
+[4.0.1]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v4.0.0...v4.0.1
 [3.23.2]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.23.1...v3.23.2
 [3.23.1]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.23.0...v3.23.1
 [3.23.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.22.0...v3.23.0
