@@ -10,7 +10,7 @@ disk, and the guard is on before `app.settings` is imported: that import used to
 look Steam up on the spot, before either program had drawn anything. Steam's
 registry entry is a stand-in that does not answer until the test lets it, so the
 pages are built while Steam's folders are not known yet, and the test watches
-them arrive: in the Settings page's fields, the Copier's destination, the
+them arrive: in the Settings page's fields, the Creator's target, the
 Rotator's myprojects (saved only then, on a first run) and the Tracker's
 config.json.
 """
@@ -109,28 +109,23 @@ check(f"the window starts with nothing on Steam's disk from its thread "
       f"({gui_guard.violations[:3]})", gui_guard.violations == [])
 check("while Steam has not answered", not steam_paths.found())
 settings_page = window.pages["settings"]
-copier = window.pages["copier"]
 config = window.pages["rotator"].config
 check("its folders are not guessed meanwhile: empty, as with no Steam",
-      settings_page.copier_dest.path() == "" and settings_page.creator_target.path() == ""
+      settings_page.creator_target.path() == ""
       and settings_page.myprojects.path() == "" and config.destination == "")
 check("and a first run's defaults are not saved with an empty myprojects",
       not rconfig.CONFIG_PATH.exists())
-check("nor can the Copier start: there is nowhere to copy to",
-      copier.destination.path() == "" and not copier.start_button.isEnabled())
+check("Copier is absent from the window", "copier" not in window.pages)
 
 answer.set()
 check("once Steam answers, the Settings page shows its folders",
-      wait_for(lambda: settings_page.copier_dest.path() == str(MYPROJECTS))
+      wait_for(lambda: settings_page.creator_target.path() == str(MYPROJECTS))
       and settings_page.creator_target.path() == str(MYPROJECTS)
       and settings_page.myprojects.path() == str(MYPROJECTS))
 saved = json.loads(rconfig.CONFIG_PATH.read_text(encoding="utf-8")) \
     if rconfig.CONFIG_PATH.exists() else {}
 check("the Rotator has its myprojects, and the first run's defaults are saved with it",
       config.destination == str(MYPROJECTS) and saved.get("destination") == str(MYPROJECTS))
-window.show_page("copier", animate=False)
-check("the Copier shows it when it is next on screen",
-      wait_for(lambda: copier.destination.path() == str(MYPROJECTS)))
 check("the Tracker finds config.json where Steam has it",
       wait_for(lambda: window.feed.config_path == str(CONFIG)))
 settle(300)
@@ -142,14 +137,13 @@ print("-- a chosen folder is not replaced --")
 steam_paths.forget()
 answer.clear()
 chosen = str(TMP / "chosen")
-mine = app.settings.Settings({"copier": {"dest": chosen}})
+mine = app.settings.Settings({"creator": {"target": chosen}})
 window2 = MainWindow(settings=mine, start=False)
 answer.set()
 check("Steam's answer arrives",
-      wait_for(lambda: window2.pages["settings"].creator_target.path() == str(MYPROJECTS)))
-check("and leaves the Copier's chosen destination as it was",
-      window2.pages["settings"].copier_dest.path() == chosen
-      and window2.pages["copier"].destination.path() == chosen)
+      wait_for(lambda: window2.pages["settings"].myprojects.path() == str(MYPROJECTS)))
+check("and leaves the Creator's chosen destination as it was",
+      window2.pages["settings"].creator_target.path() == chosen)
 window2.feed.stop()
 
 print("-- the tray --")

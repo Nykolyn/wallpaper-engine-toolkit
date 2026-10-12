@@ -29,7 +29,6 @@ app/
 │   ├── settings.py       what is set once
 │   ├── creator.py        video metadata, selection, builds and results
 │   ├── cleaner.py        background Workshop availability checks and verified reserve moves
-│   └── copier.py         sequential duplication queue, measurements and results
 ├── theme.py              the design tokens: colour, type, space, radius, shadows, the stylesheet
 ├── animations.py         motion tokens, the easing curve, reduced motion, the shared loops
 ├── data_location.py      where the data folder is, and moving it out of the program folder
@@ -51,7 +50,6 @@ app/
 │   └── textfile.py       reading a file from its end
 ├── engines/
 │   ├── steam_paths.py    where Steam, its libraries and Wallpaper Engine are, found in the background
-│   ├── copier.py         sequential duplication queue, verification and retry
 │   ├── creator.py        projects from videos: ffmpeg preview.gif + project.json
 │   ├── tracker.py        playlist progress, and when to look at it
 │   ├── wallpaper_timer.py  the countdown, the PLPV0005 parser, the file watcher
@@ -59,6 +57,9 @@ app/
 │   ├── we_memory.py      reading wallpaper64.exe's timer, read-only
 │   ├── engine_control.py closing Wallpaper Engine as its tray does, starting it again
 │   ├── playlist_refresh.py the rotation's playlist: found by contents, refilled, restarted
+│   ├── multipliers.py    persistent preferences and cached cycle quota snapshots
+│   ├── multiplier_migration.py verified copy consolidation, resume and rollback
+│   ├── file_copy.py      shared verified file-copy helpers
 │   ├── steam_api.py      the Steam Web API
 │   ├── steam_ugc.py      Steamworks, for subscribing
 │   ├── library.py        what is subscribed now, and what was owned once
@@ -96,7 +97,7 @@ SVG strings because importing `app.ui.kit.icons` would load the whole kit;
 `test_tray_icon.py` fails if one drifts from the kit's drawing, or if importing
 the tray pulls the window in.
 
-Copier's page owns CopySignals and a MeasureWorker. Creator's page owns a
+Creator's page owns a
 `ReadWorker` for source metadata and `BuildSignals` for its callback engine;
 all worker results reach widgets through queued Qt signals. `SourceModel` and
 `ResultModel` use the kit's virtualized Table, including tag pills, checkboxes
@@ -108,7 +109,7 @@ so table painting never stats a video.
 `MainWindow` is a fixed frame: the `TitleBar`, the `Sidebar`, a `PageHeader`
 over a `QStackedWidget` of pages, and the `StatusLine`. Pages are in the order
 of the loop — `overview`, `rotator`, `tracker`, `review`, `creator`,
-`copier`, `settings` (`main_window.PAGE_ORDER`) — and Ctrl+1…7 go to each.
+`settings` (`main_window.PAGE_ORDER`) — and Ctrl+1…7 go to each.
 Changing page cross-fades the content only (`animations.CrossFade`: a still
 of the page that leaves, fading over the live one that arrives, over
 `motion.base`; instant with motion off); the sidebar, title bar and status
@@ -138,10 +139,7 @@ shared by the Rotator page and the Settings page, whose Rotator fields are
 read-only while a Rotator job runs; each tells the other when it saved
 (`SettingsPage.changed("rotator")` → `RotatorPage.config_changed()`,
 `RotatorPage.config_edited` → `SettingsPage.show_rotator()`). The Tracker page
-reads the same `Config` for where myprojects is. Its **Send to Copier** is
-`TrackerPage.copier_requested(folders)` → `CopierPage.add_folders(folders)` →
-`TrackerPage.copier_took(folders, added)`, wired in `build_pages`. `test_tracker_page.py` builds the window through `build_pages` and fails
-if the Copier stops accepting folders from the Tracker.
+reads the same `Config` for where myprojects is. Tracker and Rotator share a MultiplierStore; successful edits refresh both quota snapshots.
 
 The status line reads the `JobCenter` (`StatusBinding`): the job that leads,
 its phase, bar and `412 / 1 000 · 41%`, and **Show**, which goes to
@@ -198,7 +196,7 @@ file functions to raise there):
   opened read-only) and `MetaCache`, which keeps a session's answers. Measured
   here: a 196-wallpaper playlist 1.5 s cold, 1 756 in 14 s; 0.01 s and 0.1 s warm.
 - A row's actions are a `ButtonsCell` in the last column (`action_cell`):
-  Send to Copier, Mark [protected] where `protect_state(folder,
+  Mark [protected] where `protect_state(folder,
   destination)` offers it — a folder directly in the Rotator's myprojects
   whose name is not `[protected] …` already (that one gets a lock mark) —
   and Delete. Delete is `pages/folder_actions`' question (`delete_dialog`)
@@ -439,7 +437,7 @@ call does nothing, so pages can be built independently in tests.
 its value), `Job.finish(result, summary)` with result `clean`, `problems`,
 `stopped` or `failed`, `Job.fail(message)`. Signals `changed(job)` and
 `finished(job)`. `current()` is the job the status line leads with: the lowest
-`PRIORITY` (rotator 0, copier 1, creator 2, review 3, tracker 4), then the one
+`PRIORITY` (rotator 0, cleaner 1, creator 2, review 3, tracker 4), then the one
 started last. `running()`, `is_running(tool)`, `last_finished(tool=None)`.
 `Job.rate()` and `Job.eta()` are None until `MIN_SAMPLES` (5) counts in one
 phase over `MIN_SPAN` (2 s); a new phase or total starts them over, and a job
@@ -457,12 +455,15 @@ renamed to `activity.1.jsonl`. An append measured 0.15 ms (p95 0.23 ms), and
 
 The kinds: a piece of work ends as `<activity>.<outcome>` (`ACTIVITIES`:
 `run`, `check`, `cleanup`, `duplicates_delete`, `duplicates_return` for the
-Rotator; `scan`, `count`, `database` for Review; `build`; `copy`). `EVENTS`
+Rotator, plus `retry`, `rebuild` and `migration`; `scan`, `count`, `database`
+for Review; `build` for Creator; `reserve_move` and `unavailable_delete`
+for Cleaner). Legacy `copy` kinds remain readable; no page starts them. `EVENTS`
 are the rest: `run.started`, `duplicates.set_aside`, and the Tracker's
 `playlist.advanced` (the leading monitor only), `playlist.finished` and
 `playlist.restarted`, which `PlaylistWatch` writes from the window's
 `TrackerFeed` — changes seen while the window is open, never the first look.
-`known_kind(kind)` says whether this build writes a kind.
+`known_kind(kind)` says whether this build understands a kind, including
+legacy Copier entries.
 
 **`LogStore`** (`logstore.py`). `open(tool, run_id=None)` → a `LogWriter` on
 `data/logs/<tool>/YYYY-MM-DD.log` (it moves to the next day's file at
@@ -485,7 +486,8 @@ with `age()`; a read that fails keeps the value read before and sets `error`,
 so a page can say "last known", and `reason` — `unset` (the folder is not
 chosen), `missing`, `unreadable` or `error` — for it to pick its empty state
 by. The keys: `RESERVE` (`ReserveCounts`:
-folders, never used, `will_reset`, batch), `ROTATION` (`RotationCounts`:
+folders, the number of wallpapers with quota remaining in the legacy
+`never_used` field, `will_reset` only when quotas are exhausted, batch), `ROTATION` (`RotationCounts`:
 folders in myprojects, protected, moved in today), `LAST_RUN` (`RunSummary`,
 with the result and times from `run_meta.json` beside `history.json` when it
 has the run, `from_side_file`), `PLAYLIST`
@@ -498,8 +500,9 @@ page writes, with more it reads back itself).
 `parse_estimate(text, now)` turns the tracker's "21 Sep 09:10" into a moment. `refresh(keys=None)` returns at once:
 the playlist is read from the feed in memory, everything else on one worker
 thread, one refresh at a time (asking during one queues the keys).
-`refreshed(keys)` follows. It refreshes itself when a rotation, a copy, a
-build or a Review job finishes, and when the feed looks. Nothing it reads
+`refreshed(keys)` follows. It refreshes itself when a rotation, a Cleaner
+action, a build or a Review job finishes, and when the feed looks. Multiplier
+edits explicitly refresh the reserve reading. Nothing it reads
 writes: it reads `config.json` without `Config.load()`'s default save, and
 the history through `read_runs()`, never `History.load()`'s repairs. On the
 real reserve (33 619 folders on the W: disk) the worker took 1.0 s cold and
@@ -553,8 +556,9 @@ median time of the newest five completed runs whose batch was within half of
 `count`, or None.
 
 **`History.usage()`** → `Usage`: `last_used(name)` (when a run last moved it
-in) and `never_used(name)` (not since the history last started over — what
-the next run draws from), both O(1) for 33 000 rows.
+in) and `never_used(name)` (not since the history last started over), both
+O(1) for 33 000 rows. Selection eligibility comes from
+`MultiplierStore.usage(runs).remaining(name)` instead of the historical used set.
 
 **Library index v2** (`library_index.py`, `data/library_meta.json`). Per
 folder, keyed by name and mtime: `FolderInfo(title, kind, workshop_id,
@@ -595,7 +599,7 @@ for %f in (tests\test_*.py) do .venv\Scripts\python.exe %f
 | `test_app_identity.py` | the balloons' sender: the shortcut made only by the built exe, again when it points elsewhere or carries another ID, the ID taken only once it is there; on Windows a real shortcut made and read back |
 | `test_row_tiles.py` | rows as tiles: copied while nothing changes, drawn again on a changed cell, hover, selection or a table switched off, never for a spinning row, and pixel for pixel the row drawn directly; a list's rows in one pass through `list_item` or its roles; a panel's glass once per size and tone; a caster's shadow skipped only inside its box clear of the corners |
 | `test_steam_paths.py` | Steam's folders found on a thread of their own: nothing known and nothing waited for before, the answer and `when_found` after; the Rotator's first-run settings saved only once it is in, an empty, chosen or missing destination each kept or filled as it should be; no Steam at all |
-| `test_folder_actions.py` | Delete: the Recycle Bin, a Workshop item unsubscribed first and nothing deleted when Steam will not; the question and the toasts; the Tracker's and the Rotator's rows (Delete on a worker, refused while a rotation runs, Send to Copier, a click opening the folder once); `#` undoing a sort; square thumbs filled; a GIF preview playing on screen only; the window opening on its LoadingCover with no other window shown |
+| `test_folder_actions.py` | Delete: the Recycle Bin, a Workshop item unsubscribed first and nothing deleted when Steam will not; the question and the toasts; the Tracker's and the Rotator's rows (Delete on a worker, refused while a rotation runs, a click opening the folder once); `#` undoing a sort; square thumbs filled; a GIF preview playing on screen only; the window opening on its LoadingCover with no other window shown |
 | `test_startup.py` | a plain start of the window and of the tray with `gui_guard` on before `app.settings` is imported and Steam made up on a guarded folder that answers late: no GUI-thread call on its disk, the fields empty meanwhile, then filled in (a chosen one left alone), the Rotator's defaults saved then, the Tracker's config.json found |
 | `test_tracker_feed.py` | a real Tracker on a made-up config.json and state file, every look on the feed's worker and no file call on the window's thread (`gui_guard.watch`); the window's copy of the files and a countdown reading it; a new cycle and a rebuild answered after their look; another config.json under a look; looks asked for while one runs; a failing look said once; the worker stopping with its owner |
 | `test_playlist_refresh.py` | finding the rotation's playlist, refilling it, restarting one monitor's pass, the state file written back byte for byte |
@@ -620,7 +624,7 @@ for %f in (tests\test_*.py) do .venv\Scripts\python.exe %f
 | `test_tray_icon.py` | the tray's icon: each state at each size, the fill from left to right by sampling pixels of the two frames, 100 % only with both filled, its steps on whole pixels, the badges and the design's colours; the icon's state from the tracker's reading; the menu's words, tooltip and the two balloons' copy with a number known and not; once per cycle; the menu's rows, what each opens, and a click on a balloon; the readers leaving a damaged file alone; the tray importing no window code |
 | `test_window_instance.py` | one window, raised from the tray, in a process of its own; the plain request and the command form on the socket |
 | `test_shell.py` | pages in the loop's order, the sidebar and Ctrl+number; `--tab` names; the window command parser; the rail below 1 200 px; the status line bound to the JobCenter (Show, problems until seen); the cross-fade, and none with motion off; the Settings page writing `config.json` and `suite.json`, read-only while the Rotator works; the window and the tray reading each other's `suite.json`; the title bar's hit testing; `ui_snapshot` at a size and scale |
-| `test_tracker_page.py` | the tracker's Progress as a monitor card in every state (paused, Wallpaper Engine stopped, restarted, finished); the countdown's words (`≈`, paused, any moment); the pace and the finish sentence; the notes the count rests on; the playlist's groups, order, `~` times, filter and authors; titles and authors read from project.json, the Steam cache and the authors database (never written); the countdown as a reader of the tray's file; every fixture; no file read on the GUI thread; which rows offer Send to Copier and Mark [protected], the question's words, the rename on a worker against folders made here, a failed rename (name taken, gone, in use, denied) changing nothing, the row after it; Send to Copier through `build_pages` into the Copier's list with the default count, once, and the toast's Show |
+| `test_tracker_page.py` | the tracker's Progress as a monitor card in every state (paused, Wallpaper Engine stopped, restarted, finished); the countdown's words (`≈`, paused, any moment); the pace and the finish sentence; the notes the count rests on; the playlist's groups, order, `~` times, filter and authors; titles and authors read from project.json, the Steam cache and the authors database (never written); the countdown as a reader of the tray's file; every fixture; no file read on the GUI thread; which rows offer Mark [protected], the question's words, the rename on a worker against folders made here, a failed rename (name taken, gone, in use, denied) changing nothing, the row after it |
 | `test_services.py` | which running job leads; rate and time left only once measured; the journal's append, tail and rotation past a damaged line and an unknown field; log files by tool, day and run, their tail and the 30-day sweep; the snapshot read on a worker, never the GUI thread, keeping its age and its last value; each page's work reaching all three |
 | `test_external.py` | a child cannot load a DLL from the bundle, through the DLL directory or PATH; a quoted URL survives cmd.exe; nothing in `app/` starts a program another way |
 
@@ -1065,7 +1069,7 @@ form's own check pass.
 - **Shortcuts**: Ctrl+1 … Ctrl+8 go to the pages in the sidebar's order;
   Ctrl+F puts the cursor in the page's filter with its words selected
   (`Page.filter_field()`: the Tracker's, the Rotator's and Review's authors);
-  Ctrl+V on the Copier pastes paths; Enter confirms a dialog and Esc cancels
+  Enter confirms a dialog and Esc cancels
   it, except a destructive one, where Cancel has the focus and Enter.
 - **Focus rings** show when the keyboard brought focus there, never after a
   click; fields you type into show theirs whenever they have focus.
@@ -1128,7 +1132,7 @@ empty) as jobs put in the JobCenter, a reading put in the Snapshot
 the loop; `MainWindow.load_fixture(state)` applies one, then the page's own
 `load_fixture` (its state of that name, or its first). A page with more to
 make up keeps it in a file of its own: `overview.json`, `tracker.json`,
-`rotator.json`, `review.json`, `creator.json`, `copier.json`. A
+`rotator.json`, `review.json`, `creator.json`. A
 page's own states (`--list` prints them per page: the Tracker's `tracking`,
 `paused`, `disconnected`, `finished`, …) are asked for the same way; the page's
 `frame_fixture(state)` says which of the frame's states goes with each, and
@@ -1170,38 +1174,18 @@ it stands.
 - **Line endings** are normalised to LF by `.gitattributes`, except `.cmd`
   files, which cmd.exe wants as CRLF.
 
-## Copier queue
+## Multiplier state
 
-The engine preserves CopyJob(source, count) and CopyEngine.start(jobs, destination).
-CopyJob also accepts a sequence of source folders, copies and a per-job
-destination. Jobs run sequentially and callbacks emit detached snapshots.
-Completed (source, copy ordinal) entries stay attached to a job for session
-retry, so successful copies are not duplicated twice.
+`engines/multipliers.py` persists preferences separately from rebuildable library caches.
+Cycle usage comes from successful incoming moves in the unchanged legacy history shape;
+the migration baseline excludes old runs and counts active entities once. Protection renames
+retain identity. Table cells render cached quota snapshots and save edits on workers.
+Remaining is `max(multiplier - used, 0)`. Weighted distinct selection drains small
+tail batches; a cycle resets only after all eligible quotas are exhausted. A running
+rotation keeps its quota snapshot, so live edits affect the next run. Historical retries
+write a quota intent before moving, and only a matching successful history entry
+confirms its debit; failed moves and playlist rebuilds spend none.
 
-inspect_queue measures file manifests and aggregates disk_usage by st_dev on a
-worker. The page debounces queue edits and rejects stale measurement generations.
-The engine repeats preflight on Start and checks each destination before writing.
-All directory traversal and thumbnail discovery stay off the GUI thread.
-
-Each output is reserved with mkdir, after the highest existing _copyN.
-Failure or Stop removes only that newly reserved partial directory, after
-checking it still resolves directly under the requested destination.
-Verification compares file names and sizes against the source manifest.
-Pause waits between files; cancellation also checks between large-file chunks.
-Per-job failures do not interrupt subsequent jobs.
-
-CopierPage exposes add_jobs(paths, copies, destination), plus add_folders and
-folders for Tracker integration. Additions received during a run wait for the
-next explicit Start. Run reports byte totals to JobCenter and copy outcomes to
-the journal; copy.job.done and copy.job.failed record individual jobs.
-The optional copier.verify setting is additive and old builds ignore it.
-
-SpinCell paints copy counts without per-row widgets. Its RowDelegate creates
-a kit SpinBox only while a cell is edited; the model owns EditRole, editable
-flags and validation. ProgressCell gains an optional caption for speed,
-elapsed time or an incomplete result. Both are in the tables kit preview.
-No new dependencies are needed.
-
-Copier fixtures: empty, queue, running, done, no-space. Filesystem tests use
-temporary directories; page tests cover worker-only measurements, stale
-results, editing, retries, actual output totals and service integration.
+`engines/multiplier_migration.py` plans by hashing content, applies with a durable recovery
+manifest, repairs playlist references, and supports resume and rollback. Shared verified
+copy primitives live in `engines/file_copy.py`; Cleaner no longer depends on Copier.

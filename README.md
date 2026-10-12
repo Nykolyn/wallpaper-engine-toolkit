@@ -16,15 +16,20 @@ monitors and the newest log lines](docs/images/overview.png)
 
 | Page | What it does |
 |---|---|
-| **[Rotator](docs/rotator.md)** | Moves folders between a reserve and `myprojects`, with duplicate handling, protected folders and a dead-folder check — and rebuilds Wallpaper Engine's playlist from the new set. |
-| **[Tracker](docs/tracker.md)** | Reports how far Wallpaper Engine has got through the active playlist — `112/208` — so the next rotation is due when it reaches the end. |
+| **[Rotator](docs/rotator.md)** | Selects distinct wallpapers by their remaining multiplier quotas, moves them between a reserve and `myprojects`, and rebuilds Wallpaper Engine's playlist. |
+| **[Tracker](docs/tracker.md)** | Reports how far Wallpaper Engine has got through the active playlist — `112/208` — and lets you edit Multiplier while seeing the reserve-cycle Remaining quota. |
 | **[Review](docs/review.md)** | Groups the week's new wallpapers by author, says what each has published since you last looked, and opens a gallery to subscribe from. |
 | **[Creator](docs/creator.md)** | Turns video clips into Wallpaper Engine projects, rendering each preview from the video itself. |
-| **[Copier](docs/copier.md)** | Duplicates wallpaper folders N times each — the weighting Wallpaper Engine's playlists do not have. |
 | **[Cleaner](docs/cleaner.md)** | Finds downloaded Workshop wallpapers whose Steam records are unavailable; opens their folders, recycles them or keeps verified copies in the reserve. |
 | **[Settings](docs/settings.md)** | The folders, Wallpaper Engine's settings file, counting in the background, the Steam key. |
 
 **[Full documentation →](docs/)**
+
+Multiplier replaces physical copies used to increase rotation chances. The
+default is 1; each successful selection spends one appearance, and a reserve
+cycle resets after all eligible quotas are exhausted. Tracker and Rotator share
+the editable value. Existing libraries can use **Migrate copies** in Rotator;
+see [migration and rollback](docs/multiplier-migration.md).
 
 ## Install
 
@@ -70,10 +75,11 @@ build the `.exe` and the installer yourself, see
 
 ## What it will not do
 
-One thing writes to Wallpaper Engine, and says so first: a rotation rebuilding
-its playlist closes it, rewrites that playlist in `config.json` and the pass in
+Rotation and copy migration write to Wallpaper Engine, and say so first. A
+rotation rebuilding its playlist closes it, rewrites that playlist in `config.json` and the pass in
 `bin/playliststate.bin`, and starts it again — with both files copied aside
-beforehand, and a checkbox to turn it off. Nothing else does. The Tracker reads
+beforehand, and a checkbox to turn it off. Migration remaps copied-folder
+references with backups and recovery. The Tracker reads
 `config.json` and the two state files in `bin/`, and its memory probe is opened
 read-only. Rotation moves your folders between your own directories. The one action that reaches outside the machine is subscribing to a
 workshop item, which is a deliberate click.

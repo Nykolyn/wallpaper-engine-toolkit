@@ -30,11 +30,10 @@ small files in the data folder — the history, its side file, a run's log —
 are read where the old tab read them, on the window's thread, and never in
 the constructor.
 
-The reserve's and Current's rows act as the Tracker's do: a click opens the
-folder in Explorer, and each ends with **Send to Copier** (`copier_requested`,
-wired to the Copier in `pages.build_pages`) and **Delete** — to the Recycle
-Bin after asking, a Workshop item unsubscribed first, refused while a run is
-under way (`pages/folder_actions`).
+The reserve's and Current's rows have a Multiplier select and read-only
+Remaining quota. A click on another cell opens the folder in Explorer.
+**Delete** sends it to the Recycle Bin after asking, a Workshop item
+unsubscribed first, refused while a run is under way (`pages/folder_actions`).
 
 The words come from plain functions (`plan_rows`, `confirmation`,
 `broken_groups`, `history_rows`, `done_steps`, `RunTracker`, …) that tests
@@ -81,7 +80,6 @@ from ..services import begin
 from ..services.logstore import KEEP_DAYS, LogTail
 from ..services.snapshot import LAST_RUN, PLAYLIST, moved_on
 from ..engines.wallpaper_delete import delete_wallpaper
-from ..settings import DEFAULT_COPIER_COUNT
 from ..ui.kit import (
     AccentButton, ActivityLine, ButtonsCell, Callout, CardTitle, Cell, CellButton, CheckGroup,
     CheckRow, ChipCell, Column,
@@ -93,8 +91,9 @@ from ..ui.kit import (
 from ..ui.kit.base import Elided, set_tone
 from .base import Page, SideScroll
 from .folder_actions import (
-    DELETE, SEND, SEND_TIP, delete_dialog, delete_tip, deleted_words, open_in_explorer,
+    DELETE, delete_dialog, delete_tip, deleted_words, open_in_explorer,
 )
+from .multiplier_ui import FixtureQuota, MultiplierEdits, multiplier_cell
 
 REVEAL_AGAIN = 1.0             # seconds before the same row opens Explorer again
 VIEWS = ("reserve", "current", "history")
@@ -180,8 +179,8 @@ def move_caption(p: dict) -> str:
     n = drawn(p)
     if p["will_reset"]:
         return (f"{fmt.count(n)} drawn from all {fmt.count(p['projected_reserve'])} · "
-                "the history resets")
-    return f"{fmt.count(n)} drawn from {fmt.count(p['available_unique'])} never used"
+                "new quota cycle")
+    return f"{fmt.count(n)} drawn from {fmt.count(p['available_unique'])} with quota"
 
 
 def playlist_caption(labels) -> str:
@@ -210,11 +209,13 @@ def plan_rows(p: dict | None, *, batch: int, refresh: bool, labels=None) -> list
 
 def selection_line(p: dict) -> tuple[str, str]:
     """How the next run draws (one strategy, gate G9 A): ("", words), or
-    ("warn", words) when it will start the history over."""
+    ("warn", words) when the quota cycle ends or the last batch is smaller."""
     if p["will_reset"]:
-        return ("warn", f"Only {fmt.count(p['available_unique'])} unused left — history "
-                        "resets and all folders are eligible")
-    return ("", f"Drawn at random from {fmt.count(p['available_unique'])} never used")
+        return ("warn", "All quotas exhausted — a new cycle restores every multiplier")
+    if 0 < p["available_unique"] < p["count"]:
+        return ("warn", f"Only {fmt.count(p['available_unique'])} wallpapers with quota — "
+                        f"this batch contains {fmt.count(drawn(p))}")
+    return ("", f"Drawn by remaining quota from {fmt.count(p['available_unique'])} wallpapers")
 
 
 def protected_line(p: dict) -> str:
@@ -275,19 +276,18 @@ def confirmation(p: dict, number: int, *, refresh: bool, labels=None,
                  duplicates_folder: str = "", notices=()) -> Confirmation:
     """What "Start run N?" says, from `Rotator.preview()` taken after the check:
     the steps still to come in the engine's order, and the facts that are not
-    options — the [protected] folders, the duplicates, a history reset."""
+    options — the [protected] folders, the duplicates, a new quota cycle."""
     batch, home, available = p["count"], p["in_dest"], p["available_unique"]
     n = drawn(p)
-    source = (f"all {fmt.count(p['projected_reserve'])}, as fewer than {fmt.count(batch)} "
-              "were never used" if p["will_reset"]
-              else f"the {fmt.count(available)} never used")
+    source = (f"all {fmt.count(p['projected_reserve'])} wallpapers in the new cycle"
+              if p["will_reset"] else f"the {fmt.count(available)} wallpapers with quota")
     if home:
         body = (f"The {fmt.counted(home, 'folder')} now in myprojects "
                 f"{_es(home, 'goes', 'go')} back to the reserve first, then {fmt.count(n)} "
-                f"new one{_s(n)} {_es(n, 'is', 'are')} drawn at random from {source}.")
+                f"one{_s(n)} {_es(n, 'is', 'are')} drawn by remaining quota from {source}.")
     else:
         body = (f"myprojects holds nothing to return, so {fmt.counted(n, 'folder')} "
-                f"{_es(n, 'is', 'are')} drawn at random from {source}.")
+                f"{_es(n, 'is', 'are')} drawn by remaining quota from {source}.")
     move = move_caption(p)
     move += f" · the reserve holds {fmt.count(p['projected_reserve'])} after the return"
     steps = [(step_title("return"), return_caption(p)), (step_title("move", batch), move)]
@@ -304,8 +304,11 @@ def confirmation(p: dict, number: int, *, refresh: bool, labels=None,
                       f"already: {_es(dupes, 'it goes', 'they go')} to {where}, not back into "
                       "the reserve."))
     if p["will_reset"]:
-        notes.append(("warn", "warn", f"Only {fmt.count(available)} unused left — the history "
-                                      "resets and every folder can be drawn again."))
+        notes.append(("warn", "warn", "All quotas are exhausted. A new cycle restores every "
+                                      "multiplier; earlier runs stay in the history."))
+    elif n < batch:
+        notes.append(("warn", "warn", f"This batch contains {fmt.count(n)} wallpapers. "
+                                      "The remaining quotas must finish before a new cycle starts."))
     for notice in notices:
         if notice:
             notes.append(("warn", "warn", notice))
@@ -510,7 +513,7 @@ def move_parts(moved: int, failed: int, reset: bool = False) -> list[str]:
     if failed:
         parts.append(f"{fmt.count(failed)} failed")
     if reset:
-        parts.append("history reset")
+        parts.append("new quota cycle")
     return parts
 
 
@@ -918,11 +921,13 @@ def library_columns(wide_chips: bool = False) -> tuple[Column, ...]:
         Column("", chip, sortable=False),
         Column("Tags", theme.WALLPAPER_TAGS_WIDTH),
         Column("Age", theme.WALLPAPER_AGE_WIDTH),
+        Column("Multiplier", 104, mono=True),
+        Column("Remaining", 86, "right", mono=True, tone="text.mid"),
         Column("", widths["actions"], "right", sortable=False),
     )
 
 
-LIBRARY_ACTIONS = 8                 # the reserve's and Current's last column
+LIBRARY_MULTIPLIER, LIBRARY_REMAINING, LIBRARY_ACTIONS = 8, 9, 10
 
 
 class LibraryModel(TableModel):
@@ -931,6 +936,8 @@ class LibraryModel(TableModel):
     them over. Nothing here reads the disk; a row is its folder's name, and
     everything else is looked up when the row is painted."""
 
+    multiplier_edited = Signal(str, int)
+
     def __init__(self, parent=None):
         super().__init__(library_columns(), (), parent)
         self.root = ""
@@ -938,6 +945,9 @@ class LibraryModel(TableModel):
         self.sizes: dict[str, int] = {}
         self.authors: dict[str, str] = {}
         self.usage = None              # Usage, or a fixture's stand-in
+        self.quota = None
+        self.quota_ready = False
+        self.multiplier_pending: set[str] = set()
         self.now = datetime.now()
         self.show_thumbs = True
         self.wide_chips = False
@@ -1013,11 +1023,16 @@ class LibraryModel(TableModel):
             folder = self.folder_of(name)
             delete = (CellButton(DELETE, "trash", "Deleting it…", enabled=False)
                       if name in self.deleting else CellButton(DELETE, "trash", delete_tip(folder)))
-            return ButtonsCell((CellButton(SEND, "copier", SEND_TIP), delete))
+            return ButtonsCell((delete,))
         if column == 6:
             return TagsCell(info.tags) if info is not None and info.tags else fmt.DASH
         if column == 7:
             return (info.age or fmt.DASH) if info is not None else ""
+        if column == LIBRARY_MULTIPLIER:
+            return multiplier_cell(self.quota, name,
+                                   enabled=self.quota_ready and name not in self.multiplier_pending)
+        if column == LIBRARY_REMAINING:
+            return str(self.quota.remaining(name)) if self.quota is not None else fmt.DASH
         if info is not None and info.unidentified:
             return ChipCell("Unidentified")
         if not is_protected(name) and self.never_used(name):
@@ -1032,7 +1047,18 @@ class LibraryModel(TableModel):
         if column == 4:
             when = self.last_used(name)
             return when.timestamp() if when is not None else 0.0
+        if column in (LIBRARY_MULTIPLIER, LIBRARY_REMAINING):
+            if self.quota is None:
+                return 1 if column == LIBRARY_MULTIPLIER else 0
+            return self.quota.multiplier(name) if column == LIBRARY_MULTIPLIER else self.quota.remaining(name)
         return super().sort_key(name, column)
+
+    def setData(self, index, value, role=Qt.EditRole):
+        if role != Qt.EditRole or index.column() != LIBRARY_MULTIPLIER \
+                or not self.flags(index) & Qt.ItemIsEditable or type(value) is not int or value < 1:
+            return False
+        self.multiplier_edited.emit(self.item_at(index.row()), value)
+        return True
 
     def folder_of(self, name: str) -> str:
         return os.path.join(self.root, name) if self.root else ""
@@ -1345,7 +1371,7 @@ class DuplicatesDialog(OverlayDialog):
         self._set_head("Duplicates",
                        f"Folders a run found already in the reserve, set aside in "
                        f"{config.duplicates}. Move them back over the reserve's copy, or "
-                       "delete them.", "copier", "neutral")
+                       "delete them.", "folder", "neutral")
         self.model = DuplicatesModel(self)
         self.table = Table()
         self.table.setModel(self.model)
@@ -1740,12 +1766,12 @@ class RotatorPage(Page):
 
     # The page saved the batch or the playlist switch: the Settings page shows it.
     config_edited = Signal()
-    # Send to Copier: these folders, for the Copier's list. `build_pages` hands
-    # them to the Copier and its answer back to `copier_took`.
-    copier_requested = Signal(list)
+    multiplier_changed = Signal(str, int)
+    migration_requested = Signal()
 
     def __init__(self, config: Config, services=None, parent: QWidget | None = None, *,
-                 now: Callable[[], datetime] | None = None, index: LibraryIndex | None = None):
+                 now: Callable[[], datetime] | None = None, index: LibraryIndex | None = None,
+                 multipliers=None):
         super().__init__(parent)
         self.config = config
         self._services = services
@@ -1769,6 +1795,7 @@ class RotatorPage(Page):
         self._check_found: tuple[int, int] | None = None
         self._rotate_after_check = False
         self._starting = False
+        self._migration_busy = False
         self._showing = False
         self._cancelled = False
         self._fixture_left: str | None = None
@@ -1783,13 +1810,16 @@ class RotatorPage(Page):
         self._dup_job = None
         self._header: dict[str, QWidget] = {}
         self._offload = _Offload(self)
+        self.multiplier_edits = MultiplierEdits(multipliers, self._offload, self._say, self)
+        self.multiplier_edits.changed.connect(self.multiplier_changed.emit)
         self._opened_last: tuple[str, float] = ("", 0.0)
-        self._copier_answer: int | None = None
-        self._sending = ""                      # the title of the folder sent to the Copier
         self._open_failed = _Said(self)
         self._open_failed.said.connect(self._could_not_open)
 
         self._build()
+        for view in ("reserve", "current"):
+            self.models[view].multiplier_edited.connect(self.multiplier_edits.set)
+        self.multiplier_edits.updated.connect(self._quota_updated)
 
         self._facts_timer = self._timer(FACTS_DELAY_MS, self._read_facts)
         self._repaint_timer = self._timer(REPAINT_MS, self._repaint_library)
@@ -1897,6 +1927,10 @@ class RotatorPage(Page):
                 table.clicked.connect(self._history_clicked)
                 table.doubleClicked.connect(lambda index: self._history_clicked(index, True))
             else:
+                table.setEditTriggers(QAbstractItemView.EditKeyPressed)
+                header = table.horizontalHeader()
+                header.moveSection(header.visualIndex(LIBRARY_MULTIPLIER), 1)
+                header.moveSection(header.visualIndex(LIBRARY_REMAINING), 2)
                 table.verticalScrollBar().valueChanged.connect(lambda _v: self._sizes_timer.start())
                 table.clicked.connect(lambda index, v=view: self._folder_clicked(v, index))
                 table.activated.connect(lambda index, v=view: self._folder_clicked(v, index))
@@ -1929,9 +1963,12 @@ class RotatorPage(Page):
         settings.clicked.connect(lambda: self.navigate.emit("settings"))
         history = GhostButton("Run history", self, outlined=True)
         history.clicked.connect(lambda: self.show_view("history"))
-        self._header = {"duplicates": duplicates, "settings": settings, "history": history}
+        migration = GhostButton("Migrate copies", self, outlined=True)
+        migration.clicked.connect(self.migration_requested.emit)
+        self._header = {"duplicates": duplicates, "settings": settings, "history": history,
+                        "migration": migration}
         self._render_header()
-        return [duplicates, settings, history]
+        return [migration, duplicates, settings, history]
 
     # -- the Rotator's own files, read when first needed
 
@@ -1956,6 +1993,26 @@ class RotatorPage(Page):
             model.usage, model.now = usage, now
         self._set_history_rows()
         self._repaint_library()
+        self.refresh_multipliers()
+
+    def refresh_multipliers(self, *_args) -> None:
+        if self._fixture is None:
+            self.multiplier_edits.refresh(self.history.runs if self.history is not None else None)
+
+    def _quota_updated(self, usage) -> None:
+        if self._fixture is not None:
+            return
+        for view in ("reserve", "current"):
+            model = self.models[view]
+            model.quota = usage
+            model.quota_ready = self.multiplier_edits.ready and not self.multiplier_edits.locked
+            model.multiplier_pending = self.multiplier_edits.pending
+            if model.sort_column() in (LIBRARY_MULTIPLIER, LIBRARY_REMAINING):
+                self.tables[view].sort_by(model.sort_column(), model.sort_order())
+            else:
+                self.tables[view].viewport().update()
+        self._render_table_bars()
+        self._facts_timer.start()
 
     def _set_history_rows(self) -> None:
         model = self.models["history"]
@@ -2194,7 +2251,7 @@ class RotatorPage(Page):
         self.check_button.setVisible(library)
         self.open_button.setVisible(library)
         self.export_button.setVisible(not library)
-        self.check_button.setEnabled(self.state != "running")
+        self.check_button.setEnabled(not self._busy())
         if not library:
             rows = model.items()
             self.summary.set_items(history_summary(rows))
@@ -2205,8 +2262,9 @@ class RotatorPage(Page):
         total = len(model.items())
         items = [fmt.counted(total, "folder")]
         if view == "reserve":
-            if model.usage is not None and total:
-                items.append(f"{fmt.count(model.never_used_count())} never used")
+            if model.quota is not None and total:
+                available = sum(model.quota.remaining(name) > 0 for name in model.items())
+                items.append(f"{fmt.count(available)} with quota")
         else:
             today = moved_on(self.history.runs, self._now().date()) if self.history else 0
             if today:
@@ -2242,14 +2300,15 @@ class RotatorPage(Page):
         if folder_is_set(root):
             self._explore(root)
 
-    # -- a folder's row: open it, Send to Copier, Delete
+    # -- a folder's row: open it, edit its multiplier, Delete
 
     def _folder_clicked(self, view: str, index) -> None:
         """A click, a double-click or Enter opens the folder in Explorer —
         once: a double-click is also a click."""
         model = self.models[view]
         name = model.item_at(index.row())
-        if name is None or self._fixture is not None or not model.root:
+        if name is None or self._fixture is not None or not model.root \
+                or index.column() in (LIBRARY_MULTIPLIER, LIBRARY_REMAINING):
             return
         folder = model.folder_of(name)
         last, when = self._opened_last
@@ -2266,36 +2325,8 @@ class RotatorPage(Page):
         name = model.item_at(row)
         if name is None:
             return
-        if key == SEND:
-            self.send_to_copier(view, name)
-        elif key == DELETE:
+        if key == DELETE:
             self.delete_folder(view, name)
-
-    def send_to_copier(self, view: str, name: str) -> bool:
-        """Put the folder on the Copier's list, for the default copies, and
-        stay here: a toast says so."""
-        model = self.models[view]
-        if self._fixture is not None or not model.root:
-            return False
-        self._copier_answer = None
-        self._sending = model.title_of(name)
-        self.copier_requested.emit([model.folder_of(name)])
-        self._sending = ""
-        if self._copier_answer is None:
-            self._say("warn", "The Copier is not there to take it.")
-            return False
-        return True
-
-    def copier_took(self, folders: list, added: int) -> None:
-        """The Copier's answer to `copier_requested`: how many it added."""
-        self._copier_answer = added
-        names = (f"“{self._sending}”" if self._sending and len(folders) == 1
-                 else ", ".join(os.path.basename(os.path.normpath(f)) for f in folders))
-        if added:
-            self._say("ok", f"{names} is on the Copier's list, for "
-                            f"{fmt.counted(DEFAULT_COPIER_COUNT, 'copy', 'copies')}.")
-        else:
-            self._say("info", f"{names} is on the Copier's list already.")
 
     def delete_folder(self, view: str, name: str) -> bool:
         """Delete: ask, then send the folder to the Recycle Bin on a worker
@@ -2442,7 +2473,7 @@ class RotatorPage(Page):
         self._begin_check(then_rotate=False)
 
     def _busy(self) -> bool:
-        return (self.state == "running" or self._starting
+        return (self.state == "running" or self._starting or self._migration_busy
                 or (self._services is not None and self._services.jobs.is_running("cleaner")))
 
     def _begin_check(self, then_rotate: bool) -> None:
@@ -2962,6 +2993,10 @@ class RotatorPage(Page):
 
     def _jobs_changed(self, *_args) -> None:
         self._update_nav()
+        self._render_header()
+        self.check_button.setEnabled(not self._busy())
+        if self.state == "idle":
+            self._render_idle()
 
     def _snapshot_refreshed(self, keys) -> None:
         if LAST_RUN in keys:
@@ -3039,7 +3074,7 @@ class RotatorPage(Page):
                          labels=facts.labels if facts is not None else None)
         self.plan.steps.set_steps([(title, caption or "…") for title, caption in rows])
         self.plan.estimate.setText(estimate_line(facts.estimate if facts is not None else None))
-        self.plan.start.setEnabled(not problem and self.state == "idle"
+        self.plan.start.setEnabled(not problem and self.state == "idle" and not self._busy()
                                    and self.history is not None)
 
     def _left(self) -> str | None:
@@ -3108,7 +3143,7 @@ class RotatorPage(Page):
     def _render_header(self) -> None:
         if not self._header:
             return
-        running = self.state == "running"
+        running = self.state == "running" or self._migration_busy or self._rotating_elsewhere()
         problems = self.state == "done" and self.done_view is not None and \
             self.done_view.result != "clean"
         count = self.facts.duplicates if self.facts is not None else None
@@ -3119,6 +3154,7 @@ class RotatorPage(Page):
         duplicates.setEnabled(not busy)
         self._header["settings"].setVisible(running or problems)
         self._header["history"].setVisible(not running)
+        self._header["migration"].setEnabled(not running and not busy)
 
     def _render_subtitle(self) -> None:
         now = self._now()
@@ -3229,6 +3265,16 @@ class RotatorPage(Page):
             model.infos = fixture.infos[view]
             model.sizes = {}
             model.authors = fixture.authors
+            model.quota = FixtureQuota(
+                {name: data["multipliers"].get(str(n), (1, 2, 5, 20)[n % 4])
+                 for n, name in enumerate(fixture.names[view], 1)},
+                {name: 1 for name in fixture.names[view]} if view == "current" else
+                {name: data["multipliers"].get(str(n), (1, 2, 5, 20)[n % 4])
+                 for n, name in enumerate(fixture.names[view], 1)
+                 if not fixture.usage.never_used(name)})
+            model.quota_ready = False
+            if state == "will-reset":
+                model.quota.counts = {name: model.quota.multiplier(name) for name in fixture.names[view]}
             model.set_names(fixture.names[view])
         self._fit_chips()
         self._set_history_rows()
@@ -3439,7 +3485,7 @@ def build_fixture(data: dict, spec: dict, now: datetime) -> _Fixture:
     p["in_dest"] = len(current)
     p["protected"] = len(protected)
     p["projected_reserve"] = len(reserve) + p["returning"]
-    p["will_reset"] = keep < p["count"]
+    p["will_reset"] = keep == 0
     facts = NextRunFacts(None, p, tuple(data["facts"]["labels"]), data["facts"]["estimate"],
                          data["facts"]["duplicates"])
     return _Fixture({"reserve": reserve, "current": current + protected}, infos, by_id,

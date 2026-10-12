@@ -4,6 +4,7 @@ from __future__ import annotations
 import os
 import random
 import shutil
+from heapq import nsmallest
 from collections import Counter
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -11,6 +12,7 @@ from pathlib import Path
 from typing import Callable, Optional
 
 from .config import Config, History, RunRecord, new_run_id
+from ..multipliers import MultiplierStore, identity
 
 
 # ---- Progress event types -------------------------------------------------
@@ -437,6 +439,8 @@ class Rotator:
     def __init__(self, config: Config, history: History):
         self.config = config
         self.history = history
+        self.multipliers = None
+        self._quota_usage = None
         # Set once a run has gone all the way through and been recorded.
         self.completed = False
         self.recorded = False
@@ -462,6 +466,14 @@ class Rotator:
         # be overwritten by this run's record.
         if self.history.problem:
             return self.history.problem
+        try:
+            self.multipliers = MultiplierStore()
+            from ..multiplier_migration import pending_migrations
+            if pending_migrations(self.multipliers.path.parent / "multiplier-migration"):
+                return "Recover the unfinished copy migration before rotating wallpapers."
+            self._quota_usage = self.multipliers.usage(self.history.runs)
+        except (OSError, ValueError) as err:
+            return f"Wallpaper multipliers could not be read: {err}"
         if not Path(self.config.source).exists():
             return f"Source folder not found: {self.config.source}"
         if not Path(self.config.destination).exists():
@@ -476,7 +488,7 @@ class Rotator:
         in_reserve = list_subfolders(self.config.source)
         reserve_names = {n.lower() for n in in_reserve}
         dup = [n for n in in_dest if n.lower() in reserve_names]
-        used = self.history.used_set()
+        quotas = MultiplierStore().usage(self.history.runs)
         # available after the return phase: reserve + the non-duplicate returns
         returning = [n for n in in_dest if n.lower() not in reserve_names]
         projected_reserve = len(in_reserve) + len(returning)
@@ -484,8 +496,9 @@ class Rotator:
         # used once and deleted since, and subtracting those from the total
         # made the count short, and could announce a reset that run() then
         # did not do.
-        after_return = reserve_names | {n.lower() for n in returning}
-        available_unique = len(after_return - used)
+        protected_names = {identity(name) for name in protected}
+        after_return = {identity(n) for n in in_reserve + returning} - protected_names
+        available_unique = sum(quotas.remaining(name) > 0 for name in after_return)
         return {
             "in_dest": len(in_dest),
             "protected": len(protected),
@@ -493,9 +506,9 @@ class Rotator:
             "returning": len(returning),
             "reserve_now": len(in_reserve),
             "projected_reserve": projected_reserve,
-            "used": len(used),
+            "used": quotas.used_count,
             "available_unique": max(available_unique, 0),
-            "will_reset": available_unique < self.config.count,
+            "will_reset": bool(after_return) and available_unique == 0,
             "count": self.config.count,
         }
 
@@ -642,19 +655,28 @@ class Rotator:
             progress(ProgressEvent("error", "No folders in reserve. Aborting.", level="ERROR"))
             return False
 
-        used = self.history.used_set()
-        available = [n for n in all_folders if n.lower() not in used]
+        quotas = self._quota_usage
+        current = list_subfolders(dst)
+        protected = {identity(name) for name in current if is_protected(name)}
+        candidates = {identity(name): name for name in all_folders
+                      if identity(name) not in protected}
+        eligible = set(candidates) | {identity(name) for name in current
+                                     if not is_protected(name)}
+        available = [n for n in candidates.values() if quotas.remaining(n) > 0]
         progress(ProgressEvent("select",
-            f"Reserve: {len(all_folders)} | used: {len(used)} | unique available: {len(available)}"))
+            f"Reserve: {len(all_folders)} | wallpapers with quota: {len(available)}"))
 
-        if len(available) < cfg.count:
+        reset = bool(eligible) and not any(quotas.remaining(name) for name in eligible)
+        if reset:
             progress(ProgressEvent("select",
-                f"Only {len(available)} unique left (need {cfg.count}). Resetting history.",
-                level="WARN"))
+                "All wallpaper quotas are exhausted. Starting a new cycle."))
             record.history_reset = True
-            available = all_folders
+            available = list(candidates.values())
 
-        pick = random.sample(available, min(cfg.count, len(available)))
+        # Exponential races draw by remaining quota without repeating a wallpaper.
+        pick = nsmallest(min(cfg.count, len(available)), available,
+                        key=lambda name: random.expovariate(quotas.multiplier(name)
+                            if reset else quotas.remaining(name)))
         total = len(pick)
         progress(ProgressEvent("select", f"Selected {total} folders.", 0, total))
         progress(ProgressEvent("move", f"Moving {total} folders into myprojects...",
@@ -840,10 +862,8 @@ class Rotator:
                 # Moved in by hand since: it is where the run meant it to be.
                 cleared.append(("move", name))
                 result.resolved += 1
-                record.moved.append(name)
-                result.moved.append(name)
                 progress(ProgressEvent("move", f"{name} is in myprojects already — "
-                                       "counted as moved.", i, total, kind="skip"))
+                                       "nothing to retry.", i, total, kind="skip"))
                 continue
             if not srcpath.exists():
                 cleared.append(("move", name))
@@ -851,7 +871,13 @@ class Rotator:
                 progress(ProgressEvent("move", f"{name} is no longer in the reserve — "
                                        "nothing to retry.", i, total, level="WARN", kind="skip"))
                 continue
+            retried_here = sum(identity(moved) == identity(name) for moved in result.moved)
+            if self._quota_usage.remaining(name) <= retried_here:
+                progress(ProgressEvent("move", f"SKIP: {name} has no remaining quota.",
+                                       i, total, level="WARN", kind="fail"))
+                continue
             try:
+                self.multipliers.record_retry(self.history.runs, record, name)
                 shutil.move(str(srcpath), str(target))
             except OSError as e:
                 progress(ProgressEvent("move", f"Failed to move {name}: {e}", i, total,

@@ -1,5 +1,5 @@
 """A wallpaper folder's row, on the Tracker's and the Rotator's tables: Delete
-(the Recycle Bin, a Workshop item unsubscribed first), Send to Copier and a
+(the Recycle Bin, a Workshop item unsubscribed first), and a
 click that opens the folder; the tables' square previews, the ones that play,
 and `#`, which undoes a sort; and the window opening on its LoadingCover with
 no other window flashing up first.
@@ -43,12 +43,12 @@ from app.engines.rotator.config import Config                             # noqa
 from app.engines.wallpaper_delete import DeleteError, Deleted             # noqa: E402
 from app.pages import folder_actions                                      # noqa: E402
 from app.pages.folder_actions import (                                    # noqa: E402
-    DELETE, SEND, delete_dialog, deleted_words,
+    DELETE, delete_dialog, deleted_words,
 )
 from app.pages.rotator import LIBRARY_ACTIONS, RotatorPage                # noqa: E402
 from app.pages.tracker import ACTIONS, PlaylistRow, TrackerPage           # noqa: E402
 from app.services import snapshot as snapshot_module                      # noqa: E402
-from app.settings import DEFAULT_COPIER_COUNT, Settings                   # noqa: E402
+from app.settings import Settings                   # noqa: E402
 from app.ui.kit import Column, Table, TableModel, ThumbLoader             # noqa: E402
 from app.ui.kit.tables import thumb_tile                                  # noqa: E402
 
@@ -270,7 +270,7 @@ check("one that fails stays, and says why",
 
 # ---- the Rotator's rows ------------------------------------------------------------------------
 
-print("-- the Rotator: a click opens the folder; Send to Copier; Delete --")
+print("-- the Rotator: a click opens the folder; Delete --")
 reserve = TMP / "reserve"
 for name in ("alpha", "beta", "gamma"):
     folder("reserve", name)
@@ -284,8 +284,8 @@ model.root = str(reserve)
 model.infos = {"beta": FolderInfo("beta", title="Beta Wave", kind="scene")}
 model.set_names(["alpha", "beta", "gamma"])
 app.processEvents()
-check("each row ends with Send to Copier and Delete",
-      [b.key for b in model.cell("alpha", LIBRARY_ACTIONS).buttons] == [SEND, DELETE]
+check("each row ends with Delete",
+      [b.key for b in model.cell("alpha", LIBRARY_ACTIONS).buttons] == [DELETE]
       and model.columns[LIBRARY_ACTIONS].title == "" and not model.columns[LIBRARY_ACTIONS].sortable)
 
 opened: list = []
@@ -308,26 +308,6 @@ try:
           and len(opened) == 1)
 finally:
     folder_actions.external.popen = real_popen
-
-sent: list = []
-
-
-def copier(folders):
-    sent.append(folders)
-    rotator.copier_took(folders, 1 if len(sent) == 1 else 0)
-
-
-rotator.copier_requested.connect(copier)
-check("Send to Copier hands the folder over, and the toast names it by its title",
-      rotator.send_to_copier("reserve", "beta") and sent == [[str(reserve / "beta")]]
-      and rotator.messages[-1] == ("ok", f"“Beta Wave” is on the Copier's list, for "
-                                         f"{DEFAULT_COPIER_COUNT} copies."))
-rotator.send_to_copier("reserve", "beta")
-check("sent again: on the list already", rotator.messages[-1] == (
-    "info", "“Beta Wave” is on the Copier's list already."))
-rotator.copier_requested.disconnect(copier)
-check("with no Copier wired, it says so", not rotator.send_to_copier("reserve", "alpha")
-      and rotator.messages[-1] == ("warn", "The Copier is not there to take it."))
 
 rotator._answer = lambda dialog: True
 rotator._delete_folder = lambda path: Deleted(path)
@@ -518,7 +498,7 @@ check("a command asked meanwhile waits for them", window.current_page() == "")
 window.move(300, 200)
 window.show()
 check("once on screen, the pages are made", wait_for(window.ready)
-      and len(window.pages) == 8 and window.loading is None)
+      and len(window.pages) == 7 and window.loading is None)
 check("and the command is carried out", window.current_page() == "rotator")
 check("no window but the main one came on screen while it was all made",
       windows.shown == ["MainWindow"])

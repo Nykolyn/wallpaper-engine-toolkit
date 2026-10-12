@@ -10,9 +10,8 @@ of the wallpaper on screen) to words is tested through the page's plain
 functions; the page itself is built on a feed that reads nothing, a
 countdown that is made up, and a list read from a cycle held in memory.
 Titles and authors come from files made here, in a temporary folder; so do
-the folders Mark [protected] renames. Send to Copier is tested through the
-window's own wiring (`build_pages`), so a Copier that stops taking folders
-from the Tracker fails here.
+the folders Mark [protected] renames. Multiplier editing is tested through
+the window's shared store and page wiring, including Remaining updates.
 """
 from __future__ import annotations
 
@@ -42,7 +41,7 @@ sys.path.insert(0, str(ROOT))
 # on CI) cannot always print; a check must not fail for the way its name is shown.
 sys.stdout.reconfigure(errors="replace")
 
-from PySide6.QtCore import QObject, Signal                               # noqa: E402
+from PySide6.QtCore import QObject, Qt, Signal                           # noqa: E402
 from PySide6.QtWidgets import QApplication, QVBoxLayout, QWidget         # noqa: E402
 
 app = QApplication(sys.argv)
@@ -720,7 +719,7 @@ page.filter.setText("")
 check("and empty again shows them all", page.model.item_rows() == rows_before)
 check("no author column and no author list: # · WALLPAPER · TYPE · SIZE · SHOWN · STATE",
       [c.title for c in page.model.columns] == ["#", "Wallpaper", "Type", "Size", "Shown",
-                                                "State", "Tags", "Age", ""]
+                                                "State", "Tags", "Age", "Multiplier", "Remaining", ""]
       and not hasattr(page, "author_pick"))
 
 print("-- # is the playlist's own order --")
@@ -899,15 +898,14 @@ check("a state it does not have is refused", raises(lambda: fixture_page.load_fi
                                                      KeyError))
 
 
-# ---- a row's actions: Send to Copier, Mark [protected] ------------------------------------------
+# ---- a row's actions: Mark [protected], Delete ------------------------------------------
 
 print("-- a row's actions: which rows offer what --")
 from app.engines.rotator.config import Config              # noqa: E402
 from app.pages.tracker import (                             # noqa: E402
-    ACTIONS, DELETE, MARKED, OFFER, PROTECT, SEND, STALE_NOTE, PlaylistRow, action_cell,
+    ACTIONS, DELETE, MARKED, OFFER, PROTECT, MULTIPLIER, REMAINING, STALE_NOTE, PlaylistRow, action_cell,
     protect_state, protected_name,
 )
-from app.settings import DEFAULT_COPIER_COUNT              # noqa: E402
 
 DEST = "X:/Steam/steamapps/common/wallpaper_engine/projects/myprojects"
 WORKSHOP = "X:/Steam/steamapps/workshop/content/431960"
@@ -937,25 +935,25 @@ def keys(cell) -> list:
 
 plain_row = PlaylistRow("x", "queue", 1, folder=in_dest("wallpaper_0012"))
 offered = action_cell(plain_row, OFFER)
-check("a myprojects row: Send to Copier, Mark [protected]…, Delete…, each saying what it does",
-      keys(offered) == [SEND, PROTECT, DELETE]
-      and [b.tip for b in offered.buttons] == ["Send to Copier", "Mark [protected]…", "Delete…"]
+check("a myprojects row: Mark [protected]…, Delete…, each saying what it does",
+      keys(offered) == [PROTECT, DELETE]
+      and [b.tip for b in offered.buttons] == ["Mark [protected]…", "Delete…"]
       and all(b.enabled and not b.mark for b in offered.buttons))
 check("a row not offered Mark: its slot empty so the buttons line up",
-      keys(action_cell(plain_row, "")) == [SEND, None, DELETE])
+      keys(action_cell(plain_row, "")) == [None, DELETE])
 workshop_row = PlaylistRow("w", "queue", 1, folder=str(Path(WORKSHOP) / "1700000005"))
 check("a Workshop row's Delete says it unsubscribes",
-      action_cell(workshop_row, "").buttons[2].tip == "Unsubscribe and delete…")
+      action_cell(workshop_row, "").buttons[1].tip == "Unsubscribe and delete…")
 check("while Delete runs, it is off",
-      not action_cell(plain_row, OFFER, deleting=True).buttons[2].enabled)
-marked = action_cell(plain_row, MARKED).buttons[1]
+      not action_cell(plain_row, OFFER, deleting=True).buttons[1].enabled)
+marked = action_cell(plain_row, MARKED).buttons[0]
 check("an already protected row: a lock that is no button, and says what it means",
       marked.mark and marked.icon == "lock" and marked.tone == "accent.hover"
       and "the Rotator leaves it in myprojects" in marked.tip)
-renaming = action_cell(plain_row, OFFER, renaming=True).buttons[1]
+renaming = action_cell(plain_row, OFFER, renaming=True).buttons[0]
 check("while the rename runs, Mark is off", renaming.key == PROTECT and not renaming.enabled)
 stale_row = PlaylistRow("x", "queue", 1, folder=in_dest("[protected] wallpaper_0012"), stale=True)
-stale = action_cell(stale_row, MARKED).buttons[1]
+stale = action_cell(stale_row, MARKED).buttons[0]
 check("one marked here: the lock in warn, and its tip says the playlist entry is broken",
       stale.mark and stale.tone == "warn"
       and "stops working until the next rotation" in stale.tip)
@@ -974,8 +972,8 @@ check("the table's last column holds them, with no title and no sorting",
       and not actions_model.columns[ACTIONS].sortable)
 check("each row as its folder says: offered, Workshop, protected, marked here",
       [keys(actions_model.cell(r, ACTIONS)) for r in actions_rows]
-      == [[SEND, PROTECT, DELETE], [SEND, None, DELETE], [SEND, MARKED, DELETE],
-          [SEND, MARKED, DELETE]])
+      == [[PROTECT, DELETE], [None, DELETE], [MARKED, DELETE],
+          [MARKED, DELETE]])
 check("the row marked here says so under its title, in warn",
       actions_model.cell(stale_row, 1).sub == STALE_NOTE
       and actions_model.cell(stale_row, 1).sub_tone == "warn"
@@ -1066,7 +1064,7 @@ for owner, name in GUARDED:
     guard(owner, name)
 try:
     started = mark_page.protect(keep)
-    renaming_now = not mark_page.model.cell(keep, ACTIONS).buttons[1].enabled
+    renaming_now = not mark_page.model.cell(keep, ACTIONS).buttons[0].enabled
     finished = wait_for(lambda: not mark_page._offload.busy())
 finally:
     unguard()
@@ -1080,8 +1078,8 @@ check("the folder is renamed, and nothing else",
 keep = next(r for r in mark_page.model.items() if r.item == MARK_ITEMS[0])
 check("the row follows: its new folder, the warn lock, the note under its title",
       Path(keep.folder) == MYP / "[protected] w_keep" and keep.stale
-      and keys(mark_page.model.cell(keep, ACTIONS)) == [SEND, MARKED, DELETE]
-      and mark_page.model.cell(keep, ACTIONS).buttons[1].tone == "warn"
+      and keys(mark_page.model.cell(keep, ACTIONS)) == [MARKED, DELETE]
+      and mark_page.model.cell(keep, ACTIONS).buttons[0].tone == "warn"
       and mark_page.model.cell(keep, 1).sub == STALE_NOTE
       and mark_page.model.thumb_source(keep) == keep.folder)
 check("and a toast says what changed, and that the playlist entry stops working",
@@ -1112,7 +1110,7 @@ check("the name already taken: a danger toast in plain words, nothing changed",
                                     "was changed."
       and (MYP / "w_taken").is_dir() and (MYP / "[protected] w_taken").is_dir()
       and not mark_row("w_taken").stale
-      and mark_page.model.cell(mark_row("w_taken"), ACTIONS).buttons[1].enabled)
+      and mark_page.model.cell(mark_row("w_taken"), ACTIONS).buttons[0].enabled)
 tone, words = failed_mark("w_gone")
 check("a folder no longer there: said so", tone == "danger"
       and words == "Could not mark w_gone [protected]: it is not in myprojects any more. "
@@ -1157,25 +1155,10 @@ try:
 finally:
     mark_page._services = None
 
-copier_sent: list = []
-
-
-def sent(folders):
-    copier_sent.append(folders)
-
-
-mark_page.copier_requested.connect(sent)
-mark_page.send_to_copier(keep)
-check("Send to Copier sends a renamed folder under its new name",
-      copier_sent == [[keep.folder]])
-check("with nobody to take it, it says so", mark_page.messages[-1]
-      == ("warn", "The Copier is not there to take it."))
-mark_page.copier_requested.disconnect(sent)
 fixture_page.load_fixture("tracking")
 before = len(fixture_page.messages)
-check("a made-up state sends and renames nothing",
-      not fixture_page.send_to_copier(fixture_page.model.items()[0])
-      and not fixture_page.protect(fixture_page.model.items()[0])
+check("a made-up state renames nothing",
+      not fixture_page.protect(fixture_page.model.items()[0])
       and len(fixture_page.messages) == before)
 
 print("-- the marked fixture --")
@@ -1183,17 +1166,20 @@ fixture_page.load_fixture("marked")
 fixture_rows = {r.number: r for r in fixture_page.model.items()}
 check("wallpaper 2 was marked here: its row says so",
       fixture_rows[2].stale and Path(fixture_rows[2].folder).name == "[protected] wallpaper_0002"
-      and fixture_page.model.cell(fixture_rows[2], ACTIONS).buttons[1].tone == "warn")
+      and fixture_page.model.cell(fixture_rows[2], ACTIONS).buttons[0].tone == "warn")
 check("3 was protected already, 5 is a Workshop one, 4 is offered Mark",
       [keys(fixture_page.model.cell(fixture_rows[n], ACTIONS)) for n in (3, 5, 4)]
-      == [[SEND, MARKED, DELETE], [SEND, None, DELETE], [SEND, PROTECT, DELETE]])
+      == [[MARKED, DELETE], [None, DELETE], [PROTECT, DELETE]])
 
 
-# ---- Send to Copier, through the window's own wiring --------------------------------------------
+# ---- Multipliers, through the window's shared store and page wiring --------------------------
 
-print("-- Send to Copier: the Copier's list, once, and Show goes there --")
+print("-- Multiplier and Remaining: active rows, selects, and shared edits --")
 from app import services as services_module                 # noqa: E402
 from app.main_window import MainWindow                      # noqa: E402
+from app.ui.kit import Dropdown                             # noqa: E402
+from PySide6.QtTest import QTest                            # noqa: E402
+from app.pages.rotator import LIBRARY_MULTIPLIER, LIBRARY_REMAINING  # noqa: E402
 
 
 class WindowFeed(Feed):
@@ -1212,32 +1198,107 @@ window.move(300, 200)
 window.show()
 app.processEvents()
 tracker_in_window = window.pages["tracker"]
-copier_page = window.pages["copier"]
-sent_folder = str(MYP / "w_copy")
-sent_row = PlaylistRow(entry(MYP / "w_copy"), "queue", 1, folder=sent_folder,
-                       title="Harbour Lights")
-check("the Copier takes a folder from the Tracker (build_pages wires it: whatever replaces "
-      "the Copier tab must take these too)",
-      tracker_in_window.send_to_copier(sent_row)
-      and copier_page.folders() == [(os.path.normpath(sent_folder), str(DEFAULT_COPIER_COUNT))])
-check("for the default copies, and the Tracker stays on screen",
-      window.current_page() == "tracker"
-      and tracker_in_window.messages[-1] == ("ok", f"“Harbour Lights” is on the Copier's list, "
-                                                   f"for {DEFAULT_COPIER_COUNT} copies."))
-toast = window.toasts.toasts()[-1]
-check("its toast offers Show", toast.action_text() == "Show" and toast.variant() == "ok")
-tracker_in_window.send_to_copier(sent_row)
-check("sent again, it is not listed twice, and the toast says it is there already",
-      len(copier_page.folders()) == 1
-      and tracker_in_window.messages[-1] == ("info", "“Harbour Lights” is on the Copier's list "
-                                                     "already."))
-window.toasts.toasts()[-1]._act()
+rotator_in_window = window.pages["rotator"]
+store = tracker_in_window.multiplier_edits.store
+check("Copier is removed and both tables share the multiplier store",
+      "copier" not in window.pages and store is rotator_in_window.multiplier_edits.store)
+store.initialize([], ["w_quota"], {})
+quota_row = PlaylistRow(entry(MYP / "w_quota"), "shown", 1, folder=str(MYP / "w_quota"),
+                        title="Harbour Lights", on_screen=True)
+tracker_in_window.model.set_playlist([quota_row], False, NOW)
+rotator_in_window.models["current"].set_names(["w_quota"])
+tracker_in_window.refresh_multipliers()
+rotator_in_window.refresh_multipliers()
+check("an active wallpaper at Multiplier 1 has Remaining 0", wait_for(
+    lambda: tracker_in_window.model.quota_ready and rotator_in_window.models["current"].quota_ready)
+    and tracker_in_window.model.cell(quota_row, MULTIPLIER).value == 1
+    and tracker_in_window.model.cell(quota_row, REMAINING) == "0")
+row_index = tracker_in_window.model.row_of_item(0)
+edit_index = tracker_in_window.model.index(row_index, MULTIPLIER)
+check("Multiplier is editable and Remaining is read-only",
+      bool(tracker_in_window.model.flags(edit_index) & Qt.ItemIsEditable)
+      and not tracker_in_window.model.flags(tracker_in_window.model.index(row_index, REMAINING))
+      & Qt.ItemIsEditable)
+check("quota columns are immediately after wallpaper identity in both views",
+      tracker_in_window.table.horizontalHeader().visualIndex(MULTIPLIER) == 2
+      and tracker_in_window.table.horizontalHeader().visualIndex(REMAINING) == 3
+      and rotator_in_window.tables["current"].horizontalHeader().visualIndex(LIBRARY_MULTIPLIER) == 1
+      and rotator_in_window.tables["current"].horizontalHeader().visualIndex(LIBRARY_REMAINING) == 2)
+on_gui_thread.clear()
+for owner, name in GUARDED:
+    guard(owner, name)
+try:
+    accepted = tracker_in_window.model.setData(edit_index, 20)
+    updated = wait_for(lambda: tracker_in_window.model.cell(quota_row, REMAINING) == "19"
+                       and rotator_in_window.models["current"].cell("w_quota", LIBRARY_REMAINING) == "19")
+finally:
+    unguard()
+check("editing an active row to 20 preserves its used appearance and updates both tables",
+      accepted and updated and on_gui_thread == [])
+check("invalid edits are refused at the model boundary",
+      not tracker_in_window.model.setData(edit_index, 0)
+      and not tracker_in_window.model.setData(edit_index, True)
+      and not tracker_in_window.model.setData(edit_index, "20"))
+reverse_index = rotator_in_window.models["current"].index(0, LIBRARY_MULTIPLIER)
+check("edits in Rotator update the Tracker too",
+      rotator_in_window.models["current"].setData(reverse_index, 5)
+      and wait_for(lambda: tracker_in_window.model.cell(quota_row, REMAINING) == "4"))
+QTest.mouseClick(tracker_in_window.table.viewport(), Qt.LeftButton,
+                 pos=tracker_in_window.table.visualRect(edit_index).center())
+live_editor = tracker_in_window.table.findChild(Dropdown)
+check("a single click opens the select in its visible cell", live_editor is not None
+      and wait_for(live_editor.popup_open))
+if live_editor is not None:
+    live_editor.choose(live_editor.findData(10))
+check("choosing a Dropdown item persists it and recomputes Remaining", wait_for(
+    lambda: tracker_in_window.model.cell(quota_row, REMAINING) == "9"
+    and rotator_in_window.models["current"].cell("w_quota", LIBRARY_REMAINING) == "9"))
+real_set_multiplier = store.set_multiplier
+
+
+def failed_save(name, value):
+    raise OSError("test write refused")
+
+
+store.set_multiplier = failed_save
+try:
+    tracker_in_window.model.setData(edit_index, 10)
+    check("a failed save keeps the old multiplier and shows a failure toast", wait_for(
+        lambda: tracker_in_window.messages and "test write refused" in tracker_in_window.messages[-1][1])
+        and tracker_in_window.model.cell(quota_row, MULTIPLIER).value == 10
+        and tracker_in_window.model.cell(quota_row, REMAINING) == "9")
+finally:
+    store.set_multiplier = real_set_multiplier
+store.set_multiplier("w_quota", 123456)
+tracker_in_window.refresh_multipliers()
+check("migrated large multipliers are preserved", wait_for(
+    lambda: tracker_in_window.model.cell(quota_row, MULTIPLIER).value == 123456))
+delegate = tracker_in_window.table.itemDelegate()
+editor = delegate.createEditor(tracker_in_window.table.viewport(), None, edit_index)
+delegate.setEditorData(editor, edit_index)
+check("the cell uses the house Dropdown and includes a migrated value outside the presets",
+      isinstance(editor, Dropdown) and editor.currentData() == 123456
+      and editor.findData(20) >= 0 and editor.findData(123456) >= 0)
 app.processEvents()
-check("Show opens the Copier", window.current_page() == "copier")
-check("the Copier's add_folders: one of each, its count, how many it added",
-      copier_page.add_folders([sent_folder + os.sep, str(MYP / "w_two"), str(MYP / "w_two")],
-                             count=5) == 1
-      and copier_page.folders()[-1] == (os.path.normpath(str(MYP / "w_two")), "5"))
+editor.hidePopup()
+editor.deleteLater()
+remaining_index = tracker_in_window.model.index(row_index, REMAINING)
+check("Remaining has no editor", delegate.createEditor(tracker_in_window.table.viewport(), None,
+                                                       remaining_index) is None)
+saved_quota_file = store.path.read_text(encoding="utf-8")
+store.path.write_text("broken JSON", encoding="utf-8")
+tracker_in_window.refresh_multipliers()
+check("damaged quota metadata disables edits and shows unavailable counters", wait_for(
+    lambda: not tracker_in_window.model.quota_ready)
+    and tracker_in_window.model.cell(quota_row, REMAINING) == fmt.DASH
+    and not tracker_in_window.model.flags(edit_index) & Qt.ItemIsEditable
+    and tracker_in_window.messages[-1][0] == "danger")
+store.path.write_text(saved_quota_file, encoding="utf-8")
+tracker_in_window.refresh_multipliers()
+check("repaired metadata restores the multiplier and its remainder", wait_for(
+    lambda: tracker_in_window.model.quota_ready)
+    and tracker_in_window.model.cell(quota_row, MULTIPLIER).value == 123456
+    and tracker_in_window.model.cell(quota_row, REMAINING) == "123455")
 window.close()
 
 host.close()

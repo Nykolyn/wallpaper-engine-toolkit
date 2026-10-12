@@ -109,9 +109,11 @@ need it — see [cycles](#cycles).
   - **SHOWN**: how long it stayed up — until the next one came up, in real
     time, like the pace.
   - **STATE**: on screen, the time it came up, or queued.
-  - Three small buttons at the end of each row, quiet until the pointer is on
-    the row, each saying what it does in its tool tip: **Send to Copier**,
-    **Mark [protected]** and **Delete** (see [a row's
+  - **MULTIPLIER**: the permanent editable quota for reserve selections.
+  - **REMAINING**: future selections left in the reserve cycle; separate from
+    the monitor card's countdown until its playlist finishes.
+  - Two small buttons at the end of each row, quiet until the pointer is on
+    the row, each saying what it does in its tool tip: **Mark [protected]** and **Delete** (see [a row's
     actions](#a-rows-actions)).
 
   `~` marks a time rebuilt from file times or Wallpaper Engine's record.
@@ -123,11 +125,6 @@ need it — see [cycles](#cycles).
 
 ### A row's actions
 
-**Send to Copier** puts the wallpaper's folder on the [Copier](copier.md)'s list
-for the usual number of copies (3), and you stay on the Tracker: a toast says
-so, with **Show** to go to the Copier. A folder already on the list is not
-listed twice; the toast says it is there already. The copying itself is
-started on the Copier page, as ever.
 
 **Mark [protected]** is for a folder that sits directly in the Rotator's
 myprojects (the folder set on the [Settings](settings.md) page): it renames
@@ -157,7 +154,7 @@ playlist. The question says so before you agree, the toast says so after, and
 the row keeps saying it: the lock turns amber and the title gets a line under
 it, *playlist entry broken until the next rotation · renamed [protected]*. The
 row keeps following the playlist (which still lists the old name); Send to
-Copier and a click on the row use the new folder.
+A click on the row uses the new folder.
 
 The rename runs off the window's thread — the library is on a hard disk — and
 the button is off meanwhile. If it cannot be done, a red toast says why in
@@ -706,12 +703,13 @@ the number that answers "when can I rotate?".
 | `data/wallpaper_timer.json` | the countdown, saved every 15 seconds |
 | `data/tracker.log` | every launch, whether the tray appeared, any crash |
 | `data/suite.json` under `tracker` | safety-check interval (`heartbeat`, seconds), `config.json` path, which monitor the icon shows |
+| `data/multipliers.json` | permanent reserve multipliers shared with Rotator, changed by the table's Multiplier select |
 
 It **reads** the Rotator's `history.json` to date a cycle and never writes to
-it. The tracker writes nothing back to Wallpaper Engine; only a rotation does
-(see [the Rotator](rotator.md#wallpaper-engines-playlist)). The one thing the
-page changes on disk is a folder's name in myprojects, when you **Mark
-[protected]** and agree.
+it. The tracker writes nothing back to Wallpaper Engine; rotations and copy
+migration update its playlists (see [the Rotator](rotator.md#wallpaper-engines-playlist)).
+The page saves multiplier edits, renames folders in myprojects when you
+**Mark [protected]**, and recycles folders when you use **Delete**.
 
 ## Watch out for
 
@@ -731,3 +729,16 @@ page changes on disk is a folder's name in myprojects, when you **Mark
 - Per-application rules (`apprules`) and the on-battery setting are not
   modelled. Settings changed in Wallpaper Engine reach the tracker when it next
   writes `config.json`, which it does on start and exit.
+
+## Multiplier and Remaining
+
+**Multiplier** is an editable select; its permanent value defaults to 1.
+**Remaining** is the number of future selections in the current reserve cycle,
+not the number of times Wallpaper Engine has displayed the active wallpaper.
+A wallpaper selected with multiplier 1 has Remaining 0 while still in the active playlist.
+Changing its Multiplier to 20 immediately leaves 19 future selections.
+
+Remaining is `max(Multiplier - successful selections this cycle, 0)`.
+Reducing a multiplier does not remove an active wallpaper or erase past selections.
+An edit during a running rotation applies to the next selection snapshot.
+The same values are shown in Rotator's Reserve and Current tables.

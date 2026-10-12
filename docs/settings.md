@@ -20,7 +20,6 @@ undo: choosing a folder again puts the old one back.
 | myprojects | Wallpaper Engine's own projects folder: what is in rotation now. Detected from Steam. | `data/config.json` (`destination`) |
 | Duplicates | Where a folder coming back that the reserve already has is set aside. | `data/config.json` (`duplicates`) |
 | Folders per run | How many folders a rotation moves in. 1 000 unless changed. | `data/config.json` (`count`) |
-| Copier destination | Where the [Copier](copier.md) writes its copies. Detected from Steam. | `data/suite.json` (`copier.dest`) |
 | Creator source | The video clips the [Creator](creator.md) builds wallpapers from. | `data/suite.json` (`creator.source`) |
 | Creator output | Where the Creator writes the wallpapers it builds. Detected from Steam. | `data/suite.json` (`creator.target`) |
 

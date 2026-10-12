@@ -6,6 +6,21 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [4.0.0] - 2026-10-12
+
+### Changed
+
+- Replace physical wallpaper copies with persistent multipliers and remaining quotas. Rotation selects distinct wallpapers by remaining quota, drains smaller final batches, and refills only after every quota is exhausted.
+- Tracker and Rotator include an editable Multiplier select and a read-only Remaining column. Raising a multiplier immediately adds future appearances without changing the active playlist.
+
+### Added
+
+- Content-verified copy migration with a reviewable plan, playlist path repair, interrupted-operation recovery, and rollback. Existing history is preserved; active wallpapers consume one appearance in the new cycle.
+
+### Removed
+
+- Copier, its settings and Send to Copier actions. Cleaner retains its verified copy protections.
+
 ## [3.23.2] - 2026-10-11
 
 ### Fixed
@@ -1695,7 +1710,7 @@ restructured yet; the tabs keep their layout and take on the new look.
   was right for one library and wrong for every other. Nothing is tagged now
   unless you ask for it.
 
-[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.23.2...HEAD
+[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v4.0.0...HEAD
 [3.23.2]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.23.1...v3.23.2
 [3.23.1]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.23.0...v3.23.1
 [3.23.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.22.0...v3.23.0
@@ -1746,3 +1761,5 @@ restructured yet; the tabs keep their layout and take on the new look.
 [1.2.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/releases/tag/v1.0.0
+
+[4.0.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.23.2...v4.0.0

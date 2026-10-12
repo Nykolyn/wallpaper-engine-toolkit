@@ -989,15 +989,13 @@ PACE_FIGURE_GAP = 8           # the figure to the words after it
 TRACKER_FILTER = 184          # the filter over the playlist (the design's 168 cuts its words)
 # the playlist's fixed columns; the wallpaper's takes the rest (SHOWN is wider than the
 # design's 52 px, which cuts "1 h 10 min"; SIZE fits "1023 MB"). The last holds a row's
-# three glyph buttons, Send to Copier, Mark [protected] and Delete: text buttons left
+# two glyph buttons, Mark [protected] and Delete: text buttons left
 # WALLPAPER no room at 1 040.
 TRACKER_COLUMNS = {"number": 32, "type": 48, "size": 60, "shown": 64, "state": 64,
                    "actions": 3 * ICON_BUTTON["sm"][0] + 2 * TABLE_BUTTONS_GAP}
 
 # -- Creator (reading, scanned, building, done)
 
-COPIER_PLACES_GAP = 18        # the empty state's known places, side by side
-COPIER_PLACE_ICON = 13
 
 CREATOR_SIDE = 330
 WALLPAPER_TAGS_WIDTH = 110
@@ -1028,7 +1026,7 @@ ROTATOR_FILTER = 184          # the filter over the tables (as the Tracker's)
 # the reserve's fixed columns (the design's grid, LAST USED wider so its title
 # fits on one line, and "3 Jul 2025" too); the folder's takes the rest
 ROTATOR_COLUMNS = {"author": 80, "type": 44, "size": 56, "used": 70,
-                   # a row's Send to Copier and Delete, as the Tracker's glyph buttons
+                   # a row's Delete, as the Tracker's glyph buttons
                    "actions": 2 * ICON_BUTTON["sm"][0] + TABLE_BUTTONS_GAP}
 # the history's (RUN · STARTED · TOOK · MOVED · RETURNED · DUPES); RESULT takes the rest
 # The history's fixed columns, as wide as their longest value or title: STARTED
@@ -1618,15 +1616,7 @@ def apply(app: QApplication, *, styled: bool = True) -> None:
         app.setStyleSheet(stylesheet())
     app.setWindowIcon(app_icon())
 
-# Copier: shared table at all widths, with editable copy counts (gate G2 A).
-COPIER_COLUMNS = (None, 62, 76, 150, 126, 68, 48)
-COPIER_RING = 52
-COPIER_PATH_WIDTH = 330
-COPIER_RENDER_MS = 100
-COPIER_SCAN_DEBOUNCE_MS = 180
-COPIER_LOG_HEIGHT = 120
 
-COPIER_ROW_HEIGHT = 48
 
 # -- the tray menu (`Tray and Notifications`): a popup of its own, 268 px wide
 # on `surface.overlay`; the tray process draws it without the stylesheet.

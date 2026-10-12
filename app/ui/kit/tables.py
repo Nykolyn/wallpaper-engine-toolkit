@@ -66,7 +66,7 @@ from . import icons
 from .base import label
 from .buttons import button_pixmap, button_size, icon_button_pixmap
 from .chips import chip_pixmap, chip_size
-from .inputs import SpinBox
+from .inputs import Dropdown, SpinBox
 from .thumbs import PREVIEW_KEY, ThumbLoader, shared as shared_loader
 
 ALIGNMENTS = {"left": Qt.AlignLeft, "right": Qt.AlignRight, "center": Qt.AlignHCenter}
@@ -414,6 +414,14 @@ class SpinCell:
 
 
 @dataclass(frozen=True)
+class SelectCell:
+    """A virtual choice: only the cell being edited owns a Dropdown."""
+    value: int
+    values: tuple[int, ...]
+    enabled: bool = True
+
+
+@dataclass(frozen=True)
 class ButtonCell:
     """A button drawn in the cell, `variant` at rest and `hot` on the row under
     the pointer (the gallery's Subscribe turns Accent there). A click on it is
@@ -447,8 +455,8 @@ class CellButton:
 @dataclass(frozen=True)
 class ButtonsCell:
     """Several glyph buttons side by side in one cell, each drawn as an
-    IconButton of `size` ("sm", 22 px, or "md"): a playlist row's Send to
-    Copier and Mark [protected]. A slot that is None stays empty, so the
+    IconButton of `size` ("sm", 22 px, or "md"): a playlist row's Mark [protected]
+    and Delete. A slot that is None stays empty, so the
     buttons of every row line up. The glyphs rest in text.lo and come up on
     the row under the pointer; a click on one is
     `Table.action_clicked(row, column, key)`, not a click on the row."""
@@ -513,7 +521,7 @@ def _text_of(value) -> str:
         return ", ".join(value.tags)
     if isinstance(value, CheckCell):
         return "Selected" if value.checked else "Not selected"
-    if isinstance(value, SpinCell):
+    if isinstance(value, (SpinCell, SelectCell)):
         return str(value.value)
     if isinstance(value, ProgressCell):
         return value.caption or ("working" if value.busy else f"{round((value.fraction or 0) * 100)}%")
@@ -865,12 +873,19 @@ class TableModel(QAbstractTableModel):
     def flags(self, index):
         if not index.isValid() or self.is_group_row(index.row()):
             return Qt.NoItemFlags
-        return Qt.ItemIsEnabled | Qt.ItemIsSelectable
+        flags = Qt.ItemIsEnabled | Qt.ItemIsSelectable
+        value = self.cell(self.item_at(index.row()), index.column())
+        if isinstance(value, SelectCell) and value.enabled:
+            flags |= Qt.ItemIsEditable
+        return flags
 
     def data(self, index, role=Qt.DisplayRole):
         if not index.isValid():
             return None
         row, column = index.row(), index.column()
+        if role == Qt.EditRole and not self.is_group_row(row):
+            value = self.cell(self.item_at(row), column)
+            return value.value if isinstance(value, SelectCell) else None
         if role in (Qt.DisplayRole, Qt.AccessibleTextRole):
             group = self.group_at(row)
             if group is not None:
@@ -1198,13 +1213,28 @@ class RowDelegate(QStyledItemDelegate):
             editor = SpinBox(parent, minimum=value.minimum, maximum=value.maximum, value=value.value)
             editor.setAccessibleName(model.columns[index.column()].title)
             return editor
+        if isinstance(value, SelectCell) and value.enabled:
+            editor = Dropdown(parent)
+            for number in sorted(set(value.values) | {value.value}):
+                editor.add_item(str(number), number)
+            editor.setAccessibleName(model.columns[index.column()].title)
+            editor.activated.connect(lambda _n: self.commitData.emit(editor))
+            editor.activated.connect(lambda _n: self.closeEditor.emit(editor))
+            QTimer.singleShot(0, editor.showPopup)
+            return editor
         return None
 
     def setEditorData(self, editor, index):
+        if isinstance(editor, Dropdown):
+            editor.setCurrentIndex(editor.findData(index.data(Qt.EditRole)))
+            return
         editor.setValue(int(index.data(Qt.EditRole)))
         editor.selectAll()
 
     def setModelData(self, editor, model, index):
+        if isinstance(editor, Dropdown):
+            model.setData(index, editor.currentData(), Qt.EditRole)
+            return
         editor.interpretText()
         model.setData(index, editor.value(), Qt.EditRole)
 
@@ -1250,7 +1280,7 @@ class RowDelegate(QStyledItemDelegate):
                 self._text(painter, QRectF(x, bar.bottom() + theme.SP_4, right - x, caption_h),
                            value.caption, "type.monoXs", value.tone if value.tone == "danger" else "text.lo", Qt.AlignLeft)
             return
-        if isinstance(value, SpinCell):
+        if isinstance(value, (SpinCell, SelectCell)):
             box = QRectF(x, middle - theme.CONTROL_HEIGHT / 2, right - x, theme.CONTROL_HEIGHT)
             painter.setPen(QPen(self.colour("border.control"), 1))
             painter.setBrush(self.colour("surface.well"))
@@ -1258,7 +1288,9 @@ class RowDelegate(QStyledItemDelegate):
             self._text(painter, box.adjusted(theme.SP_8, 0, -theme.SP_16, 0), str(value.value),
                        "type.monoSm", "text.body" if value.enabled else "text.lo", Qt.AlignLeft)
             side = theme.TABLE_SORT_ICON
-            for glyph, y in (("chevU", middle - side), ("chevD", middle)):
+            arrows = (("chevD", middle - side / 2),) if isinstance(value, SelectCell) \
+                else (("chevU", middle - side), ("chevD", middle))
+            for glyph, y in arrows:
                 painter.drawPixmap(QPointF(right - side - theme.SP_2, y),
                                    icons.pixmap(glyph, "text.lo", side, self._dpr))
             return
@@ -2161,6 +2193,13 @@ class Table(QTableView):
         if self._press_button(event):
             return
         super().mousePressEvent(event)
+        index = self.indexAt(event.position().toPoint())
+        model = self.model()
+        if event.button() == Qt.LeftButton and index.isValid() and isinstance(model, TableModel) \
+                and model.item_at(index.row()) is not None:
+            value = model.cell(model.item_at(index.row()), index.column())
+            if isinstance(value, SelectCell) and value.enabled:
+                self.edit(index)
 
     def mouseDoubleClickEvent(self, event) -> None:     # noqa: N802 - Qt's name
         # A double-click's second press on a cell's button presses it again, as

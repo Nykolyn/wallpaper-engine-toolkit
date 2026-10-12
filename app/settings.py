@@ -1,7 +1,7 @@
 """Persistent settings: ``data/suite.json``.
 
 The Rotator keeps its own Config/History (engines/rotator/config.py); this is
-everything else — the Copier's and the Creator's folders, the tracker's, the
+everything else — the Creator's folders, the tracker's, the
 Review's. The Settings page writes both stores, each through its own API.
 
 Two processes use this file: the window and the tray. Each holds it in memory
@@ -37,10 +37,6 @@ def default_myprojects() -> str:
     """Wallpaper Engine's myprojects as Steam has it, once known; "" before."""
     return steam_paths.as_text(steam_paths.known(steam_paths.myprojects_dir))
 
-
-# Copier (was DEFAULT_DEST / DEFAULT_COUNT in wallpaper_copier/ui.py)
-default_copier_dest = default_myprojects
-DEFAULT_COPIER_COUNT = 3
 
 # Creator (builds projects from videos alone, generating the preview)
 DEFAULT_CREATOR_SOURCE = ""

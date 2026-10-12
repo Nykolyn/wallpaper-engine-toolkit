@@ -124,22 +124,20 @@ def finished_balloon(monitor: str, total: int, batch: int | None = None,
                      reserve: dict | None = None) -> tuple[str, str]:
     """"Playlist finished": the numbers are the playlist's own.
 
-    The design adds that the folders swapped in "have never been used". How
-    many the reserve still has is the window's to count (it lists the reserve
-    on the wallpaper disk), so it is said only from a fresh count the window
+    How many wallpapers have quota left is the window's to count (it lists
+    the reserve on the wallpaper disk), so it is said only from a fresh count the window
     left (`reserve`, from `never_used()`); without one the clause says what a
     run does with the batch size it was given and no more.
     """
     body = f"All {count(total)} wallpapers on {monitor} have been shown."
     if reserve is not None and batch and reserve["batch"] == batch:
-        # Counted for this batch size: with another, whether it resets differs.
-        never = reserve["never_used"]
+        available = reserve["never_used"]
         if reserve["will_reset"]:
-            body += (f" Rotate to swap in {count(batch)}: only {count(never)} folders were "
-                     f"never used, so the run draws from the whole reserve again.")
+            body += (f" Rotate to swap in up to {count(batch)}: all wallpaper quotas "
+                     "are exhausted, so a new cycle begins.")
         else:
-            body += (f" Rotate to swap in {count(batch)} of the {count(never)} folders "
-                     f"that have never been used.")
+            body += (f" Rotate to swap in {count(min(batch, available))} of the "
+                     f"{count(available)} wallpapers with quota remaining.")
     elif batch:
         body += f" Rotate to swap in {count(batch)} folders from the reserve."
     return FINISHED_TITLE, body

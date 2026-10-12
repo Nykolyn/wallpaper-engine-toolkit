@@ -93,15 +93,15 @@ def _folder_empty(reading: Reading, folder: str, target: str) -> CardText:
         return CardText(caption=f"{folder} folder not found — check Settings", link=True,
                         target="settings")
     if reading.reason == "unreadable":
-        return CardText(caption="the rotation history could not be read", target=target)
+        return CardText(caption="the rotation data could not be read", target=target)
     return CardText(caption="could not be counted", target=target)
 
 
 def reserve_card(reading: Reading) -> CardText:
-    """RESERVE: folders in the reserve, and how many were never used."""
+    """RESERVE: folders in the reserve, and how many have remaining quota."""
     counts: ReserveCounts | None = reading.value
     if counts is not None:
-        caption = f"{fmt.count(counts.never_used)} never used"
+        caption = f"{fmt.count(counts.never_used)} with quota remaining"
         if reading.error:
             return CardText(counts.folders, f"{caption} · last known", "lo", target="rotator")
         return CardText(counts.folders, caption, target="rotator")
@@ -295,11 +295,13 @@ def loop_sentence(reserve: Reading) -> str:
         if reserve.reason == "missing":
             return "The reserve folder was not found, so what the next run draws is not known."
         return "The reserve could not be counted, so what the next run draws is not known."
-    batch, never = fmt.count(counts.batch), fmt.count(counts.never_used)
+    batch = fmt.count(min(counts.batch, counts.never_used))
+    available = fmt.count(counts.never_used)
     if counts.will_reset:
-        return (f"The history resets on the next run: only {never} folders were never used, "
-                f"fewer than the {batch} it moves, so it draws from the whole reserve again.")
-    return f"The next run draws {batch} at random from the {never} never used."
+        return ("All wallpaper quotas are exhausted. The next run starts a new cycle "
+                f"and draws up to {fmt.count(counts.batch)} wallpapers.")
+    return (f"The next run draws {batch} from {available} wallpapers with quota remaining, "
+            "weighted by their remaining appearances.")
 
 
 # ---- what the rows and the monitors say ---------------------------------------------------

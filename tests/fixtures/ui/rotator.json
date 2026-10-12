@@ -16,6 +16,7 @@
   "kinds": ["scene", "video", "web"],
   "reserve": {"count": 33421, "never_used": 8204},
   "current": {"count": 1000, "protected": 2},
+  "multipliers": {"1": 20, "2": 5, "3": 2, "4": 50},
   "history": {
     "runs": 38, "every_days": 7, "time": "09:02", "batch": 1000, "meta_from": 31,
     "special": {
@@ -59,7 +60,7 @@
                 "special": {"38": {"seconds": 960}}},
     "history": {"frame": "idle", "view": "history", "last_started": "13:22",
                 "special": {"38": {"seconds": 960}}},
-    "will-reset": {"frame": "idle", "never_used": 640, "last_started": "13:22",
+    "will-reset": {"frame": "idle", "never_used": 0, "last_started": "13:22",
                    "special": {"38": {"seconds": 960}}},
     "confirm": {"frame": "idle", "dialog": "confirm", "last_started": "13:22",
                 "special": {"38": {"seconds": 960}}},

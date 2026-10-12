@@ -24,9 +24,9 @@ Where the numbers come from:
   each wallpaper's project.json, Review's Steam cache and the authors
   database (`engines/wallpaper_meta`), read off the GUI thread too, and kept.
 
-Each row ends with three glyph buttons. **Send to Copier** puts the row's
-folder on the Copier's list (`copier_requested`, wired to the Copier in
-`pages.build_pages`). **Mark [protected]** renames a folder that sits directly
+The Multiplier select changes the quota for future selections; Remaining
+counts the unused selections in this quota cycle. Each row ends with two
+glyph buttons. **Mark [protected]** renames a folder that sits directly
 in the Rotator's myprojects to `[protected] <name>`, after asking, on a thread
 of its own (the library is on a hard disk); the Rotator then leaves it there.
 Wallpaper Engine's playlist is not touched: its entry keeps the old name and
@@ -80,7 +80,6 @@ from ..engines.rotator.core import folder_size
 from ..engines.wallpaper_delete import delete_wallpaper
 from ..engines.wallpaper_meta import Described, MetaCache, fallback_title, folder_of
 from ..services.snapshot import LAST_RUN, PLAYLIST
-from ..settings import DEFAULT_COPIER_COUNT
 from ..tracker_feed import tray_running
 from ..ui.kit import (
     AccentButton, ButtonsCell, Callout, Cell, CellButton, Column, ConfirmDialog, EmptyState, FormDialog, GhostButton, Glyph, GlassPanel, Group, IconButton, LinkButton,
@@ -91,8 +90,9 @@ from ..ui.kit.base import set_tone
 from ..ui.kit.cards import qualified_html
 from .base import Page, SideScroll
 from .folder_actions import (
-    DELETE, SEND, SEND_TIP, delete_dialog, delete_tip, deleted_words,
+    DELETE, delete_dialog, delete_tip, deleted_words,
 )
+from .multiplier_ui import FixtureQuota, MultiplierEdits, multiplier_cell
 
 _MINUTE_MS = 60_000
 REVEAL_AGAIN = 1.0             # seconds before the same row opens Explorer again
@@ -438,9 +438,9 @@ def row_matches(row: PlaylistRow, text: str = "") -> bool:
     return not words or words in row.title.casefold()
 
 
-# ---- a row's actions: Send to Copier, Mark [protected], Delete ----------------------------------
+# ---- a row's actions: Mark [protected], Delete --------------------------------------------------
 
-PROTECT, MARKED = "protect", "protected"     # the buttons' keys, with SEND and DELETE
+PROTECT, MARKED = "protect", "protected"     # the buttons' keys, with DELETE
 OFFER = "offer"                         # protect_state: Mark [protected] is offered
 # under the title of a row marked [protected] here; the consequence first, for a narrow table
 STALE_NOTE = "playlist entry broken until the next rotation · renamed [protected]"
@@ -474,7 +474,7 @@ def protected_name(folder: str) -> str:
 
 def action_cell(row: PlaylistRow, state: str, renaming: bool = False,
                 deleting: bool = False) -> ButtonsCell:
-    """The row's last cell: Send to Copier, then Mark [protected] where it is
+    """The row's last cell: Mark [protected] where it is
     offered (off while the rename runs), a lock where the folder is marked
     already (in warn, with what it means, when it was marked here), or an
     empty slot; then Delete (off while it runs; "Unsubscribe and delete" for
@@ -492,7 +492,7 @@ def action_cell(row: PlaylistRow, state: str, renaming: bool = False,
                   if renaming else CellButton(PROTECT, "lock", "Mark [protected]…"))
     delete = (CellButton(DELETE, "trash", "Deleting it…", enabled=False) if deleting
               else CellButton(DELETE, "trash", delete_tip(row.folder)))
-    return ButtonsCell((CellButton(SEND, "copier", SEND_TIP), second, delete))
+    return ButtonsCell((second, delete))
 
 
 class ProtectError(Exception):
@@ -556,15 +556,20 @@ COLUMNS = (
            sortable=False),
     Column("Tags", theme.WALLPAPER_TAGS_WIDTH),
     Column("Age", theme.WALLPAPER_AGE_WIDTH),
+    Column("Multiplier", 104, mono=True),
+    Column("Remaining", 86, "right", mono=True, tone="text.mid"),
     Column("", theme.TRACKER_COLUMNS["actions"], "right", sortable=False),
 )
 TYPE, SIZE, SHOWN_FOR = 2, 3, 4
+MULTIPLIER, REMAINING = 8, 9
 ACTIONS = len(COLUMNS) - 1
 GROUPS = (Group(SHOWN, "Already shown this cycle"), Group(QUEUE, "Queue"))
 
 
 class PlaylistModel(TableModel):
     """The playlist's rows under their two groups."""
+
+    multiplier_edited = Signal(str, int)
 
     def __init__(self, parent=None):
         super().__init__(COLUMNS, (), parent, groups=GROUPS, group_of=lambda r: r.group)
@@ -574,6 +579,9 @@ class PlaylistModel(TableModel):
         self.destination = ""               # the Rotator's myprojects
         self.renaming: set[str] = set()     # folder_key()s being marked [protected]
         self.deleting: set[str] = set()     # folder_key()s on their way to the Recycle Bin
+        self.quota = None
+        self.quota_ready = False
+        self.multiplier_pending: set[str] = set()
 
     def set_playlist(self, rows: list[PlaylistRow], in_order: bool, now: datetime) -> None:
         self.now, self.in_order = now, in_order
@@ -602,6 +610,12 @@ class PlaylistModel(TableModel):
             return TagsCell(row.tags) if row.tags else fmt.DASH
         if column == 7:
             return row.age or fmt.DASH
+        if column == MULTIPLIER:
+            name = self.quota_name(row)
+            return multiplier_cell(self.quota, name,
+                                   enabled=self.quota_ready and name not in self.multiplier_pending)
+        if column == REMAINING:
+            return str(self.quota.remaining(self.quota_name(row))) if self.quota is not None else fmt.DASH
         if column == SHOWN_FOR:
             if row.shown_for is None:
                 return fmt.DASH
@@ -622,7 +636,24 @@ class PlaylistModel(TableModel):
             return row.size
         if column == SHOWN_FOR:
             return row.shown_for
+        if column in (MULTIPLIER, REMAINING):
+            if self.quota is None:
+                return 1 if column == MULTIPLIER else 0
+            name = self.quota_name(row)
+            return self.quota.multiplier(name) if column == MULTIPLIER else self.quota.remaining(name)
         return super().sort_key(row, column)
+
+    @staticmethod
+    def quota_name(row: PlaylistRow) -> str:
+        return os.path.basename(os.path.normpath(row.folder))
+
+    def setData(self, index, value, role=Qt.EditRole):
+        if role != Qt.EditRole or index.column() != MULTIPLIER \
+                or not self.flags(index) & Qt.ItemIsEditable or type(value) is not int or value < 1:
+            return False
+        row = self.item_at(index.row())
+        self.multiplier_edited.emit(self.quota_name(row), value)
+        return True
 
     def protect_state(self, row: PlaylistRow) -> str:
         return protect_state(row.folder, self.destination)
@@ -1002,14 +1033,12 @@ class TrackerPage(Page):
     FIXTURES = ("tracking", "paused", "disconnected", "finished", "restarted", "we-off",
                 "single-monitor", "no-config", "no-playlist", "marked")
 
-    # Send to Copier: these folders, for the Copier's list. `build_pages` hands
-    # them to the Copier and its answer back to `copier_took`.
-    copier_requested = Signal(list)
+    multiplier_changed = Signal(str, int)
 
     def __init__(self, feed=None, services=None, parent: QWidget | None = None, *,
                  settings=None, config=None, now=None, make_timer: Callable = page_timer,
                  meta: MetaCache | None = None, load: Callable = load_cycle,
-                 measure: Callable[[str], int] = measure_folder):
+                 measure: Callable[[str], int] = measure_folder, multipliers=None):
         super().__init__(parent)
         self._feed = feed
         self._services = services
@@ -1033,8 +1062,6 @@ class TrackerPage(Page):
         self._revealed_last: tuple[str, float] = ("", 0.0)
         self._renamed: dict[str, str] = {}      # folder_key(old) → new folder, this session
         self._deleted: set[str] = set()         # folder_key()s sent to the Recycle Bin here
-        self._copier_answer: int | None = None
-        self._sending = ""                      # the title of the row sent to the Copier
         self.messages: list[tuple[str, str]] = []   # (tone, words) of each toast, for tests
 
         self.reader = ListReader(meta or MetaCache(), load, self, measure=measure)
@@ -1046,8 +1073,12 @@ class TrackerPage(Page):
         self._revealed = _Revealed(self)
         self._revealed.failed.connect(self._reveal_failed)
         self._offload = _Offload(self)
+        self.multiplier_edits = MultiplierEdits(multipliers, self._offload, self._say, self)
+        self.multiplier_edits.changed.connect(self.multiplier_changed.emit)
 
         self._build()
+        self.model.multiplier_edited.connect(self.multiplier_edits.set)
+        self.multiplier_edits.updated.connect(self._quota_updated)
 
         self._minute = QTimer(self)
         self._minute.setSingleShot(True)
@@ -1131,7 +1162,11 @@ class TrackerPage(Page):
         column.addWidget(bar)
         self.model = PlaylistModel(self)
         self.table = Table()
+        self.table.setEditTriggers(QAbstractItemView.EditKeyPressed)
         self.table.setModel(self.model)
+        header = self.table.horizontalHeader()
+        header.moveSection(header.visualIndex(MULTIPLIER), 2)
+        header.moveSection(header.visualIndex(REMAINING), 3)
         self.table.setAccessibleName("The playlist")
         self.table.setSelectionMode(QAbstractItemView.SingleSelection)
         self.table.clicked.connect(self._row_clicked)
@@ -1404,6 +1439,22 @@ class TrackerPage(Page):
         for row in rows:
             row.describe(self._described.get(row.item))
         self._show_rows(monitor, rows, in_order, self._now())
+        self.refresh_multipliers()
+
+    def refresh_multipliers(self, *_args) -> None:
+        if self._fixture is None:
+            self.multiplier_edits.refresh()
+
+    def _quota_updated(self, usage) -> None:
+        if self._fixture is not None:
+            return
+        self.model.quota = usage
+        self.model.quota_ready = self.multiplier_edits.ready and not self.multiplier_edits.locked
+        self.model.multiplier_pending = self.multiplier_edits.pending
+        if self.model.sort_column() in (MULTIPLIER, REMAINING):
+            self.table.sort_by(self.model.sort_column(), self.model.sort_order())
+        else:
+            self.table.viewport().update()
 
     def _show_rows(self, monitor: str, rows: list[PlaylistRow], in_order: bool,
                    now: datetime) -> None:
@@ -1500,7 +1551,7 @@ class TrackerPage(Page):
         """A click, a double-click or Enter opens the wallpaper's folder —
         once: a double-click is also a click."""
         row = self.model.item_at(index.row())
-        if row is None or self._fixture is not None:
+        if row is None or self._fixture is not None or index.column() in (MULTIPLIER, REMAINING):
             return
         # a folder marked [protected] here is under its new name; the entry, the old
         item = row.folder if row.stale else row.item
@@ -1540,39 +1591,10 @@ class TrackerPage(Page):
         item = self.model.item_at(row)
         if item is None:
             return
-        if key == SEND:
-            self.send_to_copier(item)
-        elif key == PROTECT:
+        if key == PROTECT:
             self.protect(item)
         elif key == DELETE:
             self.delete(item)
-
-    def send_to_copier(self, row: PlaylistRow) -> bool:
-        """Put the row's folder on the Copier's list, for the default copies,
-        and stay here: a toast says so, with the way to the Copier."""
-        if self._fixture is not None or not row.folder:
-            return False
-        self._copier_answer = None
-        self._sending = row.title
-        self.copier_requested.emit([row.folder])
-        self._sending = ""
-        if self._copier_answer is None:
-            self._say("warn", "The Copier is not there to take it.")
-            return False
-        return True
-
-    def copier_took(self, folders: list, added: int) -> None:
-        """The Copier's answer to `copier_requested`: how many it added."""
-        self._copier_answer = added
-        names = (f"“{self._sending}”" if self._sending and len(folders) == 1
-                 else ", ".join(os.path.basename(os.path.normpath(f)) for f in folders))
-        if added:
-            self._say("ok", f"{names} is on the Copier's list, for "
-                            f"{fmt.counted(DEFAULT_COPIER_COUNT, 'copy', 'copies')}.",
-                      action="Show", on_action=lambda: self.navigate.emit("copier"))
-        else:
-            self._say("info", f"{names} is on the Copier's list already.",
-                      action="Show", on_action=lambda: self.navigate.emit("copier"))
 
     def protect(self, row: PlaylistRow) -> bool:
         """Mark [protected]: ask, then rename the row's folder to `[protected]
@@ -1983,6 +2005,11 @@ class TrackerPage(Page):
         for row in rows:
             # made up, as the rest: between 40 MB and 940 MB
             row.size = ((_fixture_number(row.item) * 37) % 900 + 40) * 1_000_000
+        self.model.quota = FixtureQuota(
+            {self.model.quota_name(row): data["multipliers"].get(str(row.number),
+                (1, 2, 5, 20)[row.number % 4]) for row in rows},
+            {self.model.quota_name(row): 1 for row in rows})
+        self.model.quota_ready = False
         self._show_rows(monitor, rows, in_order, now)
 
 

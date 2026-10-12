@@ -43,7 +43,7 @@ def on_steam_found(parent: QObject, handler: Callable[[], None]) -> QObject:
 def build_pages(window) -> list[Page]:
     from ..engines.rotator.config import Config
     from ..services.snapshot import RESERVE, ROTATION
-    from .copier import CopierPage
+    from ..engines.multipliers import MultiplierStore
     from .cleaner import CleanerPage
     from .creator import CreatorPage
     from .overview import OverviewPage
@@ -58,11 +58,11 @@ def build_pages(window) -> list[Page]:
     # (the Settings page's Rotator fields are read-only while it runs). The
     # Tracker reads where myprojects is from it, for Mark [protected].
     config = Config.load()
-    copier = CopierPage(settings, services, config)
+    multipliers = MultiplierStore()
     cleaner = CleanerPage(settings, services, config)
-    rotator_page = RotatorPage(config, services)
+    rotator_page = RotatorPage(config, services, multipliers=multipliers)
     creator_page = CreatorPage(settings, services, config, on_rebuild=rotator_page.rebuild_playlist)
-    tracker_page = TrackerPage(feed, services, settings=settings, config=config)
+    tracker_page = TrackerPage(feed, services, settings=settings, config=config, multipliers=multipliers)
     review_page = ReviewPage(settings, services)
     settings_page = SettingsPage(settings, config, feed=feed, services=services,
                                  on_review_settings=review_page.edit_settings,
@@ -71,15 +71,8 @@ def build_pages(window) -> list[Page]:
     def changed(what: str) -> None:
         if what == "rotator":
             rotator_page.config_changed()
-        if what == "copier" and copier._on_screen:
-            copier.on_shown()
         if what == "creator" and creator_page._on_screen:
             creator_page.on_shown()
-
-    def to_copier(page) -> Callable[[list], None]:
-        def send(folders: list) -> None:
-            page.copier_took(folders, copier.add_folders(folders))
-        return send
 
     def steam_found() -> None:
         # Steam's folders were looked up in the background (steam_paths), and
@@ -92,18 +85,24 @@ def build_pages(window) -> list[Page]:
         if moved:
             rotator_page.config_changed()
         settings_page.show_found_folders()
-        for tool, key in (("copier", "dest"), ("creator", "target")):
-            if not settings.get(tool, key, None):
-                changed(tool)
+        if not settings.get("creator", "target", None):
+            changed("creator")
         snapshot = getattr(services, "snapshot", None)
         if snapshot is not None:
             snapshot.refresh([RESERVE, ROTATION])
 
     settings_page.changed.connect(changed)
     rotator_page.config_edited.connect(settings_page.show_rotator)
-    # The Tracker and the Rotator queue folders without starting any disk writes.
-    tracker_page.copier_requested.connect(to_copier(tracker_page))
-    rotator_page.copier_requested.connect(to_copier(rotator_page))
+    tracker_page.multiplier_changed.connect(rotator_page.refresh_multipliers)
+    rotator_page.multiplier_changed.connect(tracker_page.refresh_multipliers)
+    services.jobs.finished.connect(tracker_page.refresh_multipliers)
+    from .multiplier_migration import MigrationController
+    migration = MigrationController(rotator_page, settings, services, config, multipliers,
+                                    on_done=lambda: (rotator_page.refresh(), tracker_page.refresh(),
+                                                     tracker_page.refresh_multipliers()),
+                                    editors=(rotator_page.multiplier_edits, tracker_page.multiplier_edits))
+    rotator_page.migration_requested.connect(migration.start)
+    rotator_page._migration_controller = migration
     on_steam_found(settings_page, steam_found)
     return [OverviewPage(services, feed, settings=settings), rotator_page, tracker_page,
-            review_page, cleaner, creator_page, copier, settings_page]
+            review_page, cleaner, creator_page, settings_page]

@@ -94,8 +94,8 @@ class Reading:
 @dataclass(frozen=True)
 class ReserveCounts:
     folders: int            # in the reserve now
-    never_used: int         # what the next run may draw from, after the return
-    will_reset: bool        # fewer than `batch` of them: the history starts over
+    never_used: int         # wallpapers with remaining quota after the return
+    will_reset: bool        # all eligible quotas exhausted: a new cycle starts
     batch: int              # folders a run moves in
     path: str
 
@@ -422,7 +422,12 @@ def _rotator_values(keys: set[str]) -> dict[str, Any]:
         return found
 
     history = rconfig.History(runs)
-    counts = Rotator(config, history).preview()
+    try:
+        counts = Rotator(config, history).preview()
+    except (OSError, ValueError) as err:
+        problem = Unavailable(f"wallpaper quotas could not be read: {err}", "unreadable")
+        found.update({key: problem for key in keys & {RESERVE, ROTATION}})
+        return found
     if RESERVE in keys:
         if reserve_problem:
             found[RESERVE] = reserve_problem

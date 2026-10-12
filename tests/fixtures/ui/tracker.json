@@ -5,6 +5,7 @@
   "workshop_root": "X:/Steam/steamapps/workshop/content/431960",
   "workshop_every": 5,
   "protected": [3],
+  "multipliers": {"1": 20, "2": 5, "3": 2, "4": 50},
   "title_words": ["Harbour", "Lights", "Paper", "Cranes", "Tide", "Pine", "Mist", "Copper",
                   "Field", "Glass", "River", "Moth", "Orbit", "Signal", "Quiet", "Ember", "Salt",
                   "Cedar", "Velvet", "Dune", "Hollow", "Prism", "Linen", "Marble", "Fog"],

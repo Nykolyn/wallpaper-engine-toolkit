@@ -66,7 +66,7 @@ check("asking starts the finding, on a thread of its own",
 heard: list[str] = []
 steam_paths.when_found(lambda: heard.append(threading.current_thread().name))
 check("the settings' defaults are empty meanwhile, as with no Steam",
-      app_settings.default_copier_dest() == "" and app_settings.default_creator_target() == "")
+      app_settings.default_creator_target() == "")
 first_run = rconfig.Config.load()
 check("a first run's Rotator settings: myprojects empty, and not saved yet",
       first_run.destination == "" and not rconfig.CONFIG_PATH.exists())
@@ -78,7 +78,7 @@ check("Steam was asked on the finding thread alone", set(asked_on) == {"steam fo
 check("whoever asked to hear is told, from that thread", heard == ["steam folders"])
 check("and the answers are there to read without waiting",
       steam_paths.known(steam_paths.myprojects_dir) == MYPROJECTS
-      and app_settings.default_copier_dest() == str(MYPROJECTS))
+      and app_settings.default_creator_target() == str(MYPROJECTS))
 now: list[bool] = []
 steam_paths.when_found(lambda: now.append(True))
 check("asking to hear once it is known is answered at once", now == [True])

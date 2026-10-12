@@ -21,7 +21,7 @@ beside the title moves on with the minute.
 
 | Card | What it is | When it has none |
 |---|---|---|
-| **Reserve** | Folders in the reserve, and how many were never used — what the next run draws from. | *set the reserve folder in Settings* (a link), or *reserve folder not found* |
+| **Reserve** | Folders in the reserve, and how many wallpapers have quota remaining after the current batch returns. | *set the reserve folder in Settings* (a link), or *reserve folder not found* |
 | **In rotation** | Folders in `myprojects` now, `[protected]` ones not counted; and how many today's runs swapped in, once one has. | *set the myprojects folder in Settings* |
 | **Playlist** | The leading monitor's count, `4 / 201`, and how many are still to go. It turns green when every wallpaper has been shown. | *no playlist counted yet* |
 | **New since last review** | What the last Review scan found, in amber while it waits to be reviewed, and from how many authors. | *no scan yet*; once a review is finished, *reviewed … · no scan since*, because what is new is not known again until the next scan |
@@ -52,16 +52,18 @@ The tile of whatever is running is outlined in blue with a pulsing dot. A tile
 opens its page, as does **Open Rotator →**.
 
 Under the tiles, one sentence says what the next run will do: *The next run
-draws 1 000 at random from the 8 204 never used.* When fewer folders were
-never used than a run moves, it says instead that the history resets on the
-next run. A rotation is always started by hand, on the [Rotator](rotator.md)
+draws 1 000 from 8 204 wallpapers with quota remaining, weighted by their
+remaining appearances.* A tail of 640 eligible wallpapers produces a batch
+of 640; the next cycle starts only after every eligible quota is exhausted.
+A rotation is always started by hand, on the [Rotator](rotator.md)
 page; nothing here starts one.
 
 ## Recent activity
 
 The eight newest entries of the activity journal (`data/activity.jsonl`): a
 run starting and ending, duplicates set aside, the playlist advancing or
-finishing, a Review count, a Creator build, a Copier run. Each has the time
+finishing, a Review count, a Creator build, or a Cleaner action. Old Copier
+entries remain readable. Each has the time
 (`13:47` today, `Fri 09:10` within the week), the tool's icon — amber or red
 when it ended with problems or failed — what happened, and a chip where the
 entry has one. Clicking a row opens its tool's page. **Open log folder** opens
