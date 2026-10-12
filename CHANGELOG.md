@@ -6,6 +6,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [4.0.3] - 2026-10-13
+
+### Fixed
+
+- Hide the Cleaner sidebar badge when no unavailable wallpapers remain.
+
 ## [4.0.2] - 2026-10-12
 
 ### Fixed

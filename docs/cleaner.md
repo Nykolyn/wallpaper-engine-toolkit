@@ -55,5 +55,6 @@ verified reserve copy is kept and the error reports its path.
 Only one Cleaner action runs at a time. Rotation and Cleaner actions wait
 for each other, so the Rotator cannot take a wallpaper while it is moving.
 Successful actions remove the row and decrease the sidebar count.
+The sidebar badge is hidden when no unavailable wallpapers remain.
 
 Steam result meanings: [Steamworks EResult documentation](https://partner.steamgames.com/doc/api/steam_api#EResult).
