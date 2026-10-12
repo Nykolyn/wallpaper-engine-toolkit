@@ -142,6 +142,6 @@ def install(path: Path, release: Release) -> int:
     if not install_info.is_installed_copy():
         raise ValueError("Install the release's setup first to enable in-app installation.")
     verify(path, release)
-    process = external.popen([str(path), "/SILENT", "/SP-", "/NORESTART", "/UpdateFromApp=1",
+    process = external.popen([str(path), "/VERYSILENT", "/SP-", "/NORESTART", "/UpdateFromApp=1",
                               f"/LOG={path.parent / 'install.log'}"], cwd=str(path.parent))
     return process.wait()

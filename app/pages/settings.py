@@ -421,7 +421,8 @@ class SettingsPage(Page):
         if self._installer is not None:
             dialog = ConfirmDialog(f"Install Toolkit {self._release.version}?",
                                    "After active tasks finish, the window and tray will close. "
-                                   "Setup will keep your data, install the update and open Toolkit again.",
+                                   "Toolkit will keep and back up your data, update in the background "
+                                   "and open again.",
                                    self.window(), confirm_text="Install and restart", safe_default=True)
             if dialog.ask():
                 self._install_requested = True
@@ -499,7 +500,7 @@ class SettingsPage(Page):
         self._install_requested = False
         self._update_busy = True
         self.update_cancel.hide()
-        self._update_message("Verifying the installer and starting setup…")
+        self._update_message("Verifying the update and starting background installation…")
         self._ask("update-install", lambda: updates.install(self._installer, self._release))
 
     def _installed_update(self, found) -> None:
