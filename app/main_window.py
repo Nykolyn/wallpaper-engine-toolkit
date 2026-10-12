@@ -547,11 +547,12 @@ class MainWindow(QMainWindow):
     # -- the frame's own behaviour
 
     def opening_size(self) -> QSize:
-        """1280 × 860, or more where a page needs it to be shown whole — an old
-        tab laid out for a window that grew to fit it — but never more than the
-        screen has room for. Smaller than that, a page scrolls."""
+        """Use the last width, or fit the pages on first launch, within the screen."""
         base_w, base_h = theme.WINDOW_SIZE
         width, height = base_w, base_h
+        saved_width = self.settings.get("window", "width", None)
+        if type(saved_width) is not int or saved_width < theme.WINDOW_MIN[0]:
+            saved_width = None
         frame_w = theme.SIDEBAR_WIDTH
         frame_h = theme.TITLE_BAR_HEIGHT + theme.HEADER_HEIGHT + theme.STATUS_HEIGHT
         for page in self.pages.values():
@@ -559,8 +560,10 @@ class MainWindow(QMainWindow):
             if need.isValid():
                 width = max(width, frame_w + need.width())
         room = self.screen().availableGeometry() if self.screen() is not None else None
+        if saved_width is not None:
+            width = saved_width
         if room is not None:
-            width = max(base_w, min(width, room.width()))
+            width = max(theme.WINDOW_MIN[0], min(width, room.width()))
         for page in self.pages.values():
             need = page.content_minimum(width - frame_w)
             if need.isValid():
@@ -568,6 +571,14 @@ class MainWindow(QMainWindow):
         if room is not None:
             height = max(base_h, min(height, room.height()))
         return QSize(width, height)
+
+    def closeEvent(self, event) -> None:        # noqa: N802 - Qt's name
+        super().closeEvent(event)
+        if event.isAccepted():
+            width = self.normalGeometry().width() if self.isMaximized() or self.isMinimized() else self.width()
+            self.settings.reload_if_changed()
+            self.settings.set("window", "width", width)
+            self.settings.save()
 
     def _place_rail(self) -> None:
         self.sidebar.set_rail(self.width() < theme.RAIL_BELOW)

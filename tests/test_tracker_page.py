@@ -1249,6 +1249,12 @@ live_editor = tracker_in_window.table.findChild(Dropdown)
 check("a single click opens the select in its visible cell", live_editor is not None
       and wait_for(live_editor.popup_open))
 if live_editor is not None:
+    cell_box = tracker_in_window.table.visualRect(edit_index)
+    check("the open select is one centred control, not a full-height row editor",
+          live_editor.height() == theme.CONTROL_HEIGHT
+          and abs(live_editor.geometry().center().y() - cell_box.center().y()) <= 1
+          and live_editor.geometry().width() <= cell_box.width()
+          and live_editor._popup.height() > live_editor.height())
     live_editor.choose(live_editor.findData(10))
 check("choosing a Dropdown item persists it and recomputes Remaining", wait_for(
     lambda: tracker_in_window.model.cell(quota_row, REMAINING) == "9"

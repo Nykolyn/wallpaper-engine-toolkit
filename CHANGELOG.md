@@ -6,6 +6,21 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [4.1.0] - 2026-10-12
+
+### Added
+
+- Cleaner supports row checkboxes, selecting all visible rows and batch deletion
+  or verified moves to reserve with one confirmation. Failed rows remain for retry.
+- The window opens 500 px wider on first launch and remembers its last normal
+  width on close, limited to the available screen space.
+
+### Fixed
+
+- Table select editors stay centred at control height instead of stretching
+  across tall wallpaper rows.
+- The leading Tracker monitor preview is now 200 × 200, half its previous size.
+
 ## [4.0.2] - 2026-10-12
 
 ### Fixed
@@ -1725,7 +1740,8 @@ restructured yet; the tabs keep their layout and take on the new look.
   was right for one library and wrong for every other. Nothing is tagged now
   unless you ask for it.
 
-[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v4.0.2...HEAD
+[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v4.1.0...HEAD
+[4.1.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v4.0.2...v4.1.0
 [4.0.2]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v4.0.1...v4.0.2
 [4.0.1]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v4.0.0...v4.0.1
 [3.23.2]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.23.1...v3.23.2

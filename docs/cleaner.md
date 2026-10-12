@@ -40,6 +40,14 @@ Workshop record to remain usable.
 Click a row, or focus it and press Enter, to open its folder in Explorer.
 Column headings sort the table; SIZE and DATE sort by their actual values.
 
+Tick the first column to select rows. **Select all** (or Ctrl+A in the table)
+selects every visible row; repeat to clear the selection. Space toggles the
+focused row. **Delete selected** and **Move selected to reserve** ask once for
+the entire selection and process its folders sequentially in the background.
+Changing the folder filter drops selections that are no longer visible.
+Successful rows disappear; failed rows remain selected for retry, with details
+in the Cleaner log. Individual row actions still work.
+
 **Trash** asks before unsubscribing through the running Steam client and
 sending the folder to the Windows Recycle Bin, as Tracker and Rotator do.
 If Steam cannot unsubscribe, the source stays on disk.
