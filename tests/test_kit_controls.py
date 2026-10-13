@@ -19,7 +19,7 @@ from pathlib import Path
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from PySide6.QtCore import QEventLoop, QPoint, Qt, QTimer              # noqa: E402
+from PySide6.QtCore import QAbstractAnimation, QEventLoop, QPoint, Qt, QTimer  # noqa: E402
 from PySide6.QtGui import QColor, QImage, QPainter                    # noqa: E402
 from PySide6.QtTest import QTest                                       # noqa: E402
 from PySide6.QtWidgets import (                                        # noqa: E402
@@ -328,11 +328,93 @@ QTest.keyClick(rows, Qt.Key_Down)
 check("and the separator", popup.hot_row() == 4)
 activated: list[int] = []
 d.activated.connect(activated.append)
+closed_on_activation: list[bool] = []
+d.activated.connect(lambda _row: closed_on_activation.append(not d.popup_open()))
 QTest.keyClick(rows, Qt.Key_Return)
 app.processEvents()
 check("Enter chooses the highlighted row, says so and closes the list",
       d.currentIndex() == 4 and activated == [4] and not popup.isVisible())
+check("activation observers see the list already closed", closed_on_activation == [True])
 d.deleteLater()
+
+focus_host = Host()
+choice = dropdown()
+next_field = TextInput(placeholder="Next field")
+focus_host.row.addWidget(choice)
+focus_host.row.addWidget(next_field)
+focus_host.show()
+focus_host.activateWindow()
+app.processEvents()
+next_field.setFocus()
+choice.setFocus(Qt.TabFocusReason)
+app.processEvents()
+original_box, original_hint = choice.geometry(), choice.sizeHint()
+QTest.keyClick(choice, Qt.Key_Return)
+app.processEvents()
+check("Enter opens the focused select", choice.popup_open())
+choice.showPopup()
+QTest.keyClick(choice._popup._rows, Qt.Key_Tab)
+app.processEvents()
+check("Tab closes the list and moves to the next field",
+      not choice.popup_open() and next_field.hasFocus())
+choice.setFocus(Qt.BacktabFocusReason)
+choice.showPopup()
+app.processEvents()
+QTest.keyClick(choice._popup._rows, Qt.Key_E)
+check("typing in the list finds a matching option", choice._popup.hot_row() == 4)
+QTest.keyClick(choice._popup._rows, Qt.Key_Escape)
+app.processEvents()
+check("Escape cancels and restores keyboard focus",
+      choice.currentIndex() == 1 and choice.hasFocus() and choice.focus_visible())
+choice.showPopup()
+app.processEvents()
+QTest.keyClick(choice._popup._rows, Qt.Key_Backtab)
+app.processEvents()
+check("Backtab closes the list and moves to the previous field",
+      not choice.popup_open() and next_field.hasFocus())
+check("focus, opening and cancellation keep the select's geometry",
+      choice.geometry() == original_box and choice.sizeHint() == original_hint)
+choice.setFocus(Qt.MouseFocusReason)
+choice.showPopup()
+app.processEvents()
+wait(35)
+check("opening eases the arrow without moving the field",
+      0 < choice._open_amount < 1 and choice.geometry() == original_box)
+turning = choice._open_amount
+choice.hidePopup()
+check("closing during opening reverses from the current arrow position",
+      choice._open_amount == turning)
+wait(animations.BASE + 30)
+check("the closed select settles back to its resting arrow", choice._open_amount == 0)
+choice.showPopup()
+app.processEvents()
+clicks: list[int] = []
+choice.activated.connect(clicks.append)
+option_box = choice._popup._rows.visualRect(choice.model().index(2, 0))
+QTest.mouseClick(choice._popup._rows.viewport(), Qt.LeftButton, pos=option_box.center())
+app.processEvents()
+check("a mouse selection commits once, closes and keeps the field's size",
+      choice.currentIndex() == 2 and clicks == [2] and not choice.popup_open()
+      and choice.geometry() == original_box)
+wait(animations.BASE + 30)
+next_field.setFocus()
+choice.setFocus(Qt.TabFocusReason)
+check("the focus border eases in", choice._edge.running)
+wait(animations.BASE + 30)
+check("the focus border reaches the focus colour", choice._edge.value() == theme.color("border.focus"))
+animations.ENABLED = False
+choice.showPopup()
+app.processEvents()
+check("with reduced motion the open arrow updates immediately",
+      choice._open_amount == 1 and choice._opening.state() == QAbstractAnimation.Stopped)
+choice.hidePopup()
+app.processEvents()
+check("with reduced motion the closed arrow updates immediately", choice._open_amount == 0)
+animations.ENABLED = True
+choice.setEnabled(False)
+choice.showPopup()
+check("a disabled select cannot open", not choice.popup_open())
+focus_host.close()
 
 
 # ---- DangerButton: never the default ----------------------------------------------------------------

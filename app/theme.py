@@ -1427,7 +1427,7 @@ QScrollArea { border: none; background: transparent; }
    classes know and Qt does not. [forceState] draws a state without a pointer,
    for the kit preview. A field in error keeps its red edge under the pointer
    and in focus, and makes room below itself for the message. */
-TextInput[forceState="hover"], SpinBox[forceState="hover"], Dropdown[forceState="hover"] {
+TextInput[forceState="hover"], SpinBox[forceState="hover"] {
     border-color: $(border.strong);
 }
 TextInput[forceState="focus"], SpinBox[forceState="focus"] { border-color: $(border.focus); }
@@ -1435,11 +1435,6 @@ TextInput[error="true"], TextInput[error="true"]:hover, TextInput[error="true"]:
     border-color: $(danger);
 }
 TextInput[error="true"] { margin-bottom: $(px:field.error)px; }
-/* A Dropdown shows focus when the keyboard brought it there, as a button does,
-   and while its list is open; the class sets focusVisible for both. */
-Dropdown:focus { border-color: $(border.control); }
-Dropdown:focus:hover { border-color: $(border.strong); }
-Dropdown[focusVisible="true"], Dropdown[forceState="focus"] { border-color: $(border.focus); }
 /* its list paints its own rows, on its own popup ground */
 DropdownPopup QListView { background: transparent; border: none; padding: 0; }
 /* A PathField draws its own box; the line you type a path into is bare. */
