@@ -44,14 +44,14 @@ animations.ENABLED = True
 from app.engines import creator                                                # noqa: E402
 from app.ui import kit                                                         # noqa: E402
 from app.ui.kit import (                                                       # noqa: E402
-    ActivityLine, Cell, CheckCell, ChipCell, Column, EmptyState, Group, MonitorCard, MonitorView,
+    ActivityLine, Cell, CheckCell, ChipCell, Column, Dropdown, EmptyState, Group, MonitorCard, MonitorView,
     PathField, ProgressBar, ProgressRing, StatCard, StepList, Table, TableFooter, TableModel,
     TableSummary, TagsCell, TagSelect, Thumb, ThumbLoader, ToolTile,
 )
 from app.ui.kit import base, thumbs                                            # noqa: E402
 from app.ui.kit import format as fmt                                           # noqa: E402
 from app.ui.kit.tags import TagPopup                                           # noqa: E402
-from app.ui.kit.tables import check_pixmap, tags_pixmap                         # noqa: E402
+from app.ui.kit.tables import SelectCell, check_pixmap, tags_pixmap             # noqa: E402
 
 NB = chr(0xA0)
 results: list[bool] = []
@@ -553,6 +553,54 @@ check("with motion off it says working, since the spinner cannot",
 animations.ENABLED = True
 line.set_thumb(pixmap=None)
 check("or with a thumb instead", line.lead() == "thumb")
+
+
+# ---- table editors replace their virtual controls ----------------------------------------------------
+
+class EditableRows(TableModel):
+    value = None
+
+    def cell(self, item, column):
+        return self.value
+
+
+for value in (SelectCell(1, (1, 2, 3)), SelectCell(1000, (1, 200, 500, 1000))):
+    editable = EditableRows([Column("Value", 150)], [1])
+    editable.value = value
+    editing_table = Table()
+    editing_table.setModel(editable)
+    editing_table.set_row_height(80)
+    editing_table.resize(300, 180)
+    editing_table.show()
+    app.processEvents()
+    edit_index = editable.index(0, 0)
+    editing_table.edit(edit_index)
+    app.processEvents()
+    editor = editing_table.indexWidget(edit_index)
+    check(f"select {value.value} opens as the table's editor", isinstance(editor, Dropdown))
+    box = editor.geometry()
+    for popup_open in (True, False):
+        if not popup_open:
+            editor.hidePopup()
+            app.processEvents()
+        overlay = editing_table.viewport().grab().toImage().copy(box)
+        editable.value = None
+        editing_table.viewport().update()
+        app.processEvents()
+        clear = editing_table.viewport().grab().toImage().copy(box)
+        check(f"select {value.value}, popup {popup_open}, has no virtual digits or arrows underneath",
+              overlay == clear)
+        editable.value = value
+        editing_table.viewport().update()
+        app.processEvents()
+    editing_table._delegate.closeEditor.emit(editor)
+    app.processEvents()
+    restored = editing_table.viewport().grab().toImage().copy(box)
+    check(f"closing select {value.value} restores the virtual control",
+          editing_table.indexWidget(edit_index) is None and restored != clear)
+    editing_table.close()
+    editing_table.deleteLater()
+    app.processEvents()
 
 
 # ---- the table model ---------------------------------------------------------------------------------

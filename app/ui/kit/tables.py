@@ -1094,7 +1094,7 @@ class RowDelegate(QStyledItemDelegate):
     def paint_row_at(self, painter: QPainter, model: "TableModel", x: int, y: int, width: int,
                      height: int, row: int, *, selected: bool, hovered: bool, focused: bool,
                      spans: Sequence[tuple[float, float]], spans_key: tuple,
-                     enabled: bool) -> None:
+                     enabled: bool, editing_columns: Iterable[int] = ()) -> None:
         """One whole row, as a tile copied to (x, y). Everything here bar the copy
         is Python: under contention it is the calls into Qt that wait (`RowTiles`)."""
         item = model.item_at(row)
@@ -1117,7 +1117,9 @@ class RowDelegate(QStyledItemDelegate):
         faded = (theme.DISABLED_FIELD_OPACITY if not enabled
                  else theme.DIM_OPACITY if model.row_dimmed(item) else None)
         columns = model.columns
-        values = tuple(model.cell(item, c) for c in range(len(columns)))
+        # Translucent editors must not reveal the virtual control underneath.
+        values = tuple(None if c in editing_columns else model.cell(item, c)
+                       for c in range(len(columns)))
         if table.spins(row):
             # A spinner or a sweeping bar moves every frame: no tile would last.
             self._paint_whole(painter, QRect(x, y, width, height), model, item, values, spans,
@@ -2298,12 +2300,18 @@ class Table(QTableView):
         delegate.begin(self.devicePixelRatioF())
         enabled = self._enabled = self.isEnabled()
         hover = self._hover
+        editing: dict[int, set[int]] = {}
+        if self.state() == QAbstractItemView.EditingState:
+            for editor in self.viewport().findChildren(QWidget, options=Qt.FindDirectChildrenOnly):
+                if isinstance(editor, (Dropdown, SpinBox)) and editor.isVisible():
+                    index = self.indexAt(editor.geometry().center())
+                    editing.setdefault(index.row(), set()).add(index.column())
         for row in range(first, last + 1):
             height = group if row in groups else normal
             delegate.paint_row_at(painter, model, 0, y, width, height, row,
                                   selected=row in selected, hovered=row == hover,
                                   focused=row == current, spans=spans, spans_key=spans_key,
-                                  enabled=enabled)
+                                  enabled=enabled, editing_columns=editing.get(row, ()))
             y += height
 
 
