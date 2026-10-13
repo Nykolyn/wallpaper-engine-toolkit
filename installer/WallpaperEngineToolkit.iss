@@ -176,7 +176,6 @@ Type: dirifempty; Name: "{app}"
 
 [Run]
 Filename: "{app}\{#ExeName}"; Description: "{cm:LaunchApp}"; Flags: postinstall nowait skipifsilent; Check: ManualLaunch
-Filename: "{app}\{#ExeName}"; Flags: nowait; Check: UpdateLaunch
 
 [Code]
 var
@@ -519,6 +518,7 @@ end;
 procedure AfterFilesAreInstalled;
 var
   Folder, Said: String;
+  Code: Integer;
 begin
   { 1. A first install told where an earlier copy is copies its data in, before
        anything else can make a new, empty data folder. }
@@ -549,6 +549,13 @@ begin
   { 4. The tracker again, if it was running or has just been asked for. }
   if TrackerWasRunning or WizardIsTaskSelected('autostart') then
     StartTracker;
+
+  { Ordinary [Run] entries run before ssPostInstall, before the backup result. }
+  if ExpandConstant('{param:UpdateFromApp|0}') = '1' then
+  begin
+    Log('Starting the updated window after data protection succeeded');
+    Exec(ExpandConstant('{app}\{#ExeName}'), '', ExpandConstant('{app}'), SW_SHOWNORMAL, ewNoWait, Code);
+  end;
 end;
 
 { ---- the wizard ------------------------------------------------------------- }
@@ -627,19 +634,9 @@ begin
     AfterFilesAreInstalled;
 end;
 
-function AllWentWell: Boolean;
-begin
-  Result := not PostInstallFailed;
-end;
-
-function UpdateLaunch: Boolean;
-begin
-  Result := AllWentWell and (ExpandConstant('{param:UpdateFromApp|0}') = '1');
-end;
-
 function ManualLaunch: Boolean;
 begin
-  Result := AllWentWell and not UpdateLaunch;
+  Result := not PostInstallFailed and (ExpandConstant('{param:UpdateFromApp|0}') <> '1');
 end;
 
 function GetCustomSetupExitCode: Integer;

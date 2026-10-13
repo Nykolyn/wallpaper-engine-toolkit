@@ -34,6 +34,9 @@ from ctypes import wintypes
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from app.engines import engine_control
+
 APP = "WallpaperEngineToolkit"
 LOCAL = Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData" / "Local"))
 DATA = LOCAL / APP
@@ -59,11 +62,18 @@ def mutex_held(name: str) -> bool:
     kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
     kernel32.OpenMutexW.restype = wintypes.HANDLE
     kernel32.OpenMutexW.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.LPCWSTR]
+    kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
     handle = kernel32.OpenMutexW(0x00100000, False, name)
     if not handle:
         return False
     kernel32.CloseHandle(handle)
     return True
+
+
+def program_running() -> bool:
+    """Include the bootloader and copies still starting, before they take a mutex."""
+    return any(name.casefold() == f"{APP}.exe".casefold()
+               for _, name in engine_control.processes())
 
 
 def wait_for(condition, seconds: float) -> bool:
@@ -106,7 +116,7 @@ def install(setup: Path, log: Path, *extra: str) -> int:
 
 def uninstall(log: Path) -> bool:
     """Run the uninstaller and wait for it: it hands itself over to a copy in
-    %TEMP% and exits at once, so the end is when Windows forgets the install."""
+    %TEMP%. That copy deletes the original exe after its first phase exits."""
     uninstaller = INSTALL_DIR / "unins000.exe"
     print(f"-- {uninstaller}", flush=True)
     if not uninstaller.is_file():
@@ -114,7 +124,7 @@ def uninstall(log: Path) -> bool:
         return False
     subprocess.run([str(uninstaller), "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART",
                     f"/LOG={log}"], timeout=300)
-    return wait_for(lambda: not registered(), 300)
+    return wait_for(lambda: not registered() and not uninstaller.exists(), 300)
 
 
 def show_log(log: Path) -> None:
@@ -123,7 +133,7 @@ def show_log(log: Path) -> None:
         for line in log.read_text(encoding="utf-8", errors="replace").splitlines():
             if any(word in line for word in ("--quit", "--adopt-data", "--backup-data",
                                              "--autostart", "still running", "Prepare",
-                                             "rror")):
+                                             "rror", "Starting the updated window")):
                 print("   ", line)
 
 
@@ -229,8 +239,13 @@ def main(argv: list[str]) -> int:
         kernel32.CloseHandle(handle)
     show_log(work / "2-backup-failed.log")
     check("backup failure returns the custom setup error", code == 20)
-    check("failed in-app setup does not launch the window or tracker",
-          not mutex_held(WINDOW_MUTEX) and not mutex_held(TRAY_MUTEX))
+    stopped = not program_running()
+    check("failed in-app setup does not launch the window or tracker", stopped)
+    if not stopped:
+        print("---- processes after failed setup ----", flush=True)
+        for pid, name in engine_control.processes():
+            if name.casefold() == f"{APP}.exe".casefold():
+                print(pid, engine_control.process_arguments(pid), flush=True)
     check("a failed backup leaves the original file intact", blocked.read_text(encoding="utf-8") == "keep me too")
     blocked.unlink()
     data_intact("after a failed update backup")
@@ -256,12 +271,13 @@ def main(argv: list[str]) -> int:
     code = install(setup, work / "4-reinstall.log", "/MERGETASKS=!autostart")
     show_log(work / "4-reinstall.log")
     check("installing again finishes", code == 0 and EXE.is_file())
+    check("the reinstalled uninstaller is there", (INSTALL_DIR / "unins000.exe").is_file())
     check("without autostart, as asked", task_program() == "")
     data_intact("after installing again")
     check("and the data was copied aside again first",
           len(list((DATA / "update_backup").iterdir())) == 3)
 
-    uninstall(work / "5-uninstall.log")
+    check("the final uninstall finishes", uninstall(work / "5-uninstall.log"))
 
     print()
     print("PASSED %d/%d" % (sum(results), len(results)))

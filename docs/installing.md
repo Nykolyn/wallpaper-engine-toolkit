@@ -89,9 +89,13 @@ You can still run the new release's installer yourself. In either case it:
    the middle of a run, a scan or a question does not quit — it comes forward,
    and the installer asks you to finish and close it, then **Retry**. Nothing
    is ended by force;
-2. copies the data aside, as above;
-3. replaces the program;
-4. starts the tray tracker again, if it was running.
+2. replaces the program files;
+3. copies and verifies the data backup before the new version starts;
+4. restarts the tray tracker if it was running, and opens the window again for
+   an in-app update.
+
+If the backup fails, both stay closed. The installer reports the error and can
+be run again after the problem is fixed.
 
 Autostart is left as you set it.
 
