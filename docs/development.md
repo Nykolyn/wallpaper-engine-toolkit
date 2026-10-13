@@ -885,6 +885,12 @@ do. `force_state = "hover" | "pressed" | "focus"` draws a state without a
 pointer or a keyboard, for the kit preview and snapshots; the app never sets it.
 A button's fill eases between states over `motion.base`; its edge, text and box
 change at once, and with motion off so does the fill.
+Dropdowns keep their size, font and padding on focus, opening and selection;
+table selects use the same painter at rest and while editing. The edge and
+opening chevron ease over `motion.base` (140 ms), or change immediately with
+Windows animations off. Enter or Space opens the list, arrows and typing
+navigate it, Enter chooses, Escape cancels, and Tab/Shift+Tab closes it and
+moves focus. Selection closes the popup before emitting `activated`.
 
 **Painting outside the box.** CSS draws a shadow and a focus ring round a box
 without either taking room in the layout; Qt clips every widget to its own

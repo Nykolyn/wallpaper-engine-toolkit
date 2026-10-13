@@ -1,11 +1,10 @@
 """Fields: TextInput, SpinBox and Dropdown.
 
-They are Qt's own QLineEdit, QSpinBox and QComboBox, drawn by the generated
-stylesheet (a well, a hairline edge, border.strong under the pointer,
-border.focus in focus, 45 % when disabled). The classes add what a
-stylesheet cannot draw: the inset shade at the top of the well, the focus ring
-outside the box, a TextInput's leading search glyph and its error line, and
-the Dropdown's list, which is the design's rather than Qt's.
+They use Qt's own QLineEdit, QSpinBox and QComboBox interaction. Text and number
+fields use the generated stylesheet; Dropdown paints the same fixed geometry
+as a table select, easing its edge and arrow without changing its padding.
+The classes add the inset shade, the focus ring outside the box, a TextInput's
+leading search glyph and error line, and the Dropdown's own list.
 
 A field you type into shows its ring whenever it has focus, as a browser
 does; a Dropdown, like a button, only when the keyboard brought focus there,
@@ -13,19 +12,21 @@ and while its list is open.
 """
 from __future__ import annotations
 
-from PySide6.QtCore import QMargins, QModelIndex, QPoint, QPointF, QRect, QRectF, QSize, Qt
+import math
+
+from PySide6.QtCore import QMargins, QModelIndex, QPoint, QPointF, QRect, QRectF, QSize, Qt, QVariantAnimation
 from PySide6.QtGui import (
-    QFontMetricsF, QGuiApplication, QIcon, QPainter, QPainterPath, QPen, QValidator,
+    QColor, QFontMetricsF, QGuiApplication, QPainter, QPainterPath, QPen, QValidator,
 )
 from PySide6.QtWidgets import (
-    QAbstractItemView, QComboBox, QLineEdit, QListView, QSizePolicy, QSpinBox, QStyle,
-    QStyledItemDelegate, QStyleOptionComboBox, QStylePainter, QVBoxLayout, QWidget,
+    QAbstractItemView, QComboBox, QLineEdit, QListView, QSizePolicy, QSpinBox,
+    QStyledItemDelegate, QVBoxLayout, QWidget,
 )
 
-from ... import theme
+from ... import animations, theme
 from . import icons
 from .base import (
-    NBSP, Caster, Interactive, elevation_margins, follow, grouped, repolish, token,
+    NBSP, Caster, Fade, Interactive, elevation_margins, follow, grouped, repolish, token,
 )
 
 def _ring_margins() -> QMargins:
@@ -225,6 +226,60 @@ COUNT_ROLE = Qt.UserRole + 41        # a right-aligned count, mono
 ITEM, SECTION, SEPARATOR = "item", "section", "separator"
 
 
+def paint_dropdown(painter: QPainter, box: QRectF, text: str, *, enabled: bool = True,
+                   edge: QColor | None = None, open_amount: float = 0.0,
+                   prefix: str = "", count: str = "") -> None:
+    """The same field geometry for a live Dropdown and a virtual table select."""
+    painter.save()
+    painter.setRenderHint(QPainter.Antialiasing)
+    path = QPainterPath()
+    path.addRoundedRect(box, theme.R_MD, theme.R_MD)
+    painter.fillPath(path, theme.color("surface.well" if enabled else "surface.subtle"))
+    opacity = painter.opacity()
+    if not enabled:
+        painter.setOpacity(opacity * theme.DISABLED_FIELD_OPACITY)
+    theme.paint_shadow(painter, box, "elev.inset", theme.R_MD)
+    painter.setOpacity(opacity)
+    painter.setPen(QPen(edge if edge is not None else theme.color(
+        "border.control" if enabled else "border.hairline"), 1))
+    painter.setBrush(Qt.NoBrush)
+    painter.drawRoundedRect(box.adjusted(0.5, 0.5, -0.5, -0.5),
+                            theme.R_MD - 0.5, theme.R_MD - 0.5)
+    side = theme.FIELD_ICON
+    arrow_x = box.right() - 1 - theme.FIELD_PAD - side / 2
+    painter.save()
+    painter.translate(arrow_x, box.center().y())
+    painter.rotate(180 * open_amount)
+    painter.drawPixmap(QPointF(-side / 2, -side / 2), icons.pixmap(
+        "chevD", "text.mid" if enabled else "text.disabled", side,
+        painter.device().devicePixelRatioF()))
+    painter.restore()
+
+    left = box.left() + 1 + theme.FIELD_PAD
+    right = arrow_x - side / 2 - theme.FIELD_ICON_GAP
+    mono = theme.font("type.monoSm")
+    painter.setFont(mono)
+    painter.setPen(token("text.lo" if enabled else "text.disabled"))
+    if prefix:
+        width = QFontMetricsF(mono).horizontalAdvance(prefix)
+        painter.drawText(QRectF(left, box.top(), width + 1, box.height()),
+                         Qt.AlignLeft | Qt.AlignVCenter, prefix)
+        left += width + theme.SP_8
+    if count:
+        width = QFontMetricsF(mono).horizontalAdvance(count)
+        painter.drawText(QRectF(right - width, box.top(), width + 1, box.height()),
+                         Qt.AlignRight | Qt.AlignVCenter, count)
+        right -= width + theme.SP_8
+    body = theme.font("type.bodySm")
+    width = max(0.0, right - left)
+    painter.setFont(body)
+    painter.setPen(token("text.body" if enabled else "text.disabled"))
+    painter.drawText(QRectF(left, box.top(), width, box.height()),
+                     Qt.AlignLeft | Qt.AlignVCenter,
+                     QFontMetricsF(body).elidedText(text, Qt.ElideRight, width))
+    painter.restore()
+
+
 class Dropdown(Interactive, Caster, QComboBox):
     """A choice from a list. Rows can carry a count on the right (`3 366`), be
     grouped under section rows ("YOUR FOLDERS") and split by separators;
@@ -236,14 +291,17 @@ class Dropdown(Interactive, Caster, QComboBox):
     `activated`).
     """
 
-    _kit_qss = True
-
     def __init__(self, parent: QWidget | None = None, *, prefix: str = ""):
         QComboBox.__init__(self, parent)
         self._prefix = prefix.upper()
         self._popup: DropdownPopup | None = None
         self._last = -1
-        self.setProperty("focusVisible", False)
+        self._edge = Fade(self, theme.color("border.control" if self.isEnabled() else "border.hairline"))
+        self._open_amount = 0.0
+        self._opening = QVariantAnimation(self)
+        self._opening.setDuration(animations.BASE)
+        self._opening.setEasingCurve(animations.ease())
+        self._opening.valueChanged.connect(self._turn_arrow)
         self.setFocusPolicy(Qt.StrongFocus)
         self.currentIndexChanged.connect(self._guard)
 
@@ -275,6 +333,7 @@ class Dropdown(Interactive, Caster, QComboBox):
 
     def set_count(self, row: int, count: int | str | None) -> None:
         self.model().item(row).setData(count, COUNT_ROLE)
+        self.updateGeometry()
         self.update()
 
     def kind(self, row: int) -> str:
@@ -321,15 +380,16 @@ class Dropdown(Interactive, Caster, QComboBox):
         """What a click on a row does: choose it, say so, close the list."""
         if not self.is_selectable(row):
             return
+        text = self.itemText(row)
         QComboBox.setCurrentIndex(self, row)
-        self.activated.emit(row)
-        self.textActivated.emit(self.itemText(row))
         self.hidePopup()
+        self.activated.emit(row)
+        self.textActivated.emit(text)
 
     # -- the list
 
     def showPopup(self) -> None:                # noqa: N802 - Qt's name
-        if not self.selectable_rows():
+        if not self.isEnabled() or not self.selectable_rows() or self.popup_open():
             return
         if self._popup is None:
             self._popup = DropdownPopup(self)
@@ -339,29 +399,55 @@ class Dropdown(Interactive, Caster, QComboBox):
     def hidePopup(self) -> None:                # noqa: N802 - Qt's name
         if self._popup is not None and self._popup.isVisible():
             self._popup.hide()
+        QComboBox.hidePopup(self)
         self.state_changed()
 
     def popup_open(self) -> bool:
         return self._popup is not None and self._popup.isVisible()
 
+    def keyPressEvent(self, event) -> None:     # noqa: N802 - Qt's name
+        if event.key() in (Qt.Key_Return, Qt.Key_Enter, Qt.Key_Space) and not event.modifiers():
+            self.showPopup()
+            event.accept()
+        else:
+            super().keyPressEvent(event)
+
     # -- state and painting
 
     def focus_visible(self) -> bool:
-        return super().focus_visible() or self.popup_open()
+        return self.isEnabled() and (super().focus_visible() or self.popup_open())
 
     def state_changed(self) -> None:
-        wanted = bool(self.isEnabled() and self._kit_force is None and self.focus_visible())
-        if bool(self.property("focusVisible")) != wanted:
-            self.setProperty("focusVisible", wanted)
-            repolish(self)
+        edge = getattr(self, "_edge", None)
+        if edge is not None:
+            colour = ("border.hairline" if not self.isEnabled() else "border.focus"
+                      if self.focus_visible() else "border.strong"
+                      if self.visual_state() in ("hover", "pressed") else "border.control")
+            edge.go(theme.color(colour), animate=self._kit_force is None)
+            target = float(self.popup_open())
+            if target != self._opening.endValue():
+                self._opening.stop()
+                self._opening.setStartValue(self._open_amount)
+                self._opening.setEndValue(target)
+                if animations.ENABLED and self.isVisible() and self._kit_force is None:
+                    self._opening.start()
+                else:
+                    self._turn_arrow(target)
         super().state_changed()
 
+    def _turn_arrow(self, value) -> None:
+        self._open_amount = float(value)
+        self.update()
+
     def sizeHint(self) -> QSize:                # noqa: N802 - Qt's name
-        return QSize(QComboBox.sizeHint(self).width() + self._extras_width(),
-                     theme.CONTROL_HEIGHT)
+        fm = QFontMetricsF(theme.font("type.bodySm"))
+        width = max((fm.horizontalAdvance(self.itemText(row)) for row in range(self.count())
+                     if self.kind(row) == ITEM), default=fm.horizontalAdvance("…"))
+        return QSize(math.ceil(width) + 2 * (1 + theme.FIELD_PAD) + theme.FIELD_ICON
+                     + theme.FIELD_ICON_GAP + self._extras_width(), theme.CONTROL_HEIGHT)
 
     def minimumSizeHint(self) -> QSize:         # noqa: N802 - Qt's name
-        return QSize(QComboBox.minimumSizeHint(self).width(), theme.CONTROL_HEIGHT)
+        return self.sizeHint()
 
     def _extras_width(self) -> int:
         """Room for the prefix and the widest count, which Qt does not know about."""
@@ -384,46 +470,10 @@ class Dropdown(Interactive, Caster, QComboBox):
 
     def paintEvent(self, event) -> None:        # noqa: N802 - Qt's name
         follow(self)
-        painter = QStylePainter(self)
-        option = QStyleOptionComboBox()
-        self.initStyleOption(option)
-        option.currentText = ""
-        option.currentIcon = QIcon()
-        painter.drawComplexControl(QStyle.CC_ComboBox, option)
-        field = QRectF(self.style().subControlRect(
-            QStyle.CC_ComboBox, option, QStyle.SC_ComboBoxEditField, self))
-
-        painter.setRenderHint(QPainter.Antialiasing)
-        enabled = self.isEnabled()
-        if not enabled:
-            painter.setOpacity(theme.DISABLED_FIELD_OPACITY)
-        theme.paint_shadow(painter, QRectF(self.rect()), "elev.inset", theme.R_MD)
-        painter.setOpacity(1.0)
-
-        faint = token("text.disabled" if not enabled else "text.lo")
-        mono = theme.font("type.monoSm")
-        left, right = field.left(), field.right()
-        if self._prefix:
-            width = QFontMetricsF(mono).horizontalAdvance(self._prefix)
-            painter.setFont(mono)
-            painter.setPen(faint)
-            painter.drawText(QRectF(left, field.top(), width + 1, field.height()),
-                             Qt.AlignLeft | Qt.AlignVCenter, self._prefix)
-            left += width + theme.SP_8
-        count = self.count_text(self.currentIndex())
-        if count:
-            width = QFontMetricsF(mono).horizontalAdvance(count)
-            painter.setFont(mono)
-            painter.setPen(faint)
-            painter.drawText(QRectF(right - width, field.top(), width + 1, field.height()),
-                             Qt.AlignRight | Qt.AlignVCenter, count)
-            right -= width + theme.SP_8
-        body = theme.font("type.bodySm")
-        text = QFontMetricsF(body).elidedText(self.currentText(), Qt.ElideRight, right - left)
-        painter.setFont(body)
-        painter.setPen(token("text.body" if enabled else "text.disabled"))
-        painter.drawText(QRectF(left, field.top(), right - left, field.height()),
-                         Qt.AlignLeft | Qt.AlignVCenter, text)
+        painter = QPainter(self)
+        paint_dropdown(painter, QRectF(self.rect()), self.currentText(), enabled=self.isEnabled(),
+                       edge=self._edge.value(), open_amount=self._open_amount,
+                       prefix=self._prefix, count=self.count_text(self.currentIndex()))
 
 
 # ---- the Dropdown's list -----------------------------------------------------------------
@@ -541,6 +591,7 @@ class _RowList(QListView):
             dropdown.choose(hot)
         elif key == Qt.Key_Tab or key == Qt.Key_Backtab:
             dropdown.hidePopup()
+            dropdown.focusNextPrevChild(key == Qt.Key_Tab and not event.modifiers() & Qt.ShiftModifier)
         elif rows and key in (Qt.Key_Down, Qt.Key_Up, Qt.Key_Home, Qt.Key_End):
             if key == Qt.Key_Home:
                 target = rows[0]
@@ -552,7 +603,8 @@ class _RowList(QListView):
                 target = next((r for r in reversed(rows) if r < hot), rows[0])
             self._popup.set_hot_row(target)
         else:
-            event.ignore()
+            super().keyPressEvent(event)
+            self._popup.set_hot_row(self.currentIndex().row())
             return
         event.accept()
 
@@ -600,6 +652,7 @@ class DropdownPopup(Caster, QWidget):
         if row != self._hot:
             self._hot = row
             if row >= 0:
+                self._rows.setCurrentIndex(self.dropdown.model().index(row, 0))
                 self._rows.scrollTo(self.dropdown.model().index(row, 0))
             self._rows.viewport().update()
 
@@ -653,9 +706,8 @@ class DropdownPopup(Caster, QWidget):
             if top + box_h > room.bottom():
                 top = dropdown.mapToGlobal(QPoint(0, 0)).y() - theme.POPUP_GAP - box_h
         self.move(below.x() - m.left(), top - m.top())
-        self._hot = dropdown.currentIndex()
-        if self._hot >= 0:
-            self._rows.scrollTo(dropdown.model().index(self._hot, 0))
+        self._hot = -1
+        self.set_hot_row(dropdown.currentIndex())
         self.show()
         self._rows.setFocus(Qt.PopupFocusReason)
 
@@ -670,7 +722,7 @@ class DropdownPopup(Caster, QWidget):
     def hideEvent(self, event) -> None:         # noqa: N802 - Qt's name
         super().hideEvent(event)
         if not self._embedded:
-            self.dropdown.state_changed()
+            self.dropdown.hidePopup()
 
     # -- painting
 

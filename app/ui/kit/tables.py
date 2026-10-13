@@ -66,7 +66,7 @@ from . import icons
 from .base import label
 from .buttons import button_pixmap, button_size, icon_button_pixmap
 from .chips import chip_pixmap, chip_size
-from .inputs import Dropdown, SpinBox
+from .inputs import Dropdown, SpinBox, paint_dropdown
 from .thumbs import PREVIEW_KEY, ThumbLoader, shared as shared_loader
 
 ALIGNMENTS = {"left": Qt.AlignLeft, "right": Qt.AlignRight, "center": Qt.AlignHCenter}
@@ -1236,7 +1236,7 @@ class RowDelegate(QStyledItemDelegate):
     def updateEditorGeometry(self, editor, option, index):
         left, right = self._table._pads(index.column(), index.model().columnCount() - 1)
         box = option.rect.adjusted(left, 0, -right, 0)
-        box.setTop(option.rect.center().y() - theme.CONTROL_HEIGHT // 2)
+        box.setTop(option.rect.top() + (option.rect.height() - theme.CONTROL_HEIGHT) // 2)
         box.setHeight(theme.CONTROL_HEIGHT)
         editor.setGeometry(box)
 
@@ -1289,7 +1289,12 @@ class RowDelegate(QStyledItemDelegate):
                 self._text(painter, QRectF(x, bar.bottom() + theme.SP_4, right - x, caption_h),
                            value.caption, "type.monoXs", value.tone if value.tone == "danger" else "text.lo", Qt.AlignLeft)
             return
-        if isinstance(value, (SpinCell, SelectCell)):
+        if isinstance(value, SelectCell):
+            box = QRectF(x, top + (height - theme.CONTROL_HEIGHT) // 2,
+                         right - x, theme.CONTROL_HEIGHT)
+            paint_dropdown(painter, box, str(value.value), enabled=value.enabled)
+            return
+        if isinstance(value, SpinCell):
             box = QRectF(x, middle - theme.CONTROL_HEIGHT / 2, right - x, theme.CONTROL_HEIGHT)
             painter.setPen(QPen(self.colour("border.control"), 1))
             painter.setBrush(self.colour("surface.well"))
@@ -1297,8 +1302,7 @@ class RowDelegate(QStyledItemDelegate):
             self._text(painter, box.adjusted(theme.SP_8, 0, -theme.SP_16, 0), str(value.value),
                        "type.monoSm", "text.body" if value.enabled else "text.lo", Qt.AlignLeft)
             side = theme.TABLE_SORT_ICON
-            arrows = (("chevD", middle - side / 2),) if isinstance(value, SelectCell) \
-                else (("chevU", middle - side), ("chevD", middle))
+            arrows = (("chevU", middle - side), ("chevD", middle))
             for glyph, y in arrows:
                 painter.drawPixmap(QPointF(right - side - theme.SP_2, y),
                                    icons.pixmap(glyph, "text.lo", side, self._dpr))

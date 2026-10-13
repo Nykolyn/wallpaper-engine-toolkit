@@ -29,7 +29,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 # cannot print; a check must not fail for the way its name is shown.
 sys.stdout.reconfigure(errors="replace")
 
-from PySide6.QtCore import QElapsedTimer, QEventLoop, QMimeData, QPointF, QSize, Qt, QTimer, QUrl  # noqa: E402
+from PySide6.QtCore import QElapsedTimer, QEventLoop, QMimeData, QPointF, QRect, QSize, Qt, QTimer, QUrl  # noqa: E402
 from PySide6.QtGui import QColor, QDropEvent, QImage, QPainter                  # noqa: E402
 from PySide6.QtTest import QTest                                               # noqa: E402
 from PySide6.QtWidgets import QApplication, QVBoxLayout, QWidget                # noqa: E402
@@ -574,6 +574,9 @@ for value in (SelectCell(1, (1, 2, 3)), SelectCell(1000, (1, 200, 500, 1000))):
     editing_table.show()
     app.processEvents()
     edit_index = editable.index(0, 0)
+    editing_table.setCurrentIndex(edit_index)
+    app.processEvents()
+    rest = editing_table.viewport().grab().toImage()
     editing_table.edit(edit_index)
     app.processEvents()
     editor = editing_table.indexWidget(edit_index)
@@ -582,8 +585,13 @@ for value in (SelectCell(1, (1, 2, 3)), SelectCell(1000, (1, 200, 500, 1000))):
     for popup_open in (True, False):
         if not popup_open:
             editor.hidePopup()
-            app.processEvents()
+            wait(animations.BASE + 30)
         overlay = editing_table.viewport().grab().toImage().copy(box)
+        if not popup_open:
+            content = QRect(3, theme.R_MD, min(50, box.width() // 2) - 3,
+                            theme.CONTROL_HEIGHT - 2 * theme.R_MD)
+            check(f"select {value.value} keeps its text and padding when editing",
+                  overlay.copy(content) == rest.copy(box).copy(content))
         editable.value = None
         editing_table.viewport().update()
         app.processEvents()
@@ -597,7 +605,7 @@ for value in (SelectCell(1, (1, 2, 3)), SelectCell(1000, (1, 200, 500, 1000))):
     app.processEvents()
     restored = editing_table.viewport().grab().toImage().copy(box)
     check(f"closing select {value.value} restores the virtual control",
-          editing_table.indexWidget(edit_index) is None and restored != clear)
+          editing_table.indexWidget(edit_index) is None and restored == rest.copy(box))
     editing_table.close()
     editing_table.deleteLater()
     app.processEvents()

@@ -6,6 +6,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [4.1.3] - 2026-10-13
+
+### Fixed
+
+- Select controls keep the same size, font and padding while focused, open
+  and after selection, including table editors. Focus and hover borders and
+  the opening chevron ease over 140 ms, respecting reduced motion.
+- Select popups close before reporting a choice. Enter and Space open them,
+  typing finds an option, and Tab/Shift+Tab moves focus after closing.
+
 ## [4.1.2] - 2026-10-13
 
 ### Fixed
@@ -1753,7 +1763,8 @@ restructured yet; the tabs keep their layout and take on the new look.
   was right for one library and wrong for every other. Nothing is tagged now
   unless you ask for it.
 
-[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v4.1.2...HEAD
+[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v4.1.3...HEAD
+[4.1.3]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v4.1.2...v4.1.3
 [4.1.2]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v4.1.1...v4.1.2
 [4.1.1]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v4.1.0...v4.1.1
 [4.1.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v4.0.2...v4.1.0
