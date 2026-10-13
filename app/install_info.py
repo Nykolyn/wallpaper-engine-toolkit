@@ -48,6 +48,7 @@ def same_file(a: str | os.PathLike, b: str | os.PathLike) -> bool:
 
 def is_installed_copy() -> bool:
     """Whether the running exe is the installed copy."""
+    if not getattr(sys, "frozen", False):
+        return False
     exe = installed_exe()
-    return (exe is not None and bool(getattr(sys, "frozen", False))
-            and same_file(exe, sys.executable))
+    return exe is not None and same_file(exe, sys.executable)
