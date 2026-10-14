@@ -116,6 +116,8 @@ class WidgetPage(Page):
                        else "Hidden. Choose Show widget to open it.")
 
     def startup(self) -> None:
+        if self._live:
+            widget_control.log(f"widget window startup: enabled={self.settings.get('widget', 'enabled', False)}")
         if self._live and self.settings.get("widget", "enabled", False):
             self._set_visible(True)
 

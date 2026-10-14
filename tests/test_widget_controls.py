@@ -135,7 +135,7 @@ with patch.object(window_instance, "send", return_value=False) as send, \
 
 with patch.object(window_instance, "send", side_effect=[False, True]), \
         patch.object(window_instance, "already_running", return_value=False), \
-        patch.object(window_instance, "launch", return_value=SimpleNamespace(poll=lambda: None)) as launch:
+        patch.object(window_instance, "launch", return_value=SimpleNamespace(pid=123, poll=lambda: None)) as launch:
     widget_control.set_visible(store, True)
     check("show starts the background widget when no tracker exists",
           launch.call_args.kwargs == {"widget": True})
@@ -160,9 +160,21 @@ with patch.object(window_instance, "send", return_value=False), \
     check("a launch failure restores visibility and reaches the caller",
           raised and not store.get("widget", "enabled", True))
 
+with patch.object(window_instance, "send", side_effect=[False, True]) as send, \
+        patch.object(window_instance, "already_running", return_value=False), \
+        patch.object(window_instance, "launch", return_value=SimpleNamespace(pid=123, poll=lambda: 0)):
+    try:
+        widget_control.set_visible(store, True)
+        forwarded = True
+    except OSError:
+        forwarded = False
+    check("a successful duplicate child hands off to the winning tracker after exiting",
+          forwarded and send.call_count == 2 and store.get("widget", "enabled", False))
+store.set("widget", "enabled", False)
+
 with patch.object(window_instance, "send", return_value=False), \
         patch.object(window_instance, "already_running", return_value=False), \
-        patch.object(window_instance, "launch", return_value=SimpleNamespace(poll=lambda: 1)):
+        patch.object(window_instance, "launch", return_value=SimpleNamespace(pid=123, poll=lambda: 1)):
     try:
         widget_control.set_visible(store, True)
         raised = False
@@ -302,6 +314,42 @@ finally:
                 child.wait()
     pending.close()
     child_page.close()
+
+# An existing tracker can hold its mutex while its cold Qt startup still has no socket.
+late_name = "WallpaperEngineToolkit.widget-cold-test." + uuid.uuid4().hex
+late_marker = Path(scratch.name) / "cold-widget-shown"
+late = subprocess.Popen([
+    sys.executable, "-c",
+    "import sys,time; from pathlib import Path; sys.path.insert(0,sys.argv[1]); time.sleep(3); "
+    "from PySide6.QtCore import QCoreApplication; from app.quit_request import QuitListener; "
+    "a=QCoreApplication([]); listener=QuitListener(sys.argv[2]); "
+    "listener.widget_requested.connect(lambda on: Path(sys.argv[3]).write_text(str(on))); "
+    "listener.requested.connect(a.quit); sys.exit(a.exec())",
+    str(Path(__file__).resolve().parent.parent), late_name, str(late_marker)])
+try:
+    with patch.object(quit_request, "tracker_server_name", return_value=late_name), \
+            patch.object(window_instance, "already_running", return_value=True), \
+            patch.object(window_instance, "launch") as launch:
+        cold_store = settings()
+        try:
+            widget_control.set_visible(cold_store, True)
+            reached = True
+        except OSError:
+            reached = False
+        until = time.monotonic() + 1
+        while not late_marker.exists() and time.monotonic() < until:
+            QTest.qWait(10)
+        check("a cold existing tracker gets time to open its real socket before widget restore fails",
+              reached and not launch.called and late_marker.exists()
+              and late_marker.read_text() == "True" and cold_store.get("widget", "enabled", False))
+finally:
+    if late.poll() is None:
+        window_instance.send(quit_request.QUIT, wait=5, name=late_name)
+        try:
+            late.wait(3)
+        except subprocess.TimeoutExpired:
+            late.kill()
+            late.wait()
 
 fixture = WidgetPage(store, live=False)
 with patch.object(widget_control, "set_visible", side_effect=AssertionError("live widget")), \

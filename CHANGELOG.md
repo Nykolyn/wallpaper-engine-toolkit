@@ -24,6 +24,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Updating or uninstalling while the widget is opening waits for its process
   to finish starting or stop, so it cannot survive the installer's quit request.
   A quit received before the tracker's event loop starts is preserved.
+- Widget startup waits for the background tracker to finish initializing,
+  including simultaneous launches that find another tracker already running.
 
 ## [4.1.4] - 2026-10-14
 

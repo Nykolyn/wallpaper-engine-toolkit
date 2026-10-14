@@ -205,9 +205,18 @@ def main(argv: list[str]) -> int:
     subprocess.Popen([str(EXE)], env=environment, cwd=str(INSTALL_DIR))
     check("the tray tracker runs", wait_for(lambda: mutex_held(TRAY_MUTEX), 60))
     check("and the window", wait_for(lambda: mutex_held(WINDOW_MUTEX), 60))
-    check("the installed widget is shown by the running tracker", wait_for(
+    widget_shown = wait_for(
         lambda: (DATA / "tracker.log").is_file() and "widget shown" in
-        (DATA / "tracker.log").read_text(encoding="utf-8", errors="replace"), 60))
+        (DATA / "tracker.log").read_text(encoding="utf-8", errors="replace"), 60)
+    check("the installed widget is shown by the running tracker", widget_shown)
+    if not widget_shown:
+        print("---- widget startup diagnostics ----", flush=True)
+        for name in ("tracker.log", "window-hangs.log", "tracker-hangs.log"):
+            path = DATA / name
+            if path.is_file():
+                print(f"{name}:\n{path.read_text(encoding='utf-8', errors='replace')[-16000:]}", flush=True)
+        print([(pid, engine_control.process_arguments(pid)) for pid, name in engine_control.processes()
+               if name.casefold() == f"{APP}.exe".casefold()], flush=True)
     time.sleep(5)                         # let the window make its pages
     code = install(setup, work / "2-update.log", "/UpdateFromApp=1")
     show_log(work / "2-update.log")
