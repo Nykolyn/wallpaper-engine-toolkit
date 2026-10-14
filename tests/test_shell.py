@@ -265,6 +265,15 @@ main_window_module.QApplication = stand_in_application()
 w.handle_command("quit", "")
 check("with nothing under way it closes every window and quits",
       done == ["close all", "quit"])
+done.clear()
+pending_widget = [True]
+w.pages["widget"].stop = lambda timeout=0: not pending_widget[0]
+w.handle_command("quit", "")
+check("shutdown holds the window while the widget process is still starting", done == [])
+pending_widget[0] = False
+wait(150)
+check("shutdown continues automatically once widget startup is drained", done == ["close all", "quit"])
+del w.pages["widget"].stop
 main_window_module.QApplication = real_application
 
 print("-- the rail --")

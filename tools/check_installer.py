@@ -269,6 +269,11 @@ def main(argv: list[str]) -> int:
     gone = uninstall(work / "3-uninstall.log")
     show_log(work / "3-uninstall.log")
     check("the uninstall finishes", gone)
+    if not gone:
+        print(f"shutdown: window={mutex_held(WINDOW_MUTEX)}, tracker={mutex_held(TRAY_MUTEX)}", flush=True)
+        tracker_log = DATA / "tracker.log"
+        if tracker_log.is_file():
+            print(tracker_log.read_text(encoding="utf-8", errors="replace")[-12000:], flush=True)
     check("nothing of the toolkit runs any more",
           not mutex_held(WINDOW_MUTEX) and not mutex_held(TRAY_MUTEX))
     check("the program is gone", not EXE.exists())

@@ -129,3 +129,27 @@ with patch.object(tracker_tray, "TrackerFeed", Feed), \
     assert tray.widget.reading[1] is countdowns
 
 print("PASS widget startup, visibility, selected monitor and shared countdown lifecycle")
+
+listener = Listener()
+application = SimpleNamespace(setApplicationName=lambda *a: None,
+                              setQuitOnLastWindowClosed=lambda *a: None)
+from unittest.mock import Mock
+application.exec = Mock(side_effect=AssertionError("quit before exec was lost"))
+watch = Mock()
+
+def build_after_quit(app, listener, **kwargs):
+    listener.requested.emit()
+    return SimpleNamespace(icon=SimpleNamespace(isVisible=lambda: True))
+
+with patch.object(tracker_tray, "_claim_single_instance", return_value=True), \
+        patch.object(tracker_tray, "QApplication", return_value=application), \
+        patch.object(tracker_tray.theme, "apply"), \
+        patch.object(tracker_tray, "QuitListener", return_value=listener), \
+        patch.object(tracker_tray, "HangWatch", return_value=SimpleNamespace(start=lambda: watch)), \
+        patch.object(tracker_tray, "TrackerTray", side_effect=build_after_quit), \
+        patch.object(tracker_tray, "log"):
+    assert tracker_tray.run_tray(show_widget=True) == 0
+    application.exec.assert_not_called()
+    watch.stop.assert_called_once()
+
+print("PASS a quit received while the widget is being built survives until event-loop entry")

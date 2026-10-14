@@ -19,6 +19,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   its position is remembered relative to its screen and stays reachable after
   changes to monitor resolution, scaling or connections.
 
+### Fixed
+
+- Updating or uninstalling while the widget is opening waits for its process
+  to finish starting or stop, so it cannot survive the installer's quit request.
+  A quit received before the tracker's event loop starts is preserved.
+
 ## [4.1.4] - 2026-10-14
 
 ### Fixed

@@ -2,8 +2,12 @@
 from __future__ import annotations
 
 import os
+import subprocess
 import sys
 import tempfile
+import threading
+import time
+import uuid
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
@@ -16,7 +20,7 @@ os.environ["WALLPAPER_TOOLKIT_DATA"] = str(Path(scratch.name) / "data")
 from PySide6.QtWidgets import QApplication  # noqa: E402
 from PySide6.QtTest import QTest  # noqa: E402
 
-from app import autostart, widget_control, widget_startup, window_instance  # noqa: E402
+from app import autostart, quit_request, widget_control, widget_startup, window_instance  # noqa: E402
 from app.pages.widget import WidgetPage  # noqa: E402
 from app.settings import Settings  # noqa: E402
 
@@ -129,9 +133,9 @@ with patch.object(window_instance, "send", return_value=False) as send, \
           not launch.called and send.call_args.args == ("widget:hide",)
           and not store.get("widget", "enabled", True))
 
-with patch.object(window_instance, "send", return_value=False), \
+with patch.object(window_instance, "send", side_effect=[False, True]), \
         patch.object(window_instance, "already_running", return_value=False), \
-        patch.object(window_instance, "launch") as launch:
+        patch.object(window_instance, "launch", return_value=SimpleNamespace(poll=lambda: None)) as launch:
     widget_control.set_visible(store, True)
     check("show starts the background widget when no tracker exists",
           launch.call_args.kwargs == {"widget": True})
@@ -154,6 +158,17 @@ with patch.object(window_instance, "send", return_value=False), \
     except OSError:
         raised = True
     check("a launch failure restores visibility and reaches the caller",
+          raised and not store.get("widget", "enabled", True))
+
+with patch.object(window_instance, "send", return_value=False), \
+        patch.object(window_instance, "already_running", return_value=False), \
+        patch.object(window_instance, "launch", return_value=SimpleNamespace(poll=lambda: 1)):
+    try:
+        widget_control.set_visible(store, True)
+        raised = False
+    except OSError:
+        raised = True
+    check("a child that exits before opening reports failure and restores visibility",
           raised and not store.get("widget", "enabled", True))
 
 with patch.object(window_instance, "send", return_value=False), \
@@ -181,7 +196,8 @@ with patch.object(widget_startup, "enabled", return_value=False), \
     page._sync()
     check("the page follows a visibility change from another process", page.visible.isChecked())
     page.startup()
-    check("window startup restores a shown widget", show.call_args.args == (store, True))
+    check("window startup restores a shown widget", show.call_args.args == (store, True)
+          and show.call_args.kwargs["stopped"] == page._stopping.is_set)
     store.set("widget", "enabled", False)
     page._sync()
     check("an external widget close updates the page", not page.visible.isChecked())
@@ -199,6 +215,93 @@ check("a startup failure restores the last known toggle and displays its reason"
       page.startup_toggle.isChecked() and "registry denied" in page.startup_note.text())
 page.on_hidden()
 check("the settings poll stops when the page is hidden", not page._poll.isActive())
+
+cancelled = threading.Event()
+cancelled.set()
+with patch.object(window_instance, "send") as send, patch.object(window_instance, "launch") as launch:
+    saved = store.save.call_count
+    widget_control.set_visible(store, True, stopped=cancelled.is_set)
+    check("shutdown cancellation skips a pending visibility request",
+          not send.called and not launch.called and saved == store.save.call_count)
+
+pending_store = settings()
+pending_store.set("widget", "enabled", True)
+pending = WidgetPage(pending_store)
+entered, resume = threading.Event(), threading.Event()
+
+
+def blocked_probe(*args, **kwargs):
+    entered.set()
+    resume.wait(3)
+    return False
+
+
+with patch.object(window_instance, "send", blocked_probe), \
+        patch.object(window_instance, "launch") as launch:
+    pending.startup()
+    assert entered.wait(3), "visibility worker never entered the socket probe"
+    draining = not pending.stop()
+    resume.set()
+    until = time.monotonic() + 3
+    while not pending.stop() and time.monotonic() < until:
+        QTest.qWait(10)
+    check("installer shutdown drains the worker and cancels its late process launch",
+          draining and pending.stop() and not launch.called
+          and pending_store.get("widget", "enabled", False))
+    worker = pending._visible_worker
+    pending.startup()
+    check("a queued startup callback after shutdown cannot launch a widget",
+          not launch.called and pending._visible_worker is worker)
+
+# A real child claims its IPC after a delay: the parent must not disappear in that gap.
+child_store = settings()
+child_store.set("widget", "enabled", True)
+child_page = WidgetPage(child_store)
+child_name = "WallpaperEngineToolkit.widget-start-test." + uuid.uuid4().hex
+marker = Path(scratch.name) / "child-quit"
+children = []
+
+
+def launch_child(*args, **kwargs):
+    child = subprocess.Popen([
+        sys.executable, "-c",
+        "import sys,time; from pathlib import Path; sys.path.insert(0,sys.argv[1]); time.sleep(1); "
+        "from PySide6.QtCore import QCoreApplication; from app.quit_request import QuitListener; "
+        "a=QCoreApplication([]); listener=QuitListener(sys.argv[2]); "
+        "listener.requested.connect(lambda: (Path(sys.argv[3]).write_text('quit'), a.quit())); "
+        "sys.exit(a.exec())", str(Path(__file__).resolve().parent.parent), child_name, str(marker)])
+    children.append(child)
+    return child
+
+
+try:
+    with patch.object(quit_request, "tracker_server_name", return_value=child_name), \
+            patch.object(window_instance, "already_running", return_value=False), \
+            patch.object(window_instance, "launch", launch_child):
+        child_page.startup()
+        until = time.monotonic() + 5
+        while not children and time.monotonic() < until:
+            QTest.qWait(10)
+        assert children, "the fabricated widget child was never started"
+        check("the visibility worker stays pending before the child socket is ready",
+              child_page._visible_worker.is_alive() and not child_page.stop())
+        until = time.monotonic() + 8
+        while not child_page.stop() and time.monotonic() < until:
+            QTest.qWait(10)
+        check("shutdown reaches a late child socket and waits for that child to exit",
+              child_page.stop() and children[0].poll() == 0 and marker.read_text() == "quit")
+        check("shutdown preserves the user's shown-widget preference", child_store.get("widget", "enabled", False))
+finally:
+    for child in children:
+        if child.poll() is None:
+            window_instance.send(quit_request.QUIT, wait=2, name=child_name)
+            try:
+                child.wait(3)
+            except subprocess.TimeoutExpired:
+                child.kill()
+                child.wait()
+    pending.close()
+    child_page.close()
 
 fixture = WidgetPage(store, live=False)
 with patch.object(widget_control, "set_visible", side_effect=AssertionError("live widget")), \

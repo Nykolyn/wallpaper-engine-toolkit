@@ -458,7 +458,8 @@ def run_tray(*, show_widget: bool = False) -> int:
         if widget_requests:
             tray._set_widget_visible(widget_requests[-1])
         log(f"running; tray icon visible: {tray.icon.isVisible()}")
-        exit_code = app.exec()
+        # A quit processed while the widget was built precedes exec(), which otherwise loses it.
+        exit_code = 0 if asked else app.exec()
         watch.stop()
         log(f"stopped with code {exit_code}")
         del tray

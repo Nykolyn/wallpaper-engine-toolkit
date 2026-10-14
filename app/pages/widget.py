@@ -28,6 +28,8 @@ class WidgetPage(Page):
         self.settings = settings
         self._live = live
         self._busy = False
+        self._stopping = threading.Event()
+        self._visible_worker = None
         self._syncing = False
         self._startup_busy = False
         self._startup_on = False
@@ -117,8 +119,18 @@ class WidgetPage(Page):
         if self._live and self.settings.get("widget", "enabled", False):
             self._set_visible(True)
 
+    def stop(self, timeout: float = 0) -> bool:
+        """Cancel late widget launches and drain one already starting before an installer quit."""
+        self._stopping.set()
+        self._poll.stop()
+        worker = self._visible_worker
+        if worker is not None and worker.is_alive():
+            worker.join(timeout)
+            return not worker.is_alive()
+        return True
+
     def on_shown(self) -> None:
-        if not self._live:
+        if not self._live or self._stopping.is_set():
             return
         self._sync()
         self._poll.start()
@@ -131,21 +143,22 @@ class WidgetPage(Page):
         self._poll.stop()
 
     def _set_mode(self, _index: int) -> None:
-        if self._live:
+        if self._live and not self._stopping.is_set():
             self.settings.reload_if_changed()
             self.settings.set("widget", "mode", self.mode.currentData())
             self.settings.save()
 
     def _set_visible(self, on: bool) -> None:
-        if not self._live or self._busy or self._syncing:
+        if not self._live or self._busy or self._syncing or self._stopping.is_set():
             return
         self._busy = True
         self.visible.setEnabled(False)
         self._note(self.visible_note, "Opening widget…" if on else "Hiding widget…")
-        self._ask("visible", lambda: widget_control.set_visible(self.settings, on))
+        self._ask("visible", lambda: widget_control.set_visible(self.settings, on,
+                                                                stopped=self._stopping.is_set))
 
     def _set_startup(self, on: bool) -> None:
-        if not self._live or self._syncing:
+        if not self._live or self._syncing or self._stopping.is_set():
             return
         self._startup_busy = True
         self.startup_toggle.setEnabled(False)
@@ -167,7 +180,10 @@ class WidgetPage(Page):
                 self._answer.done.emit(what, found)
             except RuntimeError:
                 pass
-        threading.Thread(target=run, daemon=True, name=f"widget-{what}").start()
+        worker = threading.Thread(target=run, daemon=True, name=f"widget-{what}")
+        if what == "visible":
+            self._visible_worker = worker
+        worker.start()
 
     def _answered(self, what: str, found) -> None:
         if what == "visible":

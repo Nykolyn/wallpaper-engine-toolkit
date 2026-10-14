@@ -316,6 +316,7 @@ class MainWindow(QMainWindow):
         self._fixture_nav: dict[str, NavState] = {}
         self._initial = page_for(initial) or DEFAULT_PAGE
         self._start = start
+        self._quitting = False
         # Commands asked (by the tray, a second launch) before the pages were made.
         self._waiting: list[tuple[str, str]] = []
         self.sidebar.page_requested.connect(self.show_page)
@@ -352,7 +353,7 @@ class MainWindow(QMainWindow):
         for page in pages:
             self.add_page(page)
         self.show_page(self._initial, animate=False)
-        if self._start:
+        if self._start and not self._quitting:
             self.services.start()
             cleaner = self.pages.get("cleaner")
             if cleaner is not None:
@@ -541,6 +542,11 @@ class MainWindow(QMainWindow):
         """
         if self.services.jobs.running() or QApplication.activeModalWidget() is not None:
             self.bring_forward()
+            return False
+        self._quitting = True
+        widget = self.pages.get("widget")
+        if widget is not None and hasattr(widget, "stop") and not widget.stop(timeout=0):
+            QTimer.singleShot(100, self.quit_if_idle)
             return False
         # Every window of the app, the gallery's too, then the app itself.
         QApplication.closeAllWindows()
