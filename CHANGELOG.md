@@ -6,6 +6,24 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [4.2.0] - 2026-10-14
+
+### Added
+
+- A desktop widget shows the tray's selected monitor in compact mode, or all
+  monitors in expanded mode: monitor and playlist names, playlist progress,
+  a numeric countdown and a ring that empties as the next change approaches.
+  It shares the tray's running, paused, unknown and finished states, without previews.
+- Utilities > Widget controls visibility, compact/expanded mode and a separate
+  Windows startup switch. The widget keeps working with the main window closed;
+  its position is remembered relative to its screen and stays reachable after
+  changes to monitor resolution, scaling or connections.
+
+### Fixed
+
+- Starting from source no longer probes the installed copy's disk merely to
+  establish that the source process is not an installed application.
+
 ## [4.1.3] - 2026-10-13
 
 ### Fixed
@@ -1763,7 +1781,8 @@ restructured yet; the tabs keep their layout and take on the new look.
   was right for one library and wrong for every other. Nothing is tagged now
   unless you ask for it.
 
-[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v4.1.3...HEAD
+[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v4.2.0...HEAD
+[4.2.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v4.1.3...v4.2.0
 [4.1.3]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v4.1.2...v4.1.3
 [4.1.2]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v4.1.1...v4.1.2
 [4.1.1]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v4.1.0...v4.1.1

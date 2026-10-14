@@ -43,6 +43,7 @@ class QuitListener(QObject):
     """The tray tracker's end of its socket: says when it is asked to quit."""
 
     requested = Signal()
+    widget_requested = Signal(bool)
 
     def __init__(self, name: str | None = None, parent: QObject | None = None):
         super().__init__(parent)
@@ -63,8 +64,11 @@ class QuitListener(QObject):
     def _read(self, socket: QLocalSocket) -> None:
         while socket.canReadLine():
             line = bytes(socket.readLine()).decode("utf-8", "replace")
-            if window_instance.parse_command(line) == ("quit", ""):
+            parsed = window_instance.parse_command(line)
+            if parsed == ("quit", ""):
                 self.requested.emit()
+            elif parsed in (("widget", "show"), ("widget", "hide")):
+                self.widget_requested.emit(parsed[1] == "show")
 
 
 def running() -> list[str]:

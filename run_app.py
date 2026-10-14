@@ -10,6 +10,7 @@ Run:
                                        #   it is up: the tray's "Rotate now…"
                                        #   asks the Rotator's start question
     python run_app.py --tracker        # the background playlist tracker, tray only
+    python run_app.py --widget         # desktop widget, sharing the tray tracker
     python run_app.py --autostart on   # install / remove / report autostart:
                                        #   on | off | status
     python run_app.py --selfcheck      # report what a built exe can actually
@@ -67,6 +68,8 @@ def _autostart(action: str) -> int:
         message = "autostart removed"
     elif action == "release":
         message = autostart.release()
+        from app import widget_startup
+        message += "; " + widget_startup.release()
     else:
         message = f"autostart: {autostart.method()}"
     log(message)
@@ -245,9 +248,13 @@ def main():
     if "--selfcheck" in args:
         sys.exit(_selfcheck())
 
-    if "--tracker" in args:
+    if {"--tracker", "--widget", "--widget-startup"} & set(args):
+        if "--widget-startup" in args:
+            from app.settings import Settings
+            if not Settings.load().get("widget", "enabled", False):
+                sys.exit(0)
         from app.tracker_tray import run_tray
-        sys.exit(run_tray())
+        sys.exit(run_tray(show_widget="--widget" in args or "--widget-startup" in args))
 
     app = QApplication(sys.argv)
     app.setApplicationName("Wallpaper Engine Toolkit")

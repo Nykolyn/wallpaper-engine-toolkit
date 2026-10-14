@@ -450,7 +450,7 @@ check("past the budget the least recently played copies go, the newest stay",
 # ---- opening the window ----------------------------------------------------------------------------
 
 print("-- the window opens on its LoadingCover, with nothing flashing up first --")
-from app.main_window import LoadingCover, MainWindow                      # noqa: E402
+from app.main_window import LoadingCover, MainWindow, PAGE_ORDER          # noqa: E402
 
 
 class Feed(QObject):
@@ -498,7 +498,7 @@ check("a command asked meanwhile waits for them", window.current_page() == "")
 window.move(300, 200)
 window.show()
 check("once on screen, the pages are made", wait_for(window.ready)
-      and len(window.pages) == 7 and window.loading is None)
+      and set(window.pages) == set(PAGE_ORDER) and window.loading is None)
 check("and the command is carried out", window.current_page() == "rotator")
 check("no window but the main one came on screen while it was all made",
       windows.shown == ["MainWindow"])

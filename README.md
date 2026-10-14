@@ -5,7 +5,7 @@ outgrown Wallpaper Engine: tens of thousands of wallpapers, a reserve that has
 to be cycled through `myprojects`, clips waiting to become wallpapers, and a
 weekly pile of new items whose authors are the part actually worth tracking.
 
-Six tools in one window, in the order of the loop they make — rotate, watch
+Tools in one window, in the order of the loop they make — rotate, watch
 the playlist run down, review what is new — with a sidebar that says what each
 is doing, a status line for whatever is running, and one Settings page for
 what is set once.
@@ -21,6 +21,7 @@ monitors and the newest log lines](docs/images/overview.png)
 | **[Review](docs/review.md)** | Groups the week's new wallpapers by author, says what each has published since you last looked, and opens a gallery to subscribe from. |
 | **[Creator](docs/creator.md)** | Turns video clips into Wallpaper Engine projects, rendering each preview from the video itself. |
 | **[Cleaner](docs/cleaner.md)** | Finds downloaded Workshop wallpapers whose Steam records are unavailable; opens their folders, recycles them or keeps verified copies in the reserve. |
+| **[Widget](docs/widget.md)** | A compact or expanded desktop widget with playlist progress and the countdown for each monitor. |
 | **[Settings](docs/settings.md)** | The folders, Wallpaper Engine's settings file, counting in the background, the Steam key. |
 
 **[Full documentation →](docs/)**

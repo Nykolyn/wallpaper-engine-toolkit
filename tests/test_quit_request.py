@@ -132,15 +132,21 @@ finally:
 name = f"WallpaperEngineToolkit.tracker-test.{os.getpid()}"
 listener = qr.QuitListener(name)
 asked: list[bool] = []
+widgets: list[bool] = []
 listener.requested.connect(lambda: asked.append(True))
+listener.widget_requested.connect(widgets.append)
 check("the tracker listens on its socket", listener.listening)
 wi.send("show Tracker", wait=1.0, name=name)
+wi.send("widget:show", wait=1.0, name=name)
+wi.send("widget:invalid", wait=1.0, name=name)
+wi.send("widget:hide", wait=1.0, name=name)
 wi.send(qr.QUIT, wait=1.0, name=name)
 until = time.monotonic() + 3
 while not asked and time.monotonic() < until:
     app.processEvents()
     time.sleep(0.02)
 check("a quit request reaches it, and only that one does", asked == [True])
+check("widget visibility requests reach the tracker without quitting it", widgets == [True, False])
 
 # A tracker started before the notification area exists waits for it, up to
 # two minutes, holding its mutex all along: it must hear the request then too.

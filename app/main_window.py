@@ -9,7 +9,7 @@
     └──────────────────────────────────────────────────────────────┘
 
 The pages are in the order of the loop — Overview, Rotator, Tracker, Review,
-then Cleaner and Creator — and Settings at the foot; Ctrl+1…7 goes to each.
+then Cleaner, Creator and Widget — and Settings at the foot; Ctrl+1…8 goes to each.
 The window opens on Overview. Each tool owns its page.
 
 The sidebar and the status line are live and read one place, the services
@@ -38,7 +38,7 @@ from .ui.kit import format as fmt
 from .window_frame import NativeFrame
 
 # The pages, in the order of the loop; Ctrl+1 is the first.
-PAGE_ORDER = ("overview", "rotator", "tracker", "review", "cleaner", "creator", "settings")
+PAGE_ORDER = ("overview", "rotator", "tracker", "review", "cleaner", "creator", "widget", "settings")
 DEFAULT_PAGE = "overview"
 # The sidebar's groups: which pages open each.
 SECTIONS = {"overview": "The loop", "cleaner": "Utilities"}
@@ -105,7 +105,7 @@ class LoadingCover(QWidget):
     ground, the mark and "Opening Toolkit…", over everything under the title
     bar.
 
-    The pages take a while to build (seven of them, ~1 100 widgets: 0.36 s
+    The pages take a while to build (~1 100 widgets: 0.36 s
     measured offscreen on a fast machine, longer on Windows with a library to
     look at), and building them before the window was shown left the screen
     empty for that long, then put up a frame with nothing painted in it. The window now
@@ -360,6 +360,9 @@ class MainWindow(QMainWindow):
             settings = self.pages.get("settings")
             if settings is not None:
                 QTimer.singleShot(0, settings.startup)
+            widget = self.pages.get("widget")
+            if widget is not None:
+                QTimer.singleShot(0, widget.startup)
         waiting, self._waiting = self._waiting, []
         for verb, argument in waiting:
             self.handle_command(verb, argument)

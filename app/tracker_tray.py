@@ -36,9 +36,9 @@ from PySide6.QtWidgets import QApplication, QSystemTrayIcon
 from . import theme, tray_words as words, window_instance
 from .branding import DISPLAY_NAME
 from .hang_watch import HangWatch
-from .quit_request import QuitListener
+from .quit_request import QuitListener, tracker_server_name
 from .engines.tracker import FALLBACK_SECONDS, TIME_FMT, Progress, app_data_dir, pick_primary
-from .engines.wallpaper_timer import Countdown, WallpaperTimer
+from .engines.wallpaper_timer import Countdown, WallpaperTimer, monitor_map
 from .settings import Settings
 from .tracker_feed import TRAY_MUTEX, TrackerFeed, heartbeat_setting
 from .tray_icon import FINISHED, UNKNOWN, step, tray_icon
@@ -98,9 +98,12 @@ def _seconds_since(stamp: str) -> float:
 class TrackerTray:
     """Follows Wallpaper Engine in the background and renders the result into the tray."""
 
-    def __init__(self, app: QApplication, quit_listener: QuitListener | None = None):
+    def __init__(self, app: QApplication, quit_listener: QuitListener | None = None,
+                 *, show_widget: bool = False):
         self.app = app
         self.settings = Settings.load()
+        self.widget = None
+        self._widget_enabled = self.settings.get("widget", "enabled", False)
         self.results: list[Progress] = []
         self.completed: set[str] = set()
         self.restarts_told: set[str] = set()
@@ -139,6 +142,9 @@ class TrackerTray:
         # (`--quit`, see quit_request): the same as Quit in the menu.
         self.quit_listener = quit_listener or QuitListener()
         self.quit_listener.requested.connect(self._on_quit_requested)
+        self.quit_listener.widget_requested.connect(self._set_widget_visible)
+        if show_widget:
+            self._set_widget_visible(True)
 
         self.clock_timer = QTimer()
         self.clock_timer.timeout.connect(self._tick_clock)
@@ -165,6 +171,7 @@ class TrackerTray:
                 f"{FALLBACK_SECONDS} s instead")
         self._announce_completions()
         self._render_icon()
+        self._render_widget()
 
     def _tick_clock(self):
         """Advance every monitor's countdown by a second and redraw if it shows."""
@@ -178,6 +185,41 @@ class TrackerTray:
                 log("countdown failed, fill disabled:\n" + traceback.format_exc())
             self.countdowns = {}
         self._render_icon()
+        self._sync_widget()
+
+    def _set_widget_visible(self, on: bool) -> None:
+        self.settings.reload_if_changed()
+        self.settings.set("widget", "enabled", on)
+        self.settings.save()
+        self._widget_enabled = on
+        if on:
+            if self.widget is None:
+                from .desktop_widget import DesktopWidget
+                self.widget = DesktopWidget(self.settings)
+                self.widget.settings_requested.connect(lambda: self.open_toolkit("Widget"))
+                self.widget.visibility_changed.connect(self._set_widget_visible)
+            self._render_widget()
+            self.widget.show()
+        elif self.widget is not None:
+            self.widget.hide()
+        log("widget shown" if on else "widget hidden")
+
+    def _sync_widget(self) -> None:
+        self.settings.reload_if_changed()
+        on = self.settings.get("widget", "enabled", False)
+        # A plain tracker logon honours the widget's separate startup switch.
+        if on != self._widget_enabled:
+            self._set_widget_visible(on)
+        self._render_widget()
+
+    def _render_widget(self) -> None:
+        if self.widget is not None:
+            monitors = getattr(self.clock, "rects", {}) or [
+                f"Monitor{entry['location']}" for entry in monitor_map(self.feed.files.config).values()
+                if isinstance(entry, dict) and isinstance(entry.get("location"), int)]
+            self.widget.sync_settings()
+            self.widget.render(self.results, self.countdowns, self._primary(),
+                               self.feed.error or "", monitors)
 
     def _announce_completions(self):
         """Balloon once per playlist, when the last unseen item has been shown,
@@ -365,7 +407,7 @@ def _wait_for_tray(app: QApplication, quit_asked=lambda: False) -> bool:
     return False
 
 
-def run_tray() -> int:
+def run_tray(*, show_widget: bool = False) -> int:
     """Entry point for `--tracker`: a tray-only application with no window."""
     log(f"starting: pid {os.getpid()}, {sys.executable}")
     # The tracker starts first at logon, so it is usually what moves the data
@@ -374,6 +416,12 @@ def run_tray() -> int:
     log(f"data: {resolve().report}")
     try:
         if not _claim_single_instance():
+            if show_widget:
+                # The mutex can precede the pipe while the first launch starts.
+                application = QApplication(sys.argv)
+                if not window_instance.send("widget:show", wait=5, name=tracker_server_name()):
+                    log("the tracker did not answer a request to show the widget")
+                    return 1
             log("another tracker already has the tray — exiting")
             return 0
 
@@ -388,7 +436,9 @@ def run_tray() -> int:
         asked: list[bool] = []
         listener = QuitListener()
         listener.requested.connect(lambda: asked.append(True))
-        if not _wait_for_tray(app, lambda: bool(asked)):
+        widget_requests: list[bool] = []
+        listener.widget_requested.connect(widget_requests.append)
+        if not show_widget and not _wait_for_tray(app, lambda: bool(asked) or bool(widget_requests)):
             if asked:
                 log("asked to quit (an update or an uninstall is starting) "
                     "while waiting for the notification area")
@@ -396,14 +446,17 @@ def run_tray() -> int:
             # Not fatal: counting is the point, and the icon re-registers by
             # itself if the shell comes back later. Quitting here would lose the
             # count instead, and a dialog at logon would be worse than useless.
-            log(f"no notification area after {TRAY_WAIT_SECONDS}s — "
-                f"counting on without an icon")
+            if not widget_requests:
+                log(f"no notification area after {TRAY_WAIT_SECONDS}s — "
+                    f"counting on without an icon")
 
         # Wallpaper Engine's files are read on the feed's worker, so nothing
         # here should wait on a disk; if anything ever holds the GUI thread
         # for seconds, this says what.
         watch = HangWatch(app_data_dir() / "tracker-hangs.log", "the tray tracker").start()
-        tray = TrackerTray(app, listener)   # the local reference keeps the icon alive
+        tray = TrackerTray(app, listener, show_widget=show_widget or bool(widget_requests and widget_requests[-1]))
+        if widget_requests:
+            tray._set_widget_visible(widget_requests[-1])
         log(f"running; tray icon visible: {tray.icon.isVisible()}")
         exit_code = app.exec()
         watch.stop()

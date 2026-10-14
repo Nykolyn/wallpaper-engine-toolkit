@@ -107,8 +107,8 @@ so table painting never stats a video.
 
 `MainWindow` is a fixed frame: the `TitleBar`, the `Sidebar`, a `PageHeader`
 over a `QStackedWidget` of pages, and the `StatusLine`. Pages are in the order
-of the loop — `overview`, `rotator`, `tracker`, `review`, `creator`,
-`settings` (`main_window.PAGE_ORDER`) — and Ctrl+1…7 go to each.
+of the loop — `overview`, `rotator`, `tracker`, `review`, `cleaner`, `creator`,
+`widget`, `settings` (`main_window.PAGE_ORDER`) — and Ctrl+1…8 go to each.
 Changing page cross-fades the content only (`animations.CrossFade`: a still
 of the page that leaves, fading over the live one that arrives, over
 `motion.base`; instant with motion off); the sidebar, title bar and status
