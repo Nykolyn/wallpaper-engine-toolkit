@@ -192,17 +192,37 @@ def main(argv: list[str]) -> int:
 
     # 2. Update over a running copy.
     (DATA / "suite.json").write_text(json.dumps({"updates": {"check_on_startup": False},
+                                                "widget": {"enabled": True},
                                                 "app": {"autostart_migrated": True}}), encoding="utf-8")
+    import winreg
+    from app import autostart, widget_startup
+    with winreg.CreateKeyEx(winreg.HKEY_CURRENT_USER, autostart.RUN_KEY, 0, winreg.KEY_SET_VALUE) as key:
+        winreg.SetValueEx(key, widget_startup.VALUE_NAME, 0, winreg.REG_SZ, f'"{EXE}" --widget-startup')
+    check("the widget has its own startup entry", widget_startup.enabled())
     environment = dict(os.environ, QT_QPA_PLATFORM="offscreen")
     if not wait_for(lambda: mutex_held(TRAY_MUTEX), 15):
         subprocess.Popen([str(EXE), "--tracker"], env=environment, cwd=str(INSTALL_DIR))
     subprocess.Popen([str(EXE)], env=environment, cwd=str(INSTALL_DIR))
     check("the tray tracker runs", wait_for(lambda: mutex_held(TRAY_MUTEX), 60))
     check("and the window", wait_for(lambda: mutex_held(WINDOW_MUTEX), 60))
+    widget_shown = wait_for(
+        lambda: (DATA / "tracker.log").is_file() and "widget shown" in
+        (DATA / "tracker.log").read_text(encoding="utf-8", errors="replace"), 60)
+    check("the installed widget is shown by the running tracker", widget_shown)
+    if not widget_shown:
+        print("---- widget startup diagnostics ----", flush=True)
+        for name in ("tracker.log", "window-hangs.log", "tracker-hangs.log"):
+            path = DATA / name
+            if path.is_file():
+                print(f"{name}:\n{path.read_text(encoding='utf-8', errors='replace')[-16000:]}", flush=True)
+        print([(pid, engine_control.process_arguments(pid)) for pid, name in engine_control.processes()
+               if name.casefold() == f"{APP}.exe".casefold()], flush=True)
     time.sleep(5)                         # let the window make its pages
     code = install(setup, work / "2-update.log", "/UpdateFromApp=1")
     show_log(work / "2-update.log")
     check("the update finishes over a running copy", code == 0)
+    check("updating keeps the widget visibility preference",
+          json.loads((DATA / "suite.json").read_text(encoding="utf-8")).get("widget", {}).get("enabled") is True)
     check("in-app setup opens the updated window again", wait_for(lambda: mutex_held(WINDOW_MUTEX), 60))
     check("in-app setup starts the tracker again", wait_for(lambda: mutex_held(TRAY_MUTEX), 60))
     tracker_log = (DATA / "tracker.log").read_text(encoding="utf-8", errors="replace") \
@@ -258,11 +278,17 @@ def main(argv: list[str]) -> int:
     gone = uninstall(work / "3-uninstall.log")
     show_log(work / "3-uninstall.log")
     check("the uninstall finishes", gone)
+    if not gone:
+        print(f"shutdown: window={mutex_held(WINDOW_MUTEX)}, tracker={mutex_held(TRAY_MUTEX)}", flush=True)
+        tracker_log = DATA / "tracker.log"
+        if tracker_log.is_file():
+            print(tracker_log.read_text(encoding="utf-8", errors="replace")[-12000:], flush=True)
     check("nothing of the toolkit runs any more",
           not mutex_held(WINDOW_MUTEX) and not mutex_held(TRAY_MUTEX))
     check("the program is gone", not EXE.exists())
     check("so are its Start-menu entry and its logon task",
           not SHORTCUT.exists() and task_program() == "")
+    check("uninstall removes this copy's widget startup entry", not widget_startup.enabled())
     data_intact("after uninstalling")
     check("the copies taken before the update are kept too",
           (DATA / "update_backup").exists() and len(list((DATA / "update_backup").iterdir())) == 2)

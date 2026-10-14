@@ -16,7 +16,7 @@ myprojects), made-up folders on a drive `X:` that it reports as present, and
 the frame's state from `tests/fixtures/ui/shell.json`. All pages are the real ones, populated by load_fixture(state). No live
 engines, feeds, Steam or Wallpaper Engine library scans run.
 
-- `--page`: overview, rotator, tracker, review, cleaner, creator, settings.
+- `--page`: overview, rotator, tracker, review, cleaner, creator, widget, settings.
 - `--state`: a state of the frame (`--list` shows them: idle, running, clean,
   problems, scanning, building, copying, failed, empty, we-off), or one of
   the page's own (the Tracker's tracking, paused, disconnected, finished, …,
@@ -89,8 +89,9 @@ def main(argv=None) -> int:
         from app.pages.rotator import RotatorPage
         from app.pages.settings import SettingsPage
         from app.pages.tracker import TrackerPage
+        from app.pages.widget import WidgetPage
         print("states:", ", ".join(states))
-        for page in (OverviewPage, RotatorPage, TrackerPage, ReviewPage, CreatorPage, SettingsPage):
+        for page in (OverviewPage, RotatorPage, TrackerPage, ReviewPage, CreatorPage, WidgetPage, SettingsPage):
             print(f"{page.key}:", ", ".join(page.FIXTURES))
         return 0
     if out is None:
@@ -186,6 +187,7 @@ def build_window(page_key: str):
     from app.pages.rotator import RotatorPage
     from app.pages.settings import SettingsPage
     from app.pages.tracker import TrackerPage
+    from app.pages.widget import WidgetPage
     from app.settings import Settings
     from app.ui.kit import label, paths
 
@@ -226,6 +228,7 @@ def build_window(page_key: str):
              review,
              CleanerPage(settings, svc, config),
              CreatorPage(settings, svc, config),
+             WidgetPage(settings, live=False),
              # wired as build_pages wires it, so its two buttons draw as they are
              SettingsPage(settings, config, feed=feed, services=svc,
                           on_review_settings=review.edit_settings, on_authors=review.edit_authors)]

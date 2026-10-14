@@ -164,7 +164,7 @@ for number, key in enumerate(PAGE_ORDER, start=1):
     settle(5)
     if window.current_page() != key:
         break
-check("Ctrl+1 … Ctrl+7 go to the seven pages in the sidebar's order", window.current_page() == PAGE_ORDER[-1])
+check("Ctrl+1 … Ctrl+8 go to the eight pages in the sidebar's order", window.current_page() == PAGE_ORDER[-1])
 
 found = {}
 for key in ("tracker", "rotator", "review"):

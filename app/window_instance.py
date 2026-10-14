@@ -216,7 +216,7 @@ def send(message: str, wait: float = REACH_SECONDS, name: str | None = None) -> 
         time.sleep(0.2)
 
 
-def window_command(tab: str = "", command: str | None = None) -> list[str]:
+def window_command(tab: str = "", command: str | None = None, *, widget: bool = False) -> list[str]:
     """How to start the window on this machine: the built exe, or the source.
     `command` is carried out once the window is up (see `run_app --command`)."""
     if getattr(sys, "frozen", False):
@@ -227,10 +227,10 @@ def window_command(tab: str = "", command: str | None = None) -> list[str]:
         script = Path(__file__).resolve().parent.parent / "run_app.py"
         argv = [str(windowed if windowed.exists() else exe), str(script)]
     return (argv + (["--tab", tab] if tab else [])
-            + (["--command", command] if command else []))
+            + (["--command", command] if command else []) + (["--widget"] if widget else []))
 
 
-def launch(tab: str = "", command: str | None = None) -> subprocess.Popen:
+def launch(tab: str = "", command: str | None = None, *, widget: bool = False) -> subprocess.Popen:
     """Start the window as a program of its own, at normal priority.
 
     A child inherits a below-normal priority class unless it is told otherwise,
@@ -243,7 +243,7 @@ def launch(tab: str = "", command: str | None = None) -> subprocess.Popen:
     ``external`` keeps from other programs. Its own bootloader sets them up
     again anyway.
     """
-    argv = window_command(tab, command)
+    argv = window_command(tab, command, widget=widget)
     cwd = str(Path(sys.executable).resolve().parent if getattr(sys, "frozen", False)
               else Path(__file__).resolve().parent.parent)
     flags = _NORMAL_PRIORITY_CLASS | _CREATE_BREAKAWAY_FROM_JOB

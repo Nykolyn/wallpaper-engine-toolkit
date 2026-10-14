@@ -43,6 +43,7 @@ class QuitListener(QObject):
     """The tray tracker's end of its socket: says when it is asked to quit."""
 
     requested = Signal()
+    widget_requested = Signal(bool)
 
     def __init__(self, name: str | None = None, parent: QObject | None = None):
         super().__init__(parent)
@@ -63,8 +64,11 @@ class QuitListener(QObject):
     def _read(self, socket: QLocalSocket) -> None:
         while socket.canReadLine():
             line = bytes(socket.readLine()).decode("utf-8", "replace")
-            if window_instance.parse_command(line) == ("quit", ""):
+            parsed = window_instance.parse_command(line)
+            if parsed == ("quit", ""):
                 self.requested.emit()
+            elif parsed in (("widget", "show"), ("widget", "hide")):
+                self.widget_requested.emit(parsed[1] == "show")
 
 
 def running() -> list[str]:
@@ -89,16 +93,16 @@ def ask_all(wait: float = WAIT_SECONDS, *, running=running, send=window_instance
         return True, "nothing of the toolkit was running"
     deadline = clock() + wait
     left = found
-    delivered = set()
+    delivered: dict[str, float] = {}
     while left:
         for what in left:
-            if what in delivered:
+            if clock() - delivered.get(what, float("-inf")) < 1.0:
                 continue
             name = (window_instance.server_name() if what == "the window"
                     else tracker_server_name())
             # A mutex exists before the socket does: retry failed delivery until the deadline.
             if send(QUIT, wait=max(0.0, min(2.0, deadline - clock())), name=name):
-                delivered.add(what)
+                delivered[what] = clock()
         left = running()
         if not left or clock() >= deadline:
             break

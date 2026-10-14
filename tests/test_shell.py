@@ -147,8 +147,8 @@ svc = services.Services(data_dir=TMP / "data", settings=settings)
 
 
 def make_window(initial=None) -> MainWindow:
-    stand_ins = [StandIn(key, key.title(), key) for key in
-                 ("rotator", "tracker", "review", "cleaner", "creator")]
+    stand_ins = [StandIn(key, key.title(), "tracker" if key == "widget" else key) for key in
+                 ("rotator", "tracker", "review", "cleaner", "creator", "widget")]
     pages = [OverviewPage(svc, feed), *stand_ins,
              SettingsPage(settings, config, feed=feed, services=svc)]
     return MainWindow(settings=settings, feed=feed, services_=svc, pages=pages,
@@ -183,11 +183,11 @@ check("a page may ask for another", w.current_page() == "settings")
 w.show()
 w.activateWindow()
 wait_for(lambda: QApplication.activeWindow() is w, 1000)
-for key, number in (("rotator", Qt.Key_2), ("settings", Qt.Key_7), ("overview", Qt.Key_1),
+for key, number in (("rotator", Qt.Key_2), ("settings", Qt.Key_8), ("overview", Qt.Key_1),
                     ("review", Qt.Key_4)):
     QTest.keyClick(w, number, Qt.ControlModifier)
     app.processEvents()
-check("Ctrl+2, Ctrl+7, Ctrl+1 and Ctrl+4 go to Rotator, Settings, Overview, Review",
+check("Ctrl+2, Ctrl+8, Ctrl+1 and Ctrl+4 go to Rotator, Settings, Overview, Review",
       w.current_page() == "review")
 frame = (w.sidebar.geometry(), w.status.geometry(), w.title_bar.geometry())
 w.show_page("tracker")
@@ -265,6 +265,15 @@ main_window_module.QApplication = stand_in_application()
 w.handle_command("quit", "")
 check("with nothing under way it closes every window and quits",
       done == ["close all", "quit"])
+done.clear()
+pending_widget = [True]
+w.pages["widget"].stop = lambda timeout=0: not pending_widget[0]
+w.handle_command("quit", "")
+check("shutdown holds the window while the widget process is still starting", done == [])
+pending_widget[0] = False
+wait(150)
+check("shutdown continues automatically once widget startup is drained", done == ["close all", "quit"])
+del w.pages["widget"].stop
 main_window_module.QApplication = real_application
 
 print("-- the rail --")

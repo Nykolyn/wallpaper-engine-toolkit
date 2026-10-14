@@ -51,6 +51,7 @@ def build_pages(window) -> list[Page]:
     from .rotator import RotatorPage
     from .settings import SettingsPage
     from .tracker import TrackerPage
+    from .widget import WidgetPage
 
     settings, feed, services = window.settings, window.feed, window.services
     # One Config for the Rotator page and the Settings page: what one saves the
@@ -98,4 +99,4 @@ def build_pages(window) -> list[Page]:
     services.jobs.finished.connect(tracker_page.refresh_multipliers)
     on_steam_found(settings_page, steam_found)
     return [OverviewPage(services, feed, settings=settings), rotator_page, tracker_page,
-            review_page, cleaner, creator_page, settings_page]
+            review_page, cleaner, creator_page, WidgetPage(settings), settings_page]

@@ -99,6 +99,10 @@ check(f"importing the settings asks nothing of Steam's disk ({gui_guard.violatio
 from app.engines.rotator import config as rconfig                        # noqa: E402
 from app.main_window import MainWindow                                   # noqa: E402
 from app.tracker_tray import TrackerTray                                 # noqa: E402
+from app import install_info                                            # noqa: E402
+from unittest.mock import patch                                         # noqa: E402
+with patch.object(install_info, "installed_exe", side_effect=AssertionError("source queried installed disk")):
+    check("source startup never probes the installed program's disk", not install_info.is_installed_copy())
 check(f"nor does importing the window and the tray ({gui_guard.violations[:3]})",
       gui_guard.violations == [])
 

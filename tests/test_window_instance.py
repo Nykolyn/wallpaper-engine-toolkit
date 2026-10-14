@@ -105,6 +105,9 @@ check("with a command, the window is told to carry it out once it is up",
       wi.window_command("Rotator", "rotate:confirm")[-4:]
       == ["--tab", "Rotator", "--command", "rotate:confirm"])
 check("and with none, no --command", "--command" not in wi.window_command("Tracker"))
+check("the desktop widget starts through the same toolkit command without a main window",
+      wi.window_command(widget=True)[-1] == "--widget"
+      and "--tab" not in wi.window_command(widget=True))
 
 launched: list[tuple] = []
 

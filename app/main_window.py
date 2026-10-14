@@ -9,7 +9,7 @@
     └──────────────────────────────────────────────────────────────┘
 
 The pages are in the order of the loop — Overview, Rotator, Tracker, Review,
-then Cleaner and Creator — and Settings at the foot; Ctrl+1…7 goes to each.
+then Cleaner, Creator and Widget — and Settings at the foot; Ctrl+1…8 goes to each.
 The window opens on Overview. Each tool owns its page.
 
 The sidebar and the status line are live and read one place, the services
@@ -38,7 +38,7 @@ from .ui.kit import format as fmt
 from .window_frame import NativeFrame
 
 # The pages, in the order of the loop; Ctrl+1 is the first.
-PAGE_ORDER = ("overview", "rotator", "tracker", "review", "cleaner", "creator", "settings")
+PAGE_ORDER = ("overview", "rotator", "tracker", "review", "cleaner", "creator", "widget", "settings")
 DEFAULT_PAGE = "overview"
 # The sidebar's groups: which pages open each.
 SECTIONS = {"overview": "The loop", "cleaner": "Utilities"}
@@ -105,7 +105,7 @@ class LoadingCover(QWidget):
     ground, the mark and "Opening Toolkit…", over everything under the title
     bar.
 
-    The pages take a while to build (seven of them, ~1 100 widgets: 0.36 s
+    The pages take a while to build (~1 100 widgets: 0.36 s
     measured offscreen on a fast machine, longer on Windows with a library to
     look at), and building them before the window was shown left the screen
     empty for that long, then put up a frame with nothing painted in it. The window now
@@ -316,6 +316,7 @@ class MainWindow(QMainWindow):
         self._fixture_nav: dict[str, NavState] = {}
         self._initial = page_for(initial) or DEFAULT_PAGE
         self._start = start
+        self._quitting = False
         # Commands asked (by the tray, a second launch) before the pages were made.
         self._waiting: list[tuple[str, str]] = []
         self.sidebar.page_requested.connect(self.show_page)
@@ -352,7 +353,7 @@ class MainWindow(QMainWindow):
         for page in pages:
             self.add_page(page)
         self.show_page(self._initial, animate=False)
-        if self._start:
+        if self._start and not self._quitting:
             self.services.start()
             cleaner = self.pages.get("cleaner")
             if cleaner is not None:
@@ -360,6 +361,9 @@ class MainWindow(QMainWindow):
             settings = self.pages.get("settings")
             if settings is not None:
                 QTimer.singleShot(0, settings.startup)
+            widget = self.pages.get("widget")
+            if widget is not None:
+                QTimer.singleShot(0, widget.startup)
         waiting, self._waiting = self._waiting, []
         for verb, argument in waiting:
             self.handle_command(verb, argument)
@@ -538,6 +542,11 @@ class MainWindow(QMainWindow):
         """
         if self.services.jobs.running() or QApplication.activeModalWidget() is not None:
             self.bring_forward()
+            return False
+        self._quitting = True
+        widget = self.pages.get("widget")
+        if widget is not None and hasattr(widget, "stop") and not widget.stop(timeout=0):
+            QTimer.singleShot(100, self.quit_if_idle)
             return False
         # Every window of the app, the gallery's too, then the app itself.
         QApplication.closeAllWindows()

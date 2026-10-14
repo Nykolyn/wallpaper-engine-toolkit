@@ -75,7 +75,22 @@ gone, said = qr.ask_all(
     wait=5, running=lambda: ["the window"], send=lambda m, wait, name: sent.append((m, name)) or True,
     sleep=clock.sleep, clock=clock)
 check("what will not quit is waited for, then named",
-      not gone and "the window" in said and 5.0 <= clock.now < 6.0 and len(sent) == 1)
+      not gone and "the window" in said and 5.0 <= clock.now < 6.0 and 1 < len(sent) <= 6)
+
+clock = Clock()
+closed = []
+sent.clear()
+
+def idle_later(message, wait, name):
+    sent.append(clock.now)
+    if clock.now >= 0.5:
+        closed.append(True)
+    return True
+
+gone, said = qr.ask_all(wait=3, running=lambda: [] if closed else ["the window"],
+                        send=idle_later, sleep=clock.sleep, clock=clock)
+check("a window that becomes idle after the first request is asked again and exits",
+      gone and len(sent) == 2 and sent[1] >= 1.0)
 
 # A process holds its mutex before Qt's socket is ready on a slow machine.
 clock = Clock()
@@ -132,15 +147,21 @@ finally:
 name = f"WallpaperEngineToolkit.tracker-test.{os.getpid()}"
 listener = qr.QuitListener(name)
 asked: list[bool] = []
+widgets: list[bool] = []
 listener.requested.connect(lambda: asked.append(True))
+listener.widget_requested.connect(widgets.append)
 check("the tracker listens on its socket", listener.listening)
 wi.send("show Tracker", wait=1.0, name=name)
+wi.send("widget:show", wait=1.0, name=name)
+wi.send("widget:invalid", wait=1.0, name=name)
+wi.send("widget:hide", wait=1.0, name=name)
 wi.send(qr.QUIT, wait=1.0, name=name)
 until = time.monotonic() + 3
 while not asked and time.monotonic() < until:
     app.processEvents()
     time.sleep(0.02)
 check("a quit request reaches it, and only that one does", asked == [True])
+check("widget visibility requests reach the tracker without quitting it", widgets == [True, False])
 
 # A tracker started before the notification area exists waits for it, up to
 # two minutes, holding its mutex all along: it must hear the request then too.

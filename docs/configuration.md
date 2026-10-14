@@ -162,6 +162,9 @@ each through its own code, and they stay two files.
 | `config.json` path | [Settings](settings.md#wallpaper-engine) | `suite.json` (`tracker.we_config`) | Wallpaper Engine's, detected |
 | Safety check ("Also check every") | [Settings](settings.md#wallpaper-engine) | `suite.json` (`tracker.heartbeat`, seconds) | 5 min — changes themselves are picked up as Wallpaper Engine writes them |
 | Lead monitor | [Settings](settings.md#tracker-and-tray), or a monitor's menu on the [Tracker](tracker.md#the-page) page | `suite.json` (`tracker.primary`) | automatic |
+| Show desktop widget | [Widget](widget.md) | `suite.json` (`widget.enabled`) | off |
+| Widget view | [Widget](widget.md) | `suite.json` (`widget.mode`) | compact |
+| Widget position | drag the [Widget](widget.md) header | `suite.json` (`widget.position`: screen name, relative x/y) | near the primary screen's top right |
 | Review source | [Review settings](review.md#what-gets-reviewed) | `suite.json` (`review.scope`) | the `new` folder |
 | Subscribe by | [Review settings](review.md#how-a-click-subscribes) | `suite.json` (`review.subscribe`: `steam` or `page`) | Steam directly |
 | Second copy of the authors backups | [Review settings](authors-database.md#a-second-copy-somewhere-else) | `suite.json` (`review.backup_mirror`) | none |
@@ -257,6 +260,10 @@ The autostart entry is written when you turn it on:
 
 Turning autostart off removes both, including anything left under the app's
 former name. See [Starting with Windows](tracker.md#starting-with-windows).
+
+The [widget's](widget.md) separate startup switch writes the
+`WallpaperEngineToolkitWidget` value under the same per-user Run key, launching
+`--widget-startup`. Uninstall removes it only when it points to that copy.
 
 Rotations can rewrite Wallpaper Engine's playlist configuration and binary
 playlist state, with backups.
