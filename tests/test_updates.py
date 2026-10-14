@@ -37,6 +37,17 @@ def raises(work, kind=ValueError):
     return False
 
 
+with patch.object(sys, "frozen", False, create=True), patch.object(
+        u.install_info, "installed_exe", side_effect=AssertionError("source mode must not probe installed files")):
+    check("source update eligibility does not access an installed copy", not u.install_info.is_installed_copy())
+with patch.object(sys, "frozen", True, create=True), patch.object(
+        u.install_info, "installed_exe", return_value=Path(sys.executable)):
+    check("the installed executable is eligible", u.install_info.is_installed_copy())
+with patch.object(sys, "frozen", True, create=True), patch.object(
+        u.install_info, "installed_exe", return_value=TMP / "other.exe"):
+    check("a standalone build cannot update another installation", not u.install_info.is_installed_copy())
+
+
 payload = b"a fabricated installer" * 30_000
 digest = hashlib.sha256(payload).hexdigest()
 metadata = {"tag_name": "v99.0.0", "body": "A new version", "draft": False, "prerelease": False,

@@ -19,10 +19,21 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   its position is remembered relative to its screen and stays reachable after
   changes to monitor resolution, scaling or connections.
 
+## [4.1.4] - 2026-10-14
+
 ### Fixed
 
-- Starting from source no longer probes the installed copy's disk merely to
-  establish that the source process is not an installed application.
+- In-app updates open the window only after the data backup succeeds. A failed
+  backup leaves both the window and tracker stopped, including during startup.
+- Installer validation waits for the uninstaller's final file deletion before
+  reinstalling, and checks that the reinstalled uninstaller works too.
+- Source runs check update eligibility without probing an installed copy on
+  the GUI thread.
+
+### Changed
+
+- GitHub Actions use current stable actions with the recommended Node 24 LTS
+  runtime instead of deprecated Node 20 actions.
 
 ## [4.1.3] - 2026-10-13
 
@@ -1782,7 +1793,8 @@ restructured yet; the tabs keep their layout and take on the new look.
   unless you ask for it.
 
 [Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v4.2.0...HEAD
-[4.2.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v4.1.3...v4.2.0
+[4.2.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v4.1.4...v4.2.0
+[4.1.4]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v4.1.3...v4.1.4
 [4.1.3]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v4.1.2...v4.1.3
 [4.1.2]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v4.1.1...v4.1.2
 [4.1.1]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v4.1.0...v4.1.1

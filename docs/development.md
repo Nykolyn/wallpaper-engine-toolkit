@@ -589,6 +589,21 @@ Run the lot:
 for %f in (tests\test_*.py) do .venv\Scripts\python.exe %f
 ```
 
+The Windows installer job runs `tools/check_installer.py` against a fresh
+account's application data. A failed backup must leave no toolkit executable
+running, even a bootloader which has not created its mutex yet. Uninstall
+finishes only once the registration and original `unins000.exe` are both gone;
+the copied uninstaller removes that file after its first process has exited.
+`test_installer_check.py` reproduces that two-phase cleanup with temporary files.
+
+Inno Setup processes ordinary `[Run]` entries before `ssPostInstall`. The
+in-app launch therefore belongs at the end of `AfterFilesAreInstalled`, after
+backup success. The manual launch remains a `postinstall` checkbox.
+
+The workflow uses stable Node 24 actions: checkout/setup-python/upload-artifact
+v7 and download-artifact v8. Node is the actions' own runtime; Toolkit still
+runs on Python/PySide6 and needs no Node installation.
+
 | File | Covers |
 |---|---|
 | `test_creator.py` | Move preserves sources when JSON, copy or verification fails; metadata parsing, a single probe per file, read cancellation, pause/resume, subset builds, report reasons and the three tag states |
