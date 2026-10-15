@@ -149,6 +149,13 @@ class TrayOptionsTest(unittest.TestCase):
         selected.seen = selected.total
         self.assertEqual(tray_words.icon_state(primary, None), (tray_icon.FINISHED, 1))
 
+    def test_initial_unknown_icon_needs_no_font_discovery(self):
+        with patch("PySide6.QtGui.QFontMetricsF.tightBoundingRect",
+                   side_effect=AssertionError("cold font discovery blocks startup")), \
+                patch.object(tray_icon.QPainter, "drawText", side_effect=AssertionError("text needs fonts")):
+            icon = tray_icon.tray_icon(tray_icon.UNKNOWN)
+            self.assertEqual(len(icon.availableSizes()), len(tray_icon.SIZES))
+
     def test_page_edits_validation_and_reset(self):
         page = TrayPage(self.settings)
         page.colors["front_color"].setText("#abcdef")

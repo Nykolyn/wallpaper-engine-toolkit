@@ -45,8 +45,7 @@ import math
 from dataclasses import dataclass
 
 from PySide6.QtCore import QPointF, QRectF, Qt
-from PySide6.QtGui import (
-    QColor, QFont, QFontMetricsF, QIcon, QPainter, QPainterPath, QPen, QPixmap)
+from PySide6.QtGui import QColor, QIcon, QPainter, QPainterPath, QPen, QPixmap
 
 from . import theme
 from .tray_options import DEFAULTS
@@ -82,7 +81,6 @@ BADGE_RADIUS = 0.2
 BADGE_GAP = 0.05
 _PAUSE = ((-0.42, -0.45, 0.28, 0.9), (0.14, -0.45, 0.28, 0.9))   # of the badge's radius
 _TICK = ((-0.48, 0.02), (-0.12, 0.38), (0.5, -0.36))
-_GLYPH_EM = 1.5                  # the "?" against the badge's radius
 UNKNOWN_OPACITY = 0.55           # a mark that knows nothing is muted
 
 
@@ -188,22 +186,6 @@ def fill_edges(size: int, fill: float | None, playlist_fill: float | None,
     return edge(BACK, back_fill), edge(FRONT, front_fill)
 
 
-def _glyph_font(pixels: float) -> QFont:
-    font = QFont()
-    font.setFamilies(list(theme.MONO))
-    font.setPixelSize(max(int(round(pixels)), 1))
-    font.setWeight(QFont.Bold)
-    return font
-
-
-def _draw_centred(painter: QPainter, text: str, font: QFont, centre: QPointF) -> None:
-    """Text with its ink centred on `centre` (a line box centres the glyph high)."""
-    painter.setFont(font)
-    ink = QFontMetricsF(font).tightBoundingRect(text)
-    painter.drawText(QPointF(centre.x() - ink.center().x(),
-                             centre.y() - ink.center().y()), text)
-
-
 def _draw_mark(painter: QPainter, size: int, colours: Palette, colour: QColor | None,
                edge: float, *, back_colour: QColor | None = None,
                front_edge: float | None = None) -> None:
@@ -264,8 +246,20 @@ def _draw_badge(painter: QPainter, state: str, size: int, colours: Palette) -> N
             painter.drawRect(QRectF(centre.x() + x * radius, centre.y() + y * radius,
                                     w * radius, h * radius))
     elif state == UNKNOWN:
-        painter.setPen(colours.glyph)
-        _draw_centred(painter, "?", _glyph_font(radius * _GLYPH_EM), centre)
+        # Cold Windows font discovery can block the tray's startup socket for seconds.
+        painter.save()
+        painter.translate(centre)
+        painter.scale(radius, radius)
+        question = QPainterPath(QPointF(-0.32, -0.3))
+        question.cubicTo(-0.32, -0.68, 0.44, -0.64, 0.36, -0.2)
+        question.cubicTo(0.32, 0.0, 0.0, -0.02, 0.0, 0.16)
+        painter.setBrush(Qt.NoBrush)
+        painter.setPen(QPen(colours.glyph, 0.24, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
+        painter.drawPath(question)
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(colours.glyph)
+        painter.drawEllipse(QPointF(0, 0.48), 0.12, 0.12)
+        painter.restore()
     else:                                                   # FINISHED: the tick
         painter.setPen(QPen(colours.glyph, max(radius * 0.36, 1.0), Qt.SolidLine,
                             Qt.RoundCap, Qt.RoundJoin))

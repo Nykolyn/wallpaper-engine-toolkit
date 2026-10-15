@@ -13,6 +13,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Separate tray progress fills the visible rectangle width, accounting for the
   front border. A quarter of the wallpaper interval is now a quarter of the
   visible front rectangle, within one display pixel at every supported size.
+- The initial unknown-state badge uses a vector question mark, avoiding cold
+  Windows font discovery that could block widget startup requests.
 - The tray refreshes at actual rectangle pixel boundaries for every DPI size,
   including changes the old shared progress cache skipped.
 
