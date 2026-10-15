@@ -7,10 +7,8 @@ fill with colour **from left to right**: the scale runs from the left edge of
 the back frame to the right edge of the front one. Both frames filled whole is
 100 %, anything less is less than 100 %.
 
-What the fill measures is the caller's business: today it is the time to the
-next wallpaper change, empty just after a change and full the moment the next
-one is due. The playlist's progress is not in the icon; the tooltip and the
-window say it.
+By default the fill measures time to the next wallpaper change. Tray settings
+can color each rectangle and assign wallpaper and playlist progress separately.
 
 Four states, each with its colour:
 
@@ -51,6 +49,7 @@ from PySide6.QtGui import (
     QColor, QFont, QFontMetricsF, QIcon, QPainter, QPainterPath, QPen, QPixmap)
 
 from . import theme
+from .tray_options import DEFAULTS
 
 RUNNING, PAUSED, UNKNOWN, FINISHED = "running", "paused", "unknown", "finished"
 STATES = (RUNNING, PAUSED, UNKNOWN, FINISHED)
@@ -182,7 +181,8 @@ def _draw_centred(painter: QPainter, text: str, font: QFont, centre: QPointF) ->
 
 
 def _draw_mark(painter: QPainter, size: int, colours: Palette, colour: QColor | None,
-               edge: float) -> None:
+               edge: float, *, back_colour: QColor | None = None,
+               front_edge: float | None = None) -> None:
     """The two frames, filled with `colour` left of `edge` (None: no fill)."""
     k = scale(size)
     filled = QRectF(0, 0, edge, size)
@@ -195,7 +195,7 @@ def _draw_mark(painter: QPainter, size: int, colours: Palette, colour: QColor | 
     if colour is not None and edge > 0:
         painter.save()
         painter.setClipRect(filled)
-        painter.setPen(QPen(colour, stroke))
+        painter.setPen(QPen(back_colour or colour, stroke))
         painter.drawRoundedRect(back, radius, radius)
         painter.restore()
     # The front frame: a dark body over the back one, cut out of it by its edge.
@@ -206,6 +206,9 @@ def _draw_mark(painter: QPainter, size: int, colours: Palette, colour: QColor | 
     painter.setPen(Qt.NoPen)
     painter.setBrush(colours.body)
     painter.drawPath(body)
+    if front_edge is not None:
+        edge = front_edge
+        filled = QRectF(0, 0, edge, size)
     if colour is not None and edge > 0:
         painter.save()
         painter.setClipRect(filled)
@@ -246,7 +249,8 @@ def _draw_badge(painter: QPainter, state: str, size: int, colours: Palette) -> N
                               for x, y in _TICK])
 
 
-def mark_pixmap(state: str, size: int, *, fill: float | None = None) -> QPixmap:
+def mark_pixmap(state: str, size: int, *, fill: float | None = None,
+                options: dict | None = None, playlist_fill: float | None = None) -> QPixmap:
     """One state of the mark at one size, `size` × `size` pixels.
 
     `fill` (0..1) is how much of the two frames is filled, from the left; it
@@ -267,16 +271,35 @@ def mark_pixmap(state: str, size: int, *, fill: float | None = None) -> QPixmap:
         painter.setOpacity(1.0)
     else:
         share = 1.0 if state == FINISHED else fill
-        _draw_mark(painter, size, colours, colours.fill(state), fill_edge(size, share))
+        options = options or DEFAULTS
+        front_edge = back_edge = fill_edge(size, share)
+        if options["progress"] != "combined" and state != FINISHED:
+            front_fill, back_fill = ((fill, playlist_fill) if options["progress"] == "front_wallpaper"
+                                     else (playlist_fill, fill))
+            def local_edge(spec, fraction):
+                if fraction is not None and fraction >= 1:
+                    return float(size)
+                rect = _rect(spec, size)
+                half_stroke = spec[5] * scale(size) / 2
+                left = math.floor(rect.left() - half_stroke)
+                right = round(rect.right() + (half_stroke if spec == BACK else -half_stroke))
+                return left + step(fraction or 0.0, right - left)
+            front_edge = local_edge(FRONT, front_fill)
+            back_edge = local_edge(BACK, back_fill)
+        front_colour = QColor(options["front_color"]) if state == RUNNING else colours.fill(state)
+        back_colour = QColor(options["back_color"]) if state == RUNNING else colours.fill(state)
+        _draw_mark(painter, size, colours, front_colour, back_edge,
+                   back_colour=back_colour, front_edge=front_edge)
     if state != RUNNING:
         _draw_badge(painter, state, size, colours)
     painter.end()
     return pixmap
 
 
-def tray_icon(state: str, fill: float | None = None) -> QIcon:
+def tray_icon(state: str, fill: float | None = None, *, options: dict | None = None,
+              playlist_fill: float | None = None) -> QIcon:
     """The mark as one icon holding every size, so Windows can pick its own."""
     icon = QIcon()
     for size in SIZES:
-        icon.addPixmap(mark_pixmap(state, size, fill=fill))
+        icon.addPixmap(mark_pixmap(state, size, fill=fill, options=options, playlist_fill=playlist_fill))
     return icon

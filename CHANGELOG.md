@@ -6,6 +6,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [4.4.0] - 2026-10-15
+
+### Added
+
+- Tools sidebar group with Widget and Tray settings, before Utilities.
+- Tray rectangle colors, live preview and separate wallpaper/playlist progress
+  in either rectangle; the original combined fill remains the default.
+
 ## [4.3.1] - 2026-10-15
 
 ### Fixed
@@ -1830,7 +1838,7 @@ restructured yet; the tabs keep their layout and take on the new look.
   was right for one library and wrong for every other. Nothing is tagged now
   unless you ask for it.
 
-[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v4.3.1...HEAD
+[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v4.4.0...HEAD
 [4.3.1]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v4.3.0...v4.3.1
 [4.3.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v4.2.0...v4.3.0
 [4.2.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v4.1.4...v4.2.0
@@ -1893,3 +1901,5 @@ restructured yet; the tabs keep their layout and take on the new look.
 [1.0.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/releases/tag/v1.0.0
 
 [4.0.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.23.2...v4.0.0
+
+[4.4.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v4.3.1...v4.4.0

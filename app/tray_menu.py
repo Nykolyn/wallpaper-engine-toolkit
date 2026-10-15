@@ -171,6 +171,8 @@ class TrayMenu(QMenu):
         self.setAttribute(Qt.WA_TranslucentBackground)
         self.setMinimumWidth(theme.TRAY_MENU_WIDTH)
         self._model: MenuModel | None = None
+        self.icon_options = None
+        self.playlist_fill = None
         self._rows: dict[str, Row] = {}
         self._open = None
         self.triggered.connect(self._triggered)
@@ -262,7 +264,8 @@ class TrayMenu(QMenu):
         line_height = QFontMetricsF(line).height()
         block = title_height + theme.TRAY_HEADER_LINE_GAP + line_height
         y = rect.top() + top
-        pixmap = mark_pixmap(model.state, max(1, round(ring * dpr)), fill=model.fraction)
+        pixmap = mark_pixmap(model.state, max(1, round(ring * dpr)), fill=model.fraction,
+                             options=self.icon_options, playlist_fill=self.playlist_fill)
         pixmap.setDevicePixelRatio(dpr)
         painter.drawPixmap(int(rect.left() + left), int(y + (block - ring) / 2), pixmap)
         x = rect.left() + left + ring + theme.TRAY_HEADER_GAP

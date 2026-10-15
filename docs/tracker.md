@@ -196,6 +196,9 @@ in Settings), no monitor plays a playlist, or Wallpaper Engine is not running.
 
 ## The tray
 
+Customize its rectangle colors and progress through [Tools → Tray](tray.md).
+The original combined fill described below remains the default.
+
 The tray icon is the one part of the toolkit that lives outside its window.
 
 **The icon** is the app's mark (the two frames of the Branding page, without
