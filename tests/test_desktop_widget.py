@@ -17,14 +17,16 @@ os.environ["WALLPAPER_TOOLKIT_DATA"] = str(TMP / "data")
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 sys.stdout.reconfigure(errors="replace")
 
-from PySide6.QtCore import QPoint, QRect, QSize, Qt  # noqa: E402
+from PySide6.QtCore import QPoint, QPointF, QRect, QSize, Qt  # noqa: E402
+from PySide6.QtGui import QFontMetricsF, QMouseEvent  # noqa: E402
 from PySide6.QtWidgets import QApplication, QToolButton  # noqa: E402
 
 app = QApplication.instance() or QApplication([])
 from app import theme  # noqa: E402
-from app.desktop_widget import DesktopWidget, MonitorRow, countdown_text, normalized_position, screen_position  # noqa: E402
+from app.desktop_widget import DesktopWidget, countdown_text, file_size, normalized_position, screen_position  # noqa: E402
 from app.engines.wallpaper_timer import Countdown  # noqa: E402
 from app.settings import Settings  # noqa: E402
+from app.widget_options import profile, reset_profile, set_option  # noqa: E402
 
 theme.apply(app, styled=False)
 checks = []
@@ -37,6 +39,7 @@ def check(label, condition):
 
 def progress(monitor, playlist, seen=4, total=20):
     return SimpleNamespace(monitor=monitor, playlist=playlist, seen=seen, total=total,
+                           current=f"X:/{monitor}/video.mp4", current_title=f"Current wallpaper {monitor}",
                            percent=round(100 * seen / total) if total else 0)
 
 
@@ -49,10 +52,19 @@ clock1 = Countdown("Monitor1", 600, running=120, known=True)
 widget.render([p0, p1], {"Monitor0": clock0, "Monitor1": clock1}, p1)
 check("compact is default and follows selected tray monitor", widget.mode == "compact"
       and len(widget.rows) == 1 and widget.rows[0].monitor == "Monitor1")
+check("default is circular and belongs to desktop layer", widget.size() == QSize(144, 144)
+      and widget.options["layer"] == "desktop" and not widget.windowFlags() & Qt.WindowStaysOnTopHint
+      and widget.header.isHidden())
 row = widget.rows[0]
 check("monitor and playlist are accessible", row.accessibleName() == "Monitor1 · Space")
 check("numeric countdown and draining fraction use remaining time", row.timer_text == "8:00"
       and row.fraction == 0.8 and row.state == "running")
+check("playlist ring drains independently of wallpaper timer", row.remaining == 16 and row.playlist_fraction == .8)
+clock1.running = 300
+p1.seen = 15
+widget.render([p0, p1], {"Monitor1": clock1}, p1)
+check("both rings use remaining rather than elapsed or shown", row.fraction == .5 and row.playlist_fraction == .25)
+p1.seen = 4
 clock1.running = 240
 widget.render([p0, p1], {"Monitor1": clock1}, p1)
 check("ring drains as time passes", row.timer_text == "6:00" and row.fraction == 0.6)
@@ -67,12 +79,14 @@ clock1.known = False
 widget.render([p0, p1], {"Monitor1": clock1}, p1)
 check("unknown timer has no guessed number or ring", row.state == "unknown"
       and row.fraction is None and row.timer_text == "—:—")
+check("known playlist remains visible when timer is unknown", row.playlist_fraction == .8)
 clock1.known, clock1.active = True, False
 widget.render([p0, p1], {"Monitor1": clock1}, p1)
 check("inactive timer is unknown", row.state == "unknown" and row.fraction is None)
 p1.seen, p1.percent = 20, 100
 widget.render([p0, p1], {"Monitor1": clock1}, p1)
 check("finished takes precedence over unknown as in tray", row.state == "finished")
+check("finished playlist leaves inner ring empty", row.playlist_fraction == 0 and row.remaining == 0)
 clock1.active, clock1.paused = True, False
 clock1.running = 600
 widget.render([p0, p1], {"Monitor1": clock1}, p1)
@@ -86,11 +100,13 @@ check("expanded includes all monitors including missing playlists", widget.mode 
       and [row.monitor for row in widget.rows] == ["Monitor0", "Monitor1", "Monitor2"])
 check("missing playlist is clear and has no countdown", widget.rows[-1].progress is None
       and widget.rows[-1].timer_text == "—:—" and "No playlist" in widget.rows[-1].accessibleName())
-check("mode button persists choice", Settings.load().get("widget", "mode", None) == "expanded")
+check("expanded is dense", widget.width() == 320 and widget.height() == 28 + 84 * 3
+      and all(row.height() == 84 for row in widget.rows))
+check("mode button persists choice", profile(Settings.load())["mode"] == "expanded")
 widget.render([], {}, None, "Wallpaper Engine not found", monitors=("Monitor0", "Monitor1"))
 check("feed error remains accessible", "Wallpaper Engine not found" in widget.rows[0].accessibleDescription())
 external = Settings.load()
-external.set("widget", "mode", "compact")
+set_option(external, "default", "mode", "compact")
 external.set("creator", "source", "keep this setting")
 external.save()
 widget.sync_settings()
@@ -101,10 +117,40 @@ check("mode write preserves other process settings", Settings.load().get(
     "creator", "source", None) == "keep this setting")
 requested = []
 widget.settings_requested.connect(lambda: requested.append(True))
-for button in widget.header.findChildren(QToolButton):
-    if button.accessibleName() == "Widget settings":
-        button.click()
-check("settings button emits the settings request", requested == [True])
+menu = widget.build_menu()
+next(action for action in menu.actions() if action.text() == "Widget settings").trigger()
+check("context menu settings emits the settings request", requested == [True])
+check("context menu exposes customization", {"View", "Monitor", "Layer", "Size", "Opacity", "Ring colours",
+      "Lock position", "Reset position", "Widget settings", "Hide widget"}.issubset({a.text() for a in menu.actions()}))
+layer_menu = next(action.menu() for action in menu.actions() if action.text() == "Layer")
+check("layer choices name the requested behavior", [action.text() for action in layer_menu.actions()]
+      == ["On desktop", "Normal", "Always on top"])
+metadata = {p1.current: {"title": "Aurora over a silent planet", "size": 125_829_120}}
+widget.render([p0, p1], {"Monitor1": clock1}, p1, metadata=metadata)
+check("expanded uses supplied current wallpaper title and file size", widget.rows[1].wallpaper_title
+      == "Aurora over a silent planet" and widget.rows[1].size_text == "120 MB")
+check("missing file metadata stays explicit", widget.rows[0].size_text == "size unknown")
+check("file size formats zero and binary units without guessing", file_size(0) == "0 B"
+      and file_size(1024) == "1 KB" and file_size(1536) == "1.5 KB" and file_size(None) == "size unknown")
+fixed = DesktopWidget(settings, profile_key="Monitor0")
+fixed.render([p0, p1], {"Monitor0": clock0}, p1)
+fixed._toggle_mode()
+check("fixed monitor instance remains single in either view", len(fixed.rows) == 1 and fixed.rows[0].monitor == "Monitor0")
+fixed._toggle_mode()
+check("profile appearance is independent", profile(settings, "Monitor0")["mode"] == "compact"
+      and profile(settings)["mode"] == "expanded")
+set_option(settings, "Monitor0", "size", 176)
+set_option(settings, "Monitor0", "opacity", 60)
+set_option(settings, "Monitor0", "locked", True)
+fixed.sync_settings()
+press = QMouseEvent(QMouseEvent.MouseButtonPress, QPointF(30, 30), QPointF(30, 30),
+                    Qt.LeftButton, Qt.LeftButton, Qt.NoModifier)
+check("position lock prevents native or fallback dragging", fixed._start_move(press) is False and fixed._offset is None)
+before = fixed.pos()
+fixed._nudge(10, 10)
+check("position lock also prevents keyboard movement", fixed.pos() == before)
+check("opacity and size persist per instance", fixed.windowOpacity() == .6 and fixed.options["size"] == 176
+      and widget.options["size"] == 144)
 
 size = QSize(360, 180)
 areas = (QRect(-1920, -120, 1920, 1040), QRect(0, 0, 2560, 1400), QRect(2560, -400, 1280, 680))
@@ -137,7 +183,8 @@ class Screen:
 
 
 left, right = Screen("left", areas[0], 1.0), Screen("right", areas[2], 2.0)
-settings.set("widget", "position", {"screen": "left", "x": .8, "y": .7})
+set_option(settings, "default", "position", {"screen": "left", "x": .8, "y": .7})
+widget.sync_settings()
 with patch.object(QApplication, "screens", return_value=[left, right]), \
         patch.object(QApplication, "primaryScreen", return_value=right):
     widget._restore_position()
@@ -146,15 +193,15 @@ with patch.object(QApplication, "screens", return_value=[left, right]), \
     left.scale = 1.5
     widget._restore_position()
     check("resolution and DPI change restores inside logical available area", left.area.contains(widget.geometry())
-          and widget.width() == 360)
+          and widget.width() == 320)
 with patch.object(QApplication, "screens", return_value=[right]), \
         patch.object(QApplication, "primaryScreen", return_value=right):
     widget._restore_position()
     check("removed screen recovers to primary", right.area.contains(widget.geometry()))
-    settings.set("widget", "position", {"screen": "right", "x": float("nan"), "y": "bad"})
+    widget.options["position"] = {"screen": "right", "x": float("nan"), "y": "bad"}
     widget._restore_position()
     check("invalid stored coordinates recover inside screen", right.area.contains(widget.geometry()))
-    settings.set("widget", "position", [])
+    widget.options["position"] = []
     widget._restore_position()
     check("invalid position record recovers", right.area.contains(widget.geometry()))
     right.area = QRect(10, -40, 320, 260)
@@ -172,9 +219,40 @@ check("widget uses a tool window and shows without activation", bool(widget.wind
       and widget.testAttribute(Qt.WA_ShowWithoutActivating))
 check("visible expanded rows draw", widget.grab().toImage().pixelColor(20, 80).alpha() > 0)
 widget.save_position()
-stored = Settings.load().get("widget", "position", {})
+stored = profile(Settings.load()).get("position", {})
 check("saved placement is screen name and normalized fractions", isinstance(stored.get("screen"), str)
       and 0 <= stored["x"] <= 1 and 0 <= stored["y"] <= 1)
+widget._position_timer.stop()
+with patch("app.desktop_widget.apply_layer"), patch.object(widget, "_restore_position", wraps=widget._restore_position) as restored:
+    widget.sync_settings()
+    check("saving own position does not replay restoration", restored.call_count == 0)
+    widget.move(40, 40)
+    widget.save_position()
+    reset_profile(settings)
+    widget.sync_settings()
+    check("external appearance reset also resets position", restored.call_count == 1
+          and "position" not in widget.options)
+widget._set_option("layer", "normal")
+widget.move(50, 50)
+widget._nudge(10, 0)
+check("keyboard movement provides an alternative to dragging", widget.x() == 60)
+for edge in (112, 144, 176):
+    widget._set_option("mode", "compact")
+    widget._set_option("size", edge)
+    widget.render([p0, p1], {"Monitor1": clock1}, p1)
+    app.processEvents()
+    image = widget.grab().toImage()
+    check(f"compact {edge} stays circular with transparent corners", widget.size() == QSize(edge, edge)
+          and image.pixelColor(0, 0).alpha() == 0 and image.pixelColor(edge // 2, edge // 2).alpha() > 0)
+    placeholder = "—:—"
+    metrics = QFontMetricsF(theme.font("type.metricLg"))
+    check(f"unknown timer fits without elision at {edge}", metrics.elidedText(placeholder, Qt.ElideRight,
+          edge * .61 + 6) == placeholder)
+widget._set_option("outer_color", "#FFAA22")
+widget._set_option("inner_color", "#BB77FF")
+check("custom ring colours persist", profile(Settings.load())["outer_color"] == "#FFAA22"
+      and profile(Settings.load())["inner_color"] == "#BB77FF")
+fixed.close()
 hidden = []
 widget.visibility_changed.connect(hidden.append)
 widget.request_hide()

@@ -21,7 +21,7 @@ monitors and the newest log lines](docs/images/overview.png)
 | **[Review](docs/review.md)** | Groups the week's new wallpapers by author, says what each has published since you last looked, and opens a gallery to subscribe from. |
 | **[Creator](docs/creator.md)** | Turns video clips into Wallpaper Engine projects, rendering each preview from the video itself. |
 | **[Cleaner](docs/cleaner.md)** | Finds downloaded Workshop wallpapers whose Steam records are unavailable; opens their folders, recycles them or keeps verified copies in the reserve. |
-| **[Widget](docs/widget.md)** | A compact or expanded desktop widget with playlist progress and the countdown for each monitor. |
+| **[Widget](docs/widget.md)** | Customizable desktop widgets for each monitor, with two countdown rings and current wallpaper details. |
 | **[Settings](docs/settings.md)** | The folders, Wallpaper Engine's settings file, counting in the background, the Steam key. |
 
 **[Full documentation →](docs/)**

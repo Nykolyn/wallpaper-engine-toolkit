@@ -1,4 +1,4 @@
-"""The tray's menu: a header that says what the icon says, and five rows.
+"""The tray's menu: a header that says what the icon says, and action rows.
 
 The design (`Tray and Notifications`) draws a popup on `surface.overlay`: the
 icon (the mark, filled as it is in the tray) and "Toolkit" with one line in
@@ -9,6 +9,8 @@ words ("tracking · 4 of 201 shown", which the icon does not say), then
     Rotate now…                  run 39
     Review                   12 waiting
     ───────────────────────────────────
+    Show widgets / Hide widgets
+    Widget…
     Settings
     Quit
 
@@ -45,6 +47,7 @@ from .tray_icon import mark_pixmap
 # ---- what the menu says ------------------------------------------------------------
 
 OPEN, ROTATE, REVIEW, SETTINGS, QUIT = "open", "rotate", "review", "settings", "quit"
+WIDGET, WIDGET_VISIBLE = "widget", "widget_visible"
 HEADER = "header"           # the data of the header's action: it is not a row
 
 
@@ -74,7 +77,7 @@ class MenuModel:
 
 
 def build_model(state: str, fraction: float | None, number: int | None, line: str, *,
-                run_hint: str = "", review_hint: str = "") -> MenuModel:
+                run_hint: str = "", review_hint: str = "", widget_visible: bool = False) -> MenuModel:
     """The menu for one state of the icon. The rows are the same in every state;
     what changes is the header (its icon and its line) and the two hints."""
     return MenuModel(
@@ -82,7 +85,9 @@ def build_model(state: str, fraction: float | None, number: int | None, line: st
         ((Row(OPEN, f"Open {DISPLAY_NAME}", "Enter", "review"),),
          (Row(ROTATE, "Rotate now…", run_hint, "rotator"),
           Row(REVIEW, "Review", review_hint, "review")),
-         (Row(SETTINGS, "Settings", "", "settings"),
+         (Row(WIDGET_VISIBLE, "Hide widgets" if widget_visible else "Show widgets", "", "settings"),
+          Row(WIDGET, "Widget…", "", "settings"),
+          Row(SETTINGS, "Settings", "", "settings"),
           Row(QUIT, "Quit", "", "close"))))
 
 

@@ -38,11 +38,12 @@ from .branding import DISPLAY_NAME
 from .hang_watch import HangWatch
 from .quit_request import QuitListener, tracker_server_name
 from .engines.tracker import FALLBACK_SECONDS, TIME_FMT, Progress, app_data_dir, pick_primary
-from .engines.wallpaper_timer import Countdown, WallpaperTimer, monitor_map
+from .engines.wallpaper_timer import Countdown, WallpaperTimer, display_rects, monitor_map
 from .settings import Settings
 from .tracker_feed import TRAY_MUTEX, TrackerFeed, heartbeat_setting
 from .tray_icon import FINISHED, UNKNOWN, step, tray_icon
-from .tray_menu import OPEN, QUIT, REVIEW, ROTATE, SETTINGS, TrayMenu, build_model
+from .tray_menu import OPEN, QUIT, REVIEW, ROTATE, SETTINGS, WIDGET, WIDGET_VISIBLE, TrayMenu, build_model
+from .widget_options import chosen_profiles, set_option
 
 
 # A windowed build has no console, so a start that goes wrong leaves no trace.
@@ -95,6 +96,20 @@ def _seconds_since(stamp: str) -> float:
         return float("inf")
 
 
+def screen_for_monitor(rect, screens):
+    """Match WE's native rectangle to a Qt screen without scaling its Windows origin."""
+    if rect is None:
+        return None
+    left, top, right, bottom = rect
+    for screen in screens:
+        box, dpr = screen.geometry(), screen.devicePixelRatio()
+        if (box.x() == left and box.y() == top
+                and abs(round(box.width() * dpr) - (right - left)) <= 2
+                and abs(round(box.height() * dpr) - (bottom - top)) <= 2):
+            return screen
+    return None
+
+
 class TrackerTray:
     """Follows Wallpaper Engine in the background and renders the result into the tray."""
 
@@ -103,6 +118,9 @@ class TrackerTray:
         self.app = app
         self.settings = Settings.load()
         self.widget = None
+        self.widgets = {}
+        self._widgets_active = False
+        self._metadata = None
         self._widget_enabled = self.settings.get("widget", "enabled", False)
         self.results: list[Progress] = []
         self.completed: set[str] = set()
@@ -192,17 +210,16 @@ class TrackerTray:
         self.settings.set("widget", "enabled", on)
         self.settings.save()
         self._widget_enabled = on
-        if on:
-            if self.widget is None:
-                from .desktop_widget import DesktopWidget
-                self.widget = DesktopWidget(self.settings)
-                self.widget.settings_requested.connect(lambda: self.open_toolkit("Widget"))
-                self.widget.visibility_changed.connect(self._set_widget_visible)
-            self._render_widget()
-            self.widget.show()
-        elif self.widget is not None:
-            self.widget.hide()
+        self._widgets_active = on
+        self._render_widget()
         log("widget shown" if on else "widget hidden")
+
+    def _profile_visibility(self, key: str, on: bool) -> None:
+        if key == "default":
+            self._set_widget_visible(on)
+        else:
+            set_option(self.settings, key, "enabled", on)
+            self._render_widget()
 
     def _sync_widget(self) -> None:
         self.settings.reload_if_changed()
@@ -213,13 +230,45 @@ class TrackerTray:
         self._render_widget()
 
     def _render_widget(self) -> None:
-        if self.widget is not None:
-            monitors = getattr(self.clock, "rects", {}) or [
-                f"Monitor{entry['location']}" for entry in monitor_map(self.feed.files.config).values()
-                if isinstance(entry, dict) and isinstance(entry.get("location"), int)]
-            self.widget.sync_settings()
-            self.widget.render(self.results, self.countdowns, self._primary(),
-                               self.feed.error or "", monitors)
+        if not self._widgets_active:
+            for widget in self.widgets.values():
+                widget.hide()
+            return
+        mapped = monitor_map(self.feed.files.config)
+        rects = getattr(self.clock, "rects", {})
+        if not rects and mapped and self.settings.get("widget", "layout", "single") == "per_monitor":
+            # Initial placement precedes the clock's first display refresh; this is Win32 only.
+            rects = display_rects(mapped)
+        monitors = list(dict.fromkeys([
+            *rects, *(p.monitor for p in self.results), *self.countdowns,
+            *(f"Monitor{entry['location']}" for entry in mapped.values()
+              if isinstance(entry, dict) and isinstance(entry.get("location"), int))]))
+        keys = chosen_profiles(self.settings, monitors)
+        for key, widget in self.widgets.items():
+            if key not in keys:
+                widget.hide()
+        primary = self._primary()
+        for key in keys:
+            if key not in self.widgets:
+                from .desktop_widget import DesktopWidget
+                screen = screen_for_monitor(rects.get(key), self.app.screens())
+                widget = DesktopWidget(self.settings, profile_key=key, screen=screen)
+                widget.settings_requested.connect(lambda: self.open_toolkit("Widget"))
+                widget.visibility_changed.connect(lambda on, key=key: self._profile_visibility(key, on))
+                self.widgets[key] = widget
+            widget = self.widgets[key]
+            widget.sync_settings()
+            widget.render(self.results, self.countdowns, primary, self.feed.error or "", monitors,
+                          self._metadata.data if self._metadata else None)
+            widget.show()
+        self.widget = self.widgets.get("default")
+        if any(getattr(self.widgets[key], "mode", "compact") == "expanded" for key in keys):
+            if self._metadata is None:
+                from .widget_metadata import WidgetMetadata
+                self._metadata = WidgetMetadata()
+                self._metadata.updated.connect(self._render_widget)
+                self.app.aboutToQuit.connect(self._metadata.stop)
+            self._metadata.request(self.results)
 
     def _announce_completions(self):
         """Balloon once per playlist, when the last unseen item has been shown,
@@ -293,7 +342,8 @@ class TrackerTray:
         self.menu.set_model(build_model(
             state, fraction, number, line,
             run_hint=words.run_hint(words.next_run_number()),
-            review_hint=words.review_hint(words.review_waiting())))
+            review_hint=words.review_hint(words.review_waiting()),
+            widget_visible=self._widgets_active))
 
     # -------------------------------------------------------------- actions
     def _on_chosen(self, key: str):
@@ -307,6 +357,10 @@ class TrackerTray:
             self.open_toolkit("Review")
         elif key == SETTINGS:
             self.open_toolkit("Settings")
+        elif key == WIDGET:
+            self.open_toolkit("Widget")
+        elif key == WIDGET_VISIBLE:
+            self._set_widget_visible(not self._widgets_active)
         elif key == QUIT:
             self.app.quit()
 

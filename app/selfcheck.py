@@ -67,6 +67,9 @@ def run() -> tuple[bool, str]:
                         ("app.tray_menu", "the tray's menu"),
                         ("app.tray_words", "the tray's tooltip, menu hints and balloon copy"),
                         ("app.desktop_widget", "the compact and expanded desktop widget"),
+                        ("app.widget_options", "independent widget profiles and appearance"),
+                        ("app.widget_metadata", "current wallpaper names and file sizes on a worker"),
+                        ("app.widget_desktop", "desktop, normal and always-on-top widget layers"),
                         ("app.widget_control", "showing the widget through the tracker"),
                         ("app.widget_startup", "the widget's Windows startup entry"),
                         ("app.app_identity", "the balloons' sender: the Start-menu shortcut")):

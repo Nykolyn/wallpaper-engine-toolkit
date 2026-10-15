@@ -6,6 +6,24 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [4.3.0] - 2026-10-15
+
+### Added
+
+- Each monitor can have its own widget, with independent visibility, position,
+  size, opacity, ring colours and movement lock. A single widget can still
+  follow the tray's selected monitor or a chosen monitor.
+- Widgets support **On desktop** (the default), **Normal** and **Always on top**.
+  Right-click and keyboard menus expose their settings, and the tray offers
+  show/hide and a shortcut to Utilities > Widget.
+
+### Changed
+
+- Compact widgets are circular: the outer ring drains towards the next
+  wallpaper change and the inner ring drains as the playlist is shown.
+- Expanded widgets use smaller rows and include the current wallpaper's name
+  and file size, loaded in the background without previews.
+
 ## [4.2.0] - 2026-10-14
 
 ### Added
@@ -1800,7 +1818,8 @@ restructured yet; the tabs keep their layout and take on the new look.
   was right for one library and wrong for every other. Nothing is tagged now
   unless you ask for it.
 
-[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v4.2.0...HEAD
+[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v4.3.0...HEAD
+[4.3.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v4.2.0...v4.3.0
 [4.2.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v4.1.4...v4.2.0
 [4.1.4]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v4.1.3...v4.1.4
 [4.1.3]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v4.1.2...v4.1.3
