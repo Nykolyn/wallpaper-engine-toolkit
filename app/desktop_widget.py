@@ -138,8 +138,6 @@ class MonitorRow(QWidget):
             count = f"{words.count(self.remaining)} left" if self.remaining is not None else "playlist —"
             _text(painter, QRectF(x, edge * .595, text_width, edge * .13), count,
                   "type.monoSm", "text.body", Qt.AlignCenter, True)
-            _text(painter, QRectF(x + 3, edge * .73, text_width - 6, edge * .12),
-                  STATE_TEXT[self.state], "type.caption", status_colour, Qt.AlignCenter, True)
         else:
             ring = QRectF(9, 8, 68, 68)
             _ring(painter, ring, self.fraction, outer, 4)
@@ -424,6 +422,8 @@ class DesktopWidget(QWidget):
         area = screen.availableGeometry()
         relative = relative or normalized_position(area, self.size(), self.pos())
         self._placing = True
+        # Drop the expanded header's minimum width before resizing back to a circle.
+        self.layout().activate()
         if self.mode == "compact":
             edge = min(self.options["size"], area.width(), area.height())
             self.resize(edge, edge)
