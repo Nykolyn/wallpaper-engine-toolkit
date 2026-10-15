@@ -858,8 +858,12 @@ except KeyError:
     check("a state it does not have is refused", True)
 holder.close()
 
-page.on_hidden()
+library_worker = page._library
+# on_hidden clears the worker reference, so join it before hiding the page.
 page._stop_library(wait=True)
+page.on_hidden()
+check("the library worker has stopped before Qt teardown",
+      library_worker is None or not library_worker.isRunning())
 host.close()
 app.processEvents()
 print()
