@@ -147,8 +147,8 @@ svc = services.Services(data_dir=TMP / "data", settings=settings)
 
 
 def make_window(initial=None) -> MainWindow:
-    stand_ins = [StandIn(key, key.title(), "tracker" if key == "widget" else key) for key in
-                 ("rotator", "tracker", "review", "cleaner", "creator", "widget")]
+    stand_ins = [StandIn(key, key.title(), "tracker" if key in ("widget", "tray") else key) for key in
+                 ("rotator", "tracker", "review", "widget", "tray", "cleaner", "creator")]
     pages = [OverviewPage(svc, feed), *stand_ins,
              SettingsPage(settings, config, feed=feed, services=svc)]
     return MainWindow(settings=settings, feed=feed, services_=svc, pages=pages,
@@ -183,11 +183,11 @@ check("a page may ask for another", w.current_page() == "settings")
 w.show()
 w.activateWindow()
 wait_for(lambda: QApplication.activeWindow() is w, 1000)
-for key, number in (("rotator", Qt.Key_2), ("settings", Qt.Key_8), ("overview", Qt.Key_1),
+for key, number in (("rotator", Qt.Key_2), ("settings", Qt.Key_9), ("overview", Qt.Key_1),
                     ("review", Qt.Key_4)):
     QTest.keyClick(w, number, Qt.ControlModifier)
     app.processEvents()
-check("Ctrl+2, Ctrl+8, Ctrl+1 and Ctrl+4 go to Rotator, Settings, Overview, Review",
+check("Ctrl+2, Ctrl+9, Ctrl+1 and Ctrl+4 go to Rotator, Settings, Overview, Review",
       w.current_page() == "review")
 frame = (w.sidebar.geometry(), w.status.geometry(), w.title_bar.geometry())
 w.show_page("tracker")

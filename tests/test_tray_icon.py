@@ -551,6 +551,29 @@ tray._tick_clock()
 check("a counting playlist fills the icon and says where it is",
       len(shell.icons) == drawn + 1 and tray._icon_key == (ti.RUNNING, ti.step(0.25))
       and shell.tip == "▸ 2% · Monitor1 · 4 of 201 shown · next in 7:30")
+from app import tray_options
+tray_options.set_option(tray.settings, "progress", "front_wallpaper")
+tray._render_icon()
+drawn = len(shell.icons)
+tray._render_icon()
+check("customized tray skips repainting an unchanged reading", len(shell.icons) == drawn)
+tray.results = [progress(seen=100)]
+tray._render_icon()
+check("playlist progress alone repaints a split icon", len(shell.icons) == drawn + 1)
+tray.results = [lead]
+tray._render_icon()
+drawn = len(shell.icons)
+tray_options.set_option(tray.settings, "front_color", "#FF0000")
+tray._render_icon()
+check("a color edit repaints without waiting for progress", len(shell.icons) == drawn + 1)
+tray._rebuild_menu()
+check("menu uses the saved tray colors and playlist progress",
+      tray.menu.icon_options["front_color"] == "#FF0000"
+      and tray.menu.playlist_fill == lead.seen / lead.total)
+tray_options.set_option(tray.settings, "progress", "combined")
+tray_options.set_option(tray.settings, "front_color", "#4C8DFF")
+tray._render_icon()
+
 drawn = len(shell.icons)
 clock.now = {"Monitor1": countdown(running=151.0)}
 tray._tick_clock()

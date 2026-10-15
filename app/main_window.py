@@ -9,7 +9,8 @@
     └──────────────────────────────────────────────────────────────┘
 
 The pages are in the order of the loop — Overview, Rotator, Tracker, Review,
-then Cleaner, Creator and Widget — and Settings at the foot; Ctrl+1…8 goes to each.
+then Tools (Widget and Tray), Utilities (Cleaner and Creator), and Settings
+at the foot; Ctrl+1…9 goes to each.
 The window opens on Overview. Each tool owns its page.
 
 The sidebar and the status line are live and read one place, the services
@@ -38,10 +39,10 @@ from .ui.kit import format as fmt
 from .window_frame import NativeFrame
 
 # The pages, in the order of the loop; Ctrl+1 is the first.
-PAGE_ORDER = ("overview", "rotator", "tracker", "review", "cleaner", "creator", "widget", "settings")
+PAGE_ORDER = ("overview", "rotator", "tracker", "review", "widget", "tray", "cleaner", "creator", "settings")
 DEFAULT_PAGE = "overview"
 # The sidebar's groups: which pages open each.
-SECTIONS = {"overview": "The loop", "cleaner": "Utilities"}
+SECTIONS = {"overview": "The loop", "widget": "Tools", "cleaner": "Utilities"}
 FOOTER = ("settings",)
 TOOL_NAMES = {"rotator": "Rotator", "tracker": "Tracker", "review": "Review",
               "creator": "Creator", "cleaner": "Cleaner"}

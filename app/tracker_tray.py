@@ -42,6 +42,7 @@ from .engines.wallpaper_timer import Countdown, WallpaperTimer, display_rects, m
 from .settings import Settings
 from .tracker_feed import TRAY_MUTEX, TrackerFeed, heartbeat_setting
 from .tray_icon import FINISHED, UNKNOWN, step, tray_icon
+from . import tray_options
 from .tray_menu import OPEN, QUIT, REVIEW, ROTATE, SETTINGS, WIDGET, WIDGET_VISIBLE, TrayMenu, build_model
 from .widget_options import chosen_profiles, set_option
 
@@ -324,10 +325,14 @@ class TrackerTray:
     def _render_icon(self):
         """The icon and its tooltip: cheap enough to run every tick."""
         primary, state, fill, _number = self._reading()
+        options = tray_options.read(self.settings)
+        playlist_fill = primary.seen / primary.total if primary and primary.total else None
         key = (state, step(fill))
+        if options != tray_options.DEFAULTS:
+            key += (tuple(options.values()), step(playlist_fill) if options["progress"] != "combined" else None)
         if key != self._icon_key:
             self._icon_key = key
-            self.icon.setIcon(tray_icon(state, fill))
+            self.icon.setIcon(tray_icon(state, fill, options=options, playlist_fill=playlist_fill))
         # Windows truncates a tray tooltip at 128 characters, so it gets one
         # short line per monitor (the playlist's percentage first) and nothing else; the detail is in the menu
         # and in the window a click opens.
@@ -338,6 +343,8 @@ class TrackerTray:
 
     def _rebuild_menu(self):
         primary, state, fraction, number = self._reading()
+        self.menu.icon_options = tray_options.read(self.settings)
+        self.menu.playlist_fill = primary.seen / primary.total if primary and primary.total else None
         line = words.header_line(state, primary, self.feed.error or "")
         self.menu.set_model(build_model(
             state, fraction, number, line,

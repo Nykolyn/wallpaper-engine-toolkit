@@ -60,6 +60,8 @@ def run() -> tuple[bool, str]:
                         ("app.pages.cleaner", "Cleaner: unavailable Workshop wallpapers and verified reserve moves"),
                         ("app.pages.creator", "the Creator page: reading, building and verified Move"),
                         ("app.pages.widget", "the desktop widget's controls"),
+                        ("app.pages.tray", "tray appearance and progress settings"),
+                        ("app.tray_options", "validated tray appearance"),
                         ("app.pages.review_settings",
                          "Review settings, the authors database and its backups"),
                         ("app.window_frame", "the window's own title bar"),
