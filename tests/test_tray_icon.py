@@ -402,29 +402,31 @@ check("a file that does not read is not guessed at", tw.review_waiting() is None
 print("-- the menu --")
 HINTS = dict(run_hint=tw.run_hint(39), review_hint=tw.review_hint(12))
 model = tm.build_model(ti.RUNNING, 0.62, 62, "tracking · 4 of 201 shown", **HINTS)
-check("five rows in three groups, in the design's order",
-      model.keys() == ["open", "rotate", "review", "settings", "quit"]
-      and [len(g) for g in model.groups] == [1, 2, 2])
+check("seven rows in three groups, including widget controls",
+      model.keys() == ["open", "rotate", "review", "widget_visible", "widget", "settings", "quit"]
+      and [len(g) for g in model.groups] == [1, 2, 4])
 check("the design's labels and hints",
       [(r.label, r.hint) for r in model.rows()]
       == [("Open Toolkit", "Enter"), ("Rotate now…", "run 39"), ("Review", "12 waiting"),
-          ("Settings", ""), ("Quit", "")])
+          ("Show widgets", ""), ("Widget…", ""), ("Settings", ""), ("Quit", "")])
 check("the header is the display name and the icon's words",
       (model.title, model.line) == ("Toolkit", "tracking · 4 of 201 shown"))
 for state_, fraction_, number_, line_ in (
         (ti.RUNNING, 0.5, 2, "tracking · 4 of 201 shown"), (ti.PAUSED, 0.5, 2, "paused · 4 of 201 shown"),
         (ti.UNKNOWN, None, None, "no playlist found"), (ti.FINISHED, 1.0, 100, "finished · all 201 shown")):
     m = tm.build_model(state_, fraction_, number_, line_, **HINTS)
-    check(f"{state_}: the same five rows; the header carries the state",
+    check(f"{state_}: the same seven rows; the header carries the state",
           m.keys() == model.keys() and m.state == state_ and m.line == line_)
 check("with no history or scan read, the hints are bare",
-      [r.hint for r in tm.build_model(ti.RUNNING, 0.5, 2, "x").rows()] == ["Enter", "", "", "", ""])
+      [r.hint for r in tm.build_model(ti.RUNNING, 0.5, 2, "x").rows()] == ["Enter", "", "", "", "", "", ""])
+check("widget visibility action follows the live session",
+      tm.build_model(ti.RUNNING, 0.5, 2, "x", widget_visible=True).rows()[3].label == "Hide widgets")
 
 menu = tm.TrayMenu()
 menu.set_model(model)
 check("the menu is that, with a divider after the header and between the groups",
       menu.texts() == ["Toolkit  ·  tracking · 4 of 201 shown", "-", "Open Toolkit  ·  Enter", "-",
-                       "Rotate now…  ·  run 39", "Review  ·  12 waiting", "-", "Settings", "Quit"])
+                       "Rotate now…  ·  run 39", "Review  ·  12 waiting", "-", "Show widgets", "Widget…", "Settings", "Quit"])
 chosen: list[str] = []
 menu.chosen.connect(chosen.append)
 by_data = {a.data(): a for a in menu.actions() if a.data()}
@@ -434,14 +436,14 @@ by_data["header"].trigger()
 check("a row says which it was; the header is no row", chosen == ["rotate", "quit"]
       and not by_data["header"].isEnabled())
 menu.set_model(tm.build_model(ti.PAUSED, 0.5, 2, "paused · 4 of 201 shown"))
-check("filling it again replaces the rows", menu.texts().count("-") == 3 and len(menu.actions()) == 9
+check("filling it again replaces the rows", menu.texts().count("-") == 3 and len(menu.actions()) == 11
       and menu.texts()[0].endswith("paused · 4 of 201 shown"))
 menu.set_model(model)
 menu.popup(QPoint(60, 60))
 app.processEvents()
 app.processEvents()
 want_height = (2 * theme.TRAY_MENU_PAD + theme.TRAY_HEADER_HEIGHT + 3 * theme.TRAY_DIVIDER_HEIGHT
-               + 5 * theme.TRAY_ROW_HEIGHT)
+               + 7 * theme.TRAY_ROW_HEIGHT)
 grab = menu.grab().toImage()
 check("the popup is 268 px wide and as tall as its rows",
       (menu.width(), menu.height()) == (theme.TRAY_MENU_WIDTH, want_height))
@@ -566,7 +568,7 @@ check("pausing draws the grey fill", len(shell.icons) == drawn + 1
 tray._rebuild_menu()
 check("the menu is built when it opens, with the numbers read then",
       tray.menu.texts() == ["Toolkit  ·  paused · 4 of 201 shown", "-", "Open Toolkit  ·  Enter", "-",
-                            "Rotate now…  ·  run 39", "Review  ·  12 waiting", "-", "Settings", "Quit"])
+                            "Rotate now…  ·  run 39", "Review  ·  12 waiting", "-", "Show widgets", "Widget…", "Settings", "Quit"])
 check("the tray builds no menu until it is asked to",
       tray_mod.TrackerTray._rebuild_menu.__code__.co_names.count("autostart") == 0)
 

@@ -17,12 +17,14 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 scratch = tempfile.TemporaryDirectory(prefix="toolkit_widget_controls_")
 os.environ["WALLPAPER_TOOLKIT_DATA"] = str(Path(scratch.name) / "data")
 
+from PySide6.QtCore import QObject, Signal  # noqa: E402
 from PySide6.QtWidgets import QApplication  # noqa: E402
 from PySide6.QtTest import QTest  # noqa: E402
 
-from app import autostart, quit_request, widget_control, widget_startup, window_instance  # noqa: E402
+from app import autostart, quit_request, widget_control, widget_options, widget_startup, window_instance  # noqa: E402
 from app.pages.widget import WidgetPage  # noqa: E402
 from app.settings import Settings  # noqa: E402
+from app.ui.kit import Overline  # noqa: E402
 
 app = QApplication.instance() or QApplication([])
 results: list[bool] = []
@@ -203,7 +205,7 @@ with patch.object(widget_startup, "enabled", return_value=False), \
     check("the page defaults to compact and hidden", page.mode.currentData() == "compact" and not page.visible.isChecked())
     check("opening the page does not open a disabled widget", not show.called)
     page.mode.setCurrentIndex(1)
-    check("the page saves the expanded view", store.get("widget", "mode", "") == "expanded")
+    check("the page saves the expanded view", widget_options.profile(store)["mode"] == "expanded")
     store.set("widget", "enabled", True)
     page._sync()
     check("the page follows a visibility change from another process", page.visible.isChecked())
@@ -351,6 +353,94 @@ finally:
             late.kill()
             late.wait()
 
+class Feed(QObject):
+    updated = Signal()
+    results = [SimpleNamespace(monitor="Monitor1"), SimpleNamespace(monitor="Monitor2")]
+
+
+profile_store = settings()
+profile_store.set("widget", "enabled", True)
+feed = Feed()
+editor = WidgetPage(profile_store, feed=feed)
+check("loading all widget controls never writes settings", not profile_store.save.called)
+captions = [heading.text().casefold() for heading in editor.findChildren(Overline)]
+check("settings identify the outer timer ring and inner playlist ring correctly",
+      "outer ring · time remaining" in captions and "inner ring · playlist remaining" in captions)
+editor.layout_mode.setCurrentIndex(1)
+check("per-monitor layout selects a discovered monitor for customization",
+      profile_store.get("widget", "layout", "") == "per_monitor"
+      and editor.profile_selector.currentData() == "Monitor1" and not editor.target.isEnabled())
+editor.mode.setCurrentIndex(1)
+editor.size_choice.setCurrentIndex(2)
+editor.opacity.setValue(70)
+editor.layer.setCurrentIndex(2)
+editor.locked.setChecked(True)
+editor.outer_color.setText("#abcdef")
+editor.outer_color.editingFinished.emit()
+configured = widget_options.profile(profile_store, "Monitor1")
+check("the page saves all requested appearance and placement controls to the selected monitor",
+      all(configured[key] == value for key, value in
+          {"mode": "expanded", "size": 176, "opacity": 70, "layer": "top",
+           "locked": True, "outer_color": "#ABCDEF"}.items()))
+before = profile_store.save.call_count
+editor.profile_selector.setCurrentIndex(1)
+check("switching the editor profile loads the other monitor without writing it",
+      editor.mode.currentData() == "compact" and editor.size_choice.currentData() == 144
+      and editor.layer.currentData() == "desktop" and profile_store.save.call_count == before)
+editor.profile_enabled.setChecked(False)
+check("the page can hide one monitor widget while keeping global visibility and the other widget",
+      widget_options.chosen_profiles(profile_store, ["Monitor1", "Monitor2"]) == ["Monitor1"]
+      and profile_store.get("widget", "enabled", False))
+before = profile_store.save.call_count
+editor.inner_color.setText("#zzzzzz")
+editor.inner_color.editingFinished.emit()
+editor._sync()
+check("invalid ring colors stay visible as errors and never overwrite saved colors",
+      editor.inner_color.error() is not None and editor.inner_color.text() == "#zzzzzz"
+      and profile_store.save.call_count == before
+      and widget_options.profile(profile_store, "Monitor2")["inner_color"] == widget_options.DEFAULTS["inner_color"])
+editor.inner_color.setText("#123abc")
+editor.inner_color.editingFinished.emit()
+check("correcting a ring color clears its error and saves the normalized color",
+      editor.inner_color.error() is None
+      and widget_options.profile(profile_store, "Monitor2")["inner_color"] == "#123ABC")
+before = profile_store.save.call_count
+feed.results = feed.results + [SimpleNamespace(monitor="Monitor3")]
+feed.updated.emit()
+check("new feed monitors appear without a filesystem scan or settings write",
+      editor.profile_selector.findData("Monitor3") >= 0 and profile_store.save.call_count == before)
+editor.layout_mode.setCurrentIndex(0)
+editor.target.setCurrentIndex(editor.target.findData("Monitor2"))
+editor.mode.setCurrentIndex(1)
+editor.opacity.setValue(60)
+check("the expanded shared profile labels its all-monitors default accurately",
+      editor.target.itemText(0) == "All monitors")
+widget_options.set_option(profile_store, "default", "position", {"screen": "right", "x": 0.5, "y": 1})
+with patch.object(widget_startup, "set_enabled") as startup_change:
+    editor.reset.click()
+    reset = widget_options.profile(profile_store)
+    check("reset restores this widget's appearance and position without changing its binding or startup",
+          reset["mode"] == "compact" and reset["opacity"] == 100 and "position" not in reset
+          and reset["monitor"] == "Monitor2" and reset["enabled"] and not startup_change.called
+          and widget_options.profile(profile_store, "Monitor1")["mode"] == "expanded")
+empty_store = settings()
+empty_store.set("widget", "layout", "per_monitor")
+empty_editor = WidgetPage(empty_store)
+check("per-monitor controls explain an empty monitor list and stay inactive",
+      empty_editor.profile_selector.currentData() is None and not empty_editor.appearance_panel.isEnabled()
+      and not empty_store.save.called)
+configured_feed = Feed()
+configured_feed.results = []
+configured_feed.files = SimpleNamespace(config={"user": {"general": {"user": {
+    "monitormap": {"device-no-playlist": {"location": 3}}}}}})
+configured_editor = WidgetPage(empty_store, feed=configured_feed)
+check("configured monitors without a counted playlist still have editable widget profiles",
+      configured_editor.profile_selector.currentData() == "Monitor3"
+      and configured_editor.appearance_panel.isEnabled() and not empty_store.save.called)
+editor.close()
+empty_editor.close()
+configured_editor.close()
+
 fixture = WidgetPage(store, live=False)
 with patch.object(widget_control, "set_visible", side_effect=AssertionError("live widget")), \
         patch.object(widget_startup, "enabled", side_effect=AssertionError("live registry")), \
@@ -369,7 +459,9 @@ with patch.object(widget_control, "set_visible", side_effect=AssertionError("liv
           not fixture.visible.isChecked() and fixture.mode.currentData() == "compact")
     fixture.show()
     fixture.load_fixture("expanded")
-    QTest.qWait(180)
+    until = time.monotonic() + 1
+    while (fixture.visible.knob_position != 1 or fixture.startup_toggle.knob_position != 1) and time.monotonic() < until:
+        QTest.qWait(10)
     check("visible refreshed toggles finish their checked animation",
           fixture.visible.knob_position == 1 and fixture.startup_toggle.knob_position == 1
           and store.save.call_count == saved)

@@ -99,4 +99,4 @@ def build_pages(window) -> list[Page]:
     services.jobs.finished.connect(tracker_page.refresh_multipliers)
     on_steam_found(settings_page, steam_found)
     return [OverviewPage(services, feed, settings=settings), rotator_page, tracker_page,
-            review_page, cleaner, creator_page, WidgetPage(settings), settings_page]
+            review_page, cleaner, creator_page, WidgetPage(settings, feed=feed), settings_page]
