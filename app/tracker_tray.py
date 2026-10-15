@@ -41,7 +41,7 @@ from .engines.tracker import FALLBACK_SECONDS, TIME_FMT, Progress, app_data_dir,
 from .engines.wallpaper_timer import Countdown, WallpaperTimer, display_rects, monitor_map
 from .settings import Settings
 from .tracker_feed import TRAY_MUTEX, TrackerFeed, heartbeat_setting
-from .tray_icon import FINISHED, UNKNOWN, step, tray_icon
+from .tray_icon import FINISHED, UNKNOWN, SIZES, fill_edges, step, tray_icon
 from . import tray_options
 from .tray_menu import OPEN, QUIT, REVIEW, ROTATE, SETTINGS, WIDGET, WIDGET_VISIBLE, TrayMenu, build_model
 from .widget_options import chosen_profiles, set_option
@@ -328,8 +328,13 @@ class TrackerTray:
         options = tray_options.read(self.settings)
         playlist_fill = primary.seen / primary.total if primary and primary.total else None
         key = (state, step(fill))
-        if options != tray_options.DEFAULTS:
-            key += (tuple(options.values()), step(playlist_fill) if options["progress"] != "combined" else None)
+        if options["progress"] != "combined":
+            wallpaper = 1.0 if state == FINISHED else fill
+            playlist = 1.0 if state == FINISHED else None if state == UNKNOWN else playlist_fill
+            key = (state, tuple(options.values()),
+                   tuple(fill_edges(size, wallpaper, playlist, options["progress"]) for size in SIZES))
+        elif options != tray_options.DEFAULTS:
+            key += (tuple(options.values()),)
         if key != self._icon_key:
             self._icon_key = key
             self.icon.setIcon(tray_icon(state, fill, options=options, playlist_fill=playlist_fill))

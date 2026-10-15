@@ -570,6 +570,18 @@ tray._rebuild_menu()
 check("menu uses the saved tray colors and playlist progress",
       tray.menu.icon_options["front_color"] == "#FF0000"
       and tray.menu.playlist_fill == lead.seen / lead.total)
+# 33..34 seconds crosses a 32px rectangle's pixel while the old global step is unchanged.
+clock.now = {"Monitor1": countdown(running=33.0)}
+tray._tick_clock()
+drawn = len(shell.icons)
+before = shell.icons[-1].pixmap(32, 32).toImage()
+clock.now = {"Monitor1": countdown(running=34.0)}
+tray._tick_clock()
+check("a split pixel crossing repaints even within the same old global step",
+      ti.step(33/600) == ti.step(34/600) and len(shell.icons) == drawn + 1
+      and shell.icons[-1].pixmap(32, 32).toImage() != before)
+clock.now = {"Monitor1": countdown(running=150.0)}
+tray._tick_clock()
 tray_options.set_option(tray.settings, "progress", "combined")
 tray_options.set_option(tray.settings, "front_color", "#4C8DFF")
 tray._render_icon()

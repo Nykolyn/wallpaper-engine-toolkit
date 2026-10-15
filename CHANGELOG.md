@@ -6,6 +6,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [4.4.1] - 2026-10-15
+
+### Fixed
+
+- Separate tray progress fills the visible rectangle width, accounting for the
+  front border. A quarter of the wallpaper interval is now a quarter of the
+  visible front rectangle, within one display pixel at every supported size.
+- The initial unknown-state badge uses a vector question mark, avoiding cold
+  Windows font discovery that could block widget startup requests.
+- The tray refreshes at actual rectangle pixel boundaries for every DPI size,
+  including changes the old shared progress cache skipped.
+
 ## [4.4.0] - 2026-10-15
 
 ### Added
@@ -1838,7 +1850,7 @@ restructured yet; the tabs keep their layout and take on the new look.
   was right for one library and wrong for every other. Nothing is tagged now
   unless you ask for it.
 
-[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v4.4.0...HEAD
+[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v4.4.1...HEAD
 [4.3.1]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v4.3.0...v4.3.1
 [4.3.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v4.2.0...v4.3.0
 [4.2.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v4.1.4...v4.2.0
@@ -1903,3 +1915,5 @@ restructured yet; the tabs keep their layout and take on the new look.
 [4.0.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v3.23.2...v4.0.0
 
 [4.4.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v4.3.1...v4.4.0
+
+[4.4.1]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v4.4.0...v4.4.1

@@ -12,6 +12,7 @@ dark desktop; `notes` the two balloons' copy over both. Everything is made up
 (a 4 of 201 playlist on "Monitor1"), and nothing is read from the data folder.
 
 Sets itself up to run offscreen, which has no fonts unless told where they are.
+The progress sheet checks both split assignments at every size and seven timer positions.
 """
 from __future__ import annotations
 
@@ -77,6 +78,61 @@ def icons_sheet() -> QImage:
     return sheet
 
 
+def progress_sheet() -> QImage:
+    """Both split assignments at native pixel geometry, magnified twice."""
+    fractions = (0.0, 0.1, 0.255, 0.5, 0.75, 0.99, 1.0)
+    modes = (("Main: wallpaper · additional: playlist", "front_wallpaper"),
+             ("Main: playlist · additional: wallpaper", "back_wallpaper"))
+    zoom, panel_width, cell_width = 2, 960, 124
+    block_height = 64 + sum(size * zoom + 24 for size in SIZES) + 22
+    footer_y = 100 + len(modes) * block_height
+    sheet = QImage(2 * panel_width + 36, footer_y + 160, QImage.Format_ARGB32)
+    sheet.fill(QColor("#141821"))
+    painter = QPainter(sheet)
+    _label(painter, 24, 26, "Tray progress · all Windows icon sizes", "#FFFFFF", 17)
+    _label(painter, 24, 48, "Main/front: blue #4C8DFF · additional/back: teal #22C3B0 · "
+           "playlist fixed at 84 / 199 (42.2%) · nearest-pixel magnification ×2", "#C8C8C8", 12)
+    for panel, (name, ground, ink) in enumerate(TASKBARS):
+        left = 12 + panel * (panel_width + 12)
+        painter.fillRect(QRect(left, 64, panel_width, sheet.height() - 76), QColor(ground))
+        _label(painter, left + 16, 86, f"{name.upper()} TASKBAR  {ground}", ink, 12)
+        for block, (title, mode) in enumerate(modes):
+            top = 100 + block * block_height
+            options = {"front_color": "#4C8DFF", "back_color": "#22C3B0", "progress": mode}
+            _label(painter, left + 16, top + 16, title, ink, 13)
+            _label(painter, left + 16, top + 44, "Pixels", ink, 10)
+            for column, fraction in enumerate(fractions):
+                x = left + 72 + column * cell_width
+                minutes, seconds = divmod(round(600 * (1 - fraction)), 60)
+                _label(painter, x + 8, top + 40, f"{fraction * 100:g}% elapsed", ink)
+                _label(painter, x + 8, top + 56, f"{minutes}:{seconds:02d} left", ink, 10)
+            y = top + 64
+            for size in SIZES:
+                row_height = size * zoom + 24
+                _label(painter, left + 16, y + row_height // 2 + 4, str(size), ink)
+                for column, fraction in enumerate(fractions):
+                    image = mark_pixmap(RUNNING, size, fill=fraction, playlist_fill=84 / 199,
+                                        options=options).toImage().scaled(
+                                            size * zoom, size * zoom, Qt.IgnoreAspectRatio, Qt.FastTransformation)
+                    x = left + 72 + column * cell_width + (cell_width - image.width()) // 2
+                    painter.drawImage(x, y + 12, image)
+                y += row_height
+        _label(painter, left + 16, footer_y + 16,
+               "Status overrides · main: wallpaper 25.5% · additional: playlist 42.2%", ink, 12)
+        options["progress"] = "front_wallpaper"
+        for column, state in enumerate((RUNNING, PAUSED, UNKNOWN, FINISHED)):
+            x = left + 72 + column * 212
+            _label(painter, x, footer_y + 40, state.capitalize(), ink)
+            for size, offset in ((24, 0), (32, 72)):
+                image = mark_pixmap(state, size, fill=.255, playlist_fill=84 / 199,
+                                    options=options).toImage().scaled(
+                                        size * zoom, size * zoom, Qt.IgnoreAspectRatio, Qt.FastTransformation)
+                painter.drawImage(x + offset, footer_y + 52, image)
+                _label(painter, x + offset, footer_y + 130, f"{size} px", ink, 10)
+    painter.end()
+    return sheet
+
+
 def menu_sheet(state: str) -> QImage:
     # The fill is the time to the next change; 4 of 201 shown is 2 percent.
     fractions = {RUNNING: (0.62, 2), PAUSED: (0.62, 2), UNKNOWN: (None, 2), FINISHED: (1.0, 100)}
@@ -122,14 +178,14 @@ def notes_sheet() -> QImage:
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    parser.add_argument("--grab", choices=("icons", "menu", "notes"), required=True)
+    parser.add_argument("--grab", choices=("icons", "progress", "menu", "notes"), required=True)
     parser.add_argument("out")
     parser.add_argument("--state", choices=(RUNNING, PAUSED, UNKNOWN, FINISHED), default=RUNNING)
     args = parser.parse_args(argv)
 
     app = QApplication(sys.argv[:1])
     theme.apply(app, styled=False)
-    image = {"icons": icons_sheet, "notes": notes_sheet,
+    image = {"icons": icons_sheet, "progress": progress_sheet, "notes": notes_sheet,
              "menu": lambda: menu_sheet(args.state)}[args.grab]()
     Path(args.out).parent.mkdir(parents=True, exist_ok=True)
     image.save(args.out)
