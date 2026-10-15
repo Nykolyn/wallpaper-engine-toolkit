@@ -5,6 +5,7 @@ import sys
 import tempfile
 import unittest
 from unittest.mock import patch
+from types import SimpleNamespace
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 ROOT = Path(__file__).resolve().parent.parent
@@ -13,7 +14,9 @@ TMP = tempfile.TemporaryDirectory(prefix="tray_options_")
 os.environ["WALLPAPER_TOOLKIT_DATA"] = TMP.name
 
 from PySide6.QtWidgets import QApplication
-from app import settings as store, theme, tray_icon, tray_options
+from app import settings as store, theme, tray_icon, tray_options, tray_words
+from app.engines.tracker import pick_primary
+from app.engines.wallpaper_timer import Countdown
 from app.main_window import PAGE_ORDER, SECTIONS
 from app.pages.tray import TrayPage
 from app.settings import Settings
@@ -72,6 +75,79 @@ class TrayOptionsTest(unittest.TestCase):
             for size in tray_icon.SIZES:
                 self.assertEqual(tray_icon.mark_pixmap(state, size, fill=.4).toImage(),
                                  tray_icon.mark_pixmap(state, size, fill=.4, options=tray_options.DEFAULTS).toImage())
+
+    def test_front_fill_matches_visible_width_at_every_size(self):
+        for size in tray_icon.SIZES:
+            for mode in ("front_wallpaper", "back_wallpaper"):
+                options = {"front_color": "#FF0000", "back_color": "#00FF00", "progress": mode}
+                def image(share):
+                    wallpaper, playlist = ((share, .42) if mode == "front_wallpaper" else (.42, share))
+                    return tray_icon.mark_pixmap(tray_icon.RUNNING, size, fill=wallpaper,
+                                                  playlist_fill=playlist, options=options).toImage()
+                empty, full = image(0), image(1)
+                rect = tray_icon._rect(tray_icon.FRONT, size)
+                y = int(rect.center().y())
+                span = rect.width() - tray_icon.FRONT[5] * tray_icon.scale(size)
+                capacity = sum(full.pixelColor(x, y).red() - empty.pixelColor(x, y).red()
+                               for x in range(size))
+                for share in (0, .01, .1, .25, .255, .5, .75, .9, .99, .999, 1):
+                    with self.subTest(size=size, mode=mode, share=share):
+                        current = image(share)
+                        actual = sum(current.pixelColor(x, y).red() - empty.pixelColor(x, y).red()
+                                     for x in range(size)) / capacity
+                        self.assertAlmostEqual(actual, share, delta=1.05 / span)
+                        if 0 < share < 1:
+                            self.assertNotEqual(current, full)
+
+    def test_split_edges_and_states(self):
+        for size in tray_icon.SIZES:
+            for mode in ("front_wallpaper", "back_wallpaper"):
+                options = {**tray_options.DEFAULTS, "progress": mode}
+                def image(state, wallpaper, playlist):
+                    return tray_icon.mark_pixmap(state, size, fill=wallpaper,
+                                                 playlist_fill=playlist, options=options).toImage()
+                for share in (None, -1, *(n / 100 for n in range(101)), .255, .999, 2):
+                    back, front = tray_icon.fill_edges(size, share, share, mode)
+                    for spec, edge in ((tray_icon.BACK, back), (tray_icon.FRONT, front)):
+                        with self.subTest(size=size, mode=mode, share=share, rect=spec):
+                            if share is None or share <= 0:
+                                self.assertEqual(edge, 0)
+                            elif share >= 1:
+                                self.assertEqual(edge, size)
+                            else:
+                                rect = tray_icon._rect(spec, size)
+                                stroke = spec[5] * tray_icon.scale(size) / 2
+                                inset = -stroke if spec == tray_icon.BACK else stroke
+                                ideal = rect.left() + inset + share * (rect.width() - 2 * inset)
+                                self.assertLess(abs(edge - ideal), 1)
+                                self.assertLess(edge, rect.right() - inset)
+                for state in tray_icon.STATES:
+                    self.assertEqual(image(state, -.2, -.2), image(state, 0, 0))
+                    self.assertEqual(image(state, 2, 2), image(state, 1, 1))
+                self.assertEqual(image(tray_icon.UNKNOWN, .255, .42), image(tray_icon.UNKNOWN, 0, 0))
+                self.assertEqual(image(tray_icon.FINISHED, .255, .42), image(tray_icon.FINISHED, 1, 1))
+                self.assertEqual(image(tray_icon.PAUSED, None, .42), image(tray_icon.PAUSED, 0, .42))
+                reverse = "back_wallpaper" if mode == "front_wallpaper" else "front_wallpaper"
+                for state in (tray_icon.RUNNING, tray_icon.PAUSED):
+                    swapped = tray_icon.mark_pixmap(state, size, fill=.42, playlist_fill=.255,
+                        options={**options, "progress": reverse}).toImage()
+                    self.assertEqual(image(state, .255, .42), swapped)
+
+    def test_screenshot_reading_and_selected_monitor(self):
+        paused = SimpleNamespace(monitor="Monitor0", total=2059, seen=2)
+        selected = SimpleNamespace(monitor="Monitor1", total=199, seen=84)
+        primary = pick_primary([paused, selected], "Monitor1")
+        clock = Countdown(monitor="Monitor1", delay=600, running=153, known=True, active=True)
+        state, fill = tray_words.icon_state(primary, clock)
+        self.assertEqual(state, tray_icon.RUNNING)
+        self.assertAlmostEqual(fill, .255)
+        self.assertAlmostEqual(primary.seen / primary.total, 84/199)
+        clock.paused = True
+        self.assertEqual(tray_words.icon_state(primary, clock), (tray_icon.PAUSED, fill))
+        self.assertEqual(tray_words.icon_state(primary, None), (tray_icon.UNKNOWN, None))
+        self.assertEqual(tray_words.icon_state(None, clock), (tray_icon.UNKNOWN, None))
+        selected.seen = selected.total
+        self.assertEqual(tray_words.icon_state(primary, None), (tray_icon.FINISHED, 1))
 
     def test_page_edits_validation_and_reset(self):
         page = TrayPage(self.settings)

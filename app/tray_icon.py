@@ -164,6 +164,30 @@ def _rect(spec, size: int) -> QRectF:
     return QRectF(x0 + x * k, y0 + y * k, w * k, h * k)
 
 
+def fill_edges(size: int, fill: float | None, playlist_fill: float | None,
+               mode: str) -> tuple[float, float]:
+    """Back/front clip edges; the front scale starts inside its painted border."""
+    if mode == "combined":
+        return (fill_edge(size, fill),) * 2
+    front_fill, back_fill = ((fill, playlist_fill) if mode == "front_wallpaper"
+                             else (playlist_fill, fill))
+
+    def edge(spec, fraction):
+        if fraction is None or fraction <= 0:
+            return 0.0
+        if fraction >= 1:
+            return float(size)
+        rect = _rect(spec, size)
+        half_stroke = spec[5] * scale(size) / 2
+        # The rear outline is visible outside its path; the front fill is inside its border.
+        inset = -half_stroke if spec == BACK else half_stroke
+        left = math.ceil(rect.left() + inset)
+        right = math.ceil(rect.right() - inset)
+        return float(left + step(fraction, right - left))
+
+    return edge(BACK, back_fill), edge(FRONT, front_fill)
+
+
 def _glyph_font(pixels: float) -> QFont:
     font = QFont()
     font.setFamilies(list(theme.MONO))
@@ -272,20 +296,8 @@ def mark_pixmap(state: str, size: int, *, fill: float | None = None,
     else:
         share = 1.0 if state == FINISHED else fill
         options = options or DEFAULTS
-        front_edge = back_edge = fill_edge(size, share)
-        if options["progress"] != "combined" and state != FINISHED:
-            front_fill, back_fill = ((fill, playlist_fill) if options["progress"] == "front_wallpaper"
-                                     else (playlist_fill, fill))
-            def local_edge(spec, fraction):
-                if fraction is not None and fraction >= 1:
-                    return float(size)
-                rect = _rect(spec, size)
-                half_stroke = spec[5] * scale(size) / 2
-                left = math.floor(rect.left() - half_stroke)
-                right = round(rect.right() + (half_stroke if spec == BACK else -half_stroke))
-                return left + step(fraction or 0.0, right - left)
-            front_edge = local_edge(FRONT, front_fill)
-            back_edge = local_edge(BACK, back_fill)
+        back_edge, front_edge = fill_edges(size, share, 1.0 if state == FINISHED else playlist_fill,
+                                           options["progress"])
         front_colour = QColor(options["front_color"]) if state == RUNNING else colours.fill(state)
         back_colour = QColor(options["back_color"]) if state == RUNNING else colours.fill(state)
         _draw_mark(painter, size, colours, front_colour, back_edge,
