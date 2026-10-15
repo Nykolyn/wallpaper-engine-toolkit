@@ -11,6 +11,8 @@ ring is the share of the playlist still unseen. Both empty towards completion.
 
 Running, paused, unknown and finished follow the tray's states. `≈` marks an
 estimate; an unavailable timer shows a dash. A paused timer freezes.
+Compact keeps the state text in its tooltip and accessibility description;
+Expanded also shows the state beside each monitor.
 
 **Expanded** uses compact monitor rows: monitor and playlist names, countdown,
 playlist progress, and the current wallpaper's name and file size. Size refers

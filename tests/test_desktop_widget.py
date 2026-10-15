@@ -23,6 +23,7 @@ from PySide6.QtWidgets import QApplication, QToolButton  # noqa: E402
 
 app = QApplication.instance() or QApplication([])
 from app import theme  # noqa: E402
+from app import desktop_widget as widget_module  # noqa: E402
 from app.desktop_widget import DesktopWidget, countdown_text, file_size, normalized_position, screen_position  # noqa: E402
 from app.engines.wallpaper_timer import Countdown  # noqa: E402
 from app.settings import Settings  # noqa: E402
@@ -248,6 +249,39 @@ for edge in (112, 144, 176):
     metrics = QFontMetricsF(theme.font("type.metricLg"))
     check(f"unknown timer fits without elision at {edge}", metrics.elidedText(placeholder, Qt.ElideRight,
           edge * .61 + 6) == placeholder)
+
+for key in ("default", "Monitor1"):
+    cycle = DesktopWidget(settings, profile_key=key)
+    cycle.render([p0, p1], {"Monitor1": clock1}, p1)
+    cycle.show()
+    app.processEvents()
+    for edge in (112, 144, 176):
+        cycle._set_option("size", edge)
+        for _ in range(2):
+            cycle._set_option("mode", "expanded")
+            app.processEvents()
+            expanded_rows = 2 if key == "default" else 1
+            check(f"{key} expanded {edge} lays out monitor rows", cycle.size() == QSize(320, 28 + 84 * expanded_rows))
+            cycle._set_option("mode", "compact")
+            check(f"{key} compact {edge} immediately drops expanded minimum width", cycle.size() == QSize(edge, edge))
+            app.processEvents()
+            image = cycle.grab().toImage()
+            check(f"{key} compact {edge} stays circular after switching", cycle.size() == QSize(edge, edge)
+                  and cycle.rows[0].size() == QSize(edge, edge) and image.pixelColor(0, 0).alpha() == 0)
+    painted = []
+    draw_text = widget_module._text
+
+    def record_text(painter, rect, value, *args, **kwargs):
+        painted.append(value)
+        draw_text(painter, rect, value, *args, **kwargs)
+
+    with patch.object(widget_module, "_text", record_text):
+        cycle.grab()
+        check(f"{key} compact omits state text but keeps timer", not any(
+            value in widget_module.STATE_TEXT.values() for value in painted)
+              and cycle.rows[0].timer_text in painted)
+    cycle.close()
+
 widget._set_option("outer_color", "#FFAA22")
 widget._set_option("inner_color", "#BB77FF")
 check("custom ring colours persist", profile(Settings.load())["outer_color"] == "#FFAA22"
