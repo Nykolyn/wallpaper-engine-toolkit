@@ -87,15 +87,17 @@ class WidgetPage(Page):
 
         cards = QHBoxLayout()
         cards.setSpacing(theme.PANEL_GAP)
-        self.appearance_panel, appearance = self._panel("Appearance", "Two rings, one clear reading")
+        self.appearance_panel, appearance = self._panel("Appearance", "Choose a design and view for each widget")
         grid = QGridLayout()
         grid.setContentsMargins(0, 0, 0, 0)
         grid.setSpacing(theme.DIALOG_ROW_GAP)
         grid.setColumnStretch(0, 1)
         grid.setColumnStretch(1, 1)
-        self.mode = self._dropdown("Widget view", (("Compact circle", "compact"), ("Expanded", "expanded")))
+        self.design = self._dropdown("Widget design", (("Rectangles", "rectangles"), ("Rings", "rings")))
+        self.design.currentIndexChanged.connect(lambda _i: self._set_option("design", self.design.currentData()))
+        self.mode = self._dropdown("Widget view", (("Compact", "compact"), ("Expanded", "expanded")))
         self.mode.currentIndexChanged.connect(self._set_mode)
-        self.size_choice = self._dropdown("Compact circle size", (("Small", 112), ("Medium", 144), ("Large", 176)))
+        self.size_choice = self._dropdown("Compact size", (("Small", 112), ("Medium", 144), ("Large", 176)))
         self.size_choice.currentIndexChanged.connect(lambda _i: self._set_option("size", self.size_choice.currentData()))
         self.opacity = SpinBox(minimum=40, maximum=100, value=100, suffix=" %")
         self.opacity.setAccessibleName("Widget opacity")
@@ -103,14 +105,17 @@ class WidgetPage(Page):
         self.target = Dropdown()
         self.target.setAccessibleName("Widget monitor")
         self.target.currentIndexChanged.connect(lambda _i: self._set_option("monitor", self.target.currentData()))
-        grid.addWidget(self._field("View", self.mode), 0, 0)
-        grid.addWidget(self._field("Circle size", self.size_choice), 0, 1)
-        grid.addWidget(self._field("Opacity", self.opacity), 1, 0)
-        grid.addWidget(self._field("Monitor", self.target), 1, 1)
-        self.outer_color, outer = self._color_field("outer_color", "Outer ring color")
-        self.inner_color, inner = self._color_field("inner_color", "Inner ring color")
-        grid.addWidget(self._field("Outer ring · time remaining", outer), 2, 0, 1, 2)
-        grid.addWidget(self._field("Inner ring · playlist remaining", inner), 3, 0, 1, 2)
+        grid.addWidget(self._field("Design", self.design), 0, 0)
+        grid.addWidget(self._field("View", self.mode), 0, 1)
+        grid.addWidget(self._field("Compact size", self.size_choice), 1, 0)
+        grid.addWidget(self._field("Opacity", self.opacity), 1, 1)
+        grid.addWidget(self._field("Monitor", self.target), 2, 0, 1, 2)
+        self.outer_color, outer = self._color_field("outer_color", "Rear rectangle color")
+        self.inner_color, inner = self._color_field("inner_color", "Front rectangle color")
+        self.outer_color_group = self._field("Rear rectangle · playlist progress", outer)
+        self.inner_color_group = self._field("Front rectangle · wallpaper time", inner)
+        grid.addWidget(self.outer_color_group, 3, 0, 1, 2)
+        grid.addWidget(self.inner_color_group, 4, 0, 1, 2)
         appearance.addLayout(grid)
         appearance_note = label("Expanded adds the current wallpaper's title and file size.", "type.caption", "lo")
         appearance_note.setWordWrap(True)
@@ -255,7 +260,8 @@ class WidgetPage(Page):
             panel.setEnabled(not per_monitor or bool(monitors))
         options = widget_options.profile(self.settings, self._profile_key)
         self._check(self.visible, bool(self.settings.get("widget", "enabled", False)))
-        for field, name in ((self.mode, "mode"), (self.size_choice, "size"), (self.layer, "layer")):
+        for field, name in ((self.design, "design"), (self.mode, "mode"),
+                            (self.size_choice, "size"), (self.layer, "layer")):
             self._pick(field, options[name])
         self.opacity.setValue(options["opacity"])
         follow = "All monitors" if options["mode"] == "expanded" else "Follow selected tray monitor"
@@ -267,8 +273,17 @@ class WidgetPage(Page):
                 self.target.add_item(title, key)
         self._pick(self.target, options["monitor"])
         self.target.setEnabled(self._profile_key == "default")
-        for name in ("outer_color", "inner_color"):
+        color_titles = ({"outer_color": ("Outer ring · time remaining", "Outer ring color"),
+                         "inner_color": ("Inner ring · playlist remaining", "Inner ring color")}
+                        if options["design"] == "rings" else
+                        {"outer_color": ("Rear rectangle · playlist progress", "Rear rectangle color"),
+                         "inner_color": ("Front rectangle · wallpaper time", "Front rectangle color")})
+        for name, (caption, title) in color_titles.items():
             field = getattr(self, name)
+            group = getattr(self, name + "_group")
+            group.findChild(Overline).setText(caption)
+            field.setAccessibleName(title)
+            group.findChild(SecondaryButton).setAccessibleName("Choose " + title.lower())
             if not field.hasFocus() and field.error() is None:
                 field.setText(options[name])
                 field.set_error(None)
