@@ -44,7 +44,8 @@ def progress(monitor, playlist, seen=4, total=20):
                            percent=round(100 * seen / total) if total else 0)
 
 
-settings = Settings({"tracker": {"primary": "Monitor1"}})
+settings = Settings({"tracker": {"primary": "Monitor1"},
+                     "widget": {"profiles": {"default": {"design": "rings"}}}})
 settings.save()
 widget = DesktopWidget(settings)
 p0, p1 = progress("Monitor0", "Landscape"), progress("Monitor1", "Space")
@@ -234,6 +235,7 @@ with patch("app.desktop_widget.apply_layer"), patch.object(widget, "_restore_pos
     check("external appearance reset also resets position", restored.call_count == 1
           and "position" not in widget.options)
 widget._set_option("layer", "normal")
+widget._set_option("design", "rings")
 widget.move(50, 50)
 widget._nudge(10, 0)
 check("keyboard movement provides an alternative to dragging", widget.x() == 60)
@@ -251,6 +253,7 @@ for edge in (112, 144, 176):
           edge * .61 + 6) == placeholder)
 
 for key in ("default", "Monitor1"):
+    set_option(settings, key, "design", "rings")
     cycle = DesktopWidget(settings, profile_key=key)
     cycle.render([p0, p1], {"Monitor1": clock1}, p1)
     cycle.show()

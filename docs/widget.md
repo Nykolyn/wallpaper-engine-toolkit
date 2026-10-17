@@ -5,9 +5,15 @@ starts the background tracker if needed and keeps working with the main
 Toolkit window closed. Hiding widgets leaves the tracker counting. The tray
 also offers **Show widgets / Hide widgets** and **Widget…** to open the controls.
 
-**Compact** is the default: a circle with two rings and a numeric countdown.
-The outer ring is the time remaining until the next wallpaper; the inner
-ring is the share of the playlist still unseen. Both empty towards completion.
+**Compact** is the default view. Its default **Rectangles** design uses two
+offset rectangles: the rear shows the percentage of the playlist viewed and the
+front shows the countdown to the next wallpaper. Both fill from left to right
+as progress elapses, while the countdown decreases.
+
+Choose **Rings** for the original circle and numeric countdown. Its outer ring
+shows time remaining until the next wallpaper; the inner ring shows the share
+of the playlist still unseen. Both empty towards completion. Design and
+compact/expanded view are separate choices.
 
 Running, paused, unknown and finished follow the tray's states. `≈` marks an
 estimate; an unavailable timer shows a dash. A paused timer freezes.
@@ -27,9 +33,11 @@ widget stays bound to its own monitor and has independent visibility,
 appearance and saved position. Turning off global visibility keeps those
 individual preferences for the next time widgets are shown.
 
-For each widget, choose compact/expanded mode, small/medium/large circle size,
-opacity, the two ring colours and a movement lock. Reset restores appearance
-and position while retaining its monitor binding and visibility.
+For each widget, choose a design, compact/expanded view, small/medium/large
+compact size, opacity, the two colours and a movement lock. Colour labels follow
+the selected design. Each monitor remembers its own choices. Reset restores
+the default rectangle design, appearance and position while retaining its
+monitor binding and visibility.
 
 The window layer defaults to **On desktop**, behind ordinary application
 windows. **Normal** behaves like a normal window; **Always on top** stays above

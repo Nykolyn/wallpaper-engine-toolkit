@@ -1,4 +1,4 @@
-"""Circular desktop readings and a dense expanded view, owned by the tray.
+"""Tray-shaped or circular desktop readings, owned by the tray.
 
 Only existing readings and asynchronously supplied metadata are painted here.
 Qt owns native movement and DPI; positions use each screen's logical work area.
@@ -12,7 +12,7 @@ from PySide6.QtGui import QActionGroup, QColor, QFontMetricsF, QIcon, QKeySequen
 from PySide6.QtWidgets import (QApplication, QColorDialog, QHBoxLayout, QLabel, QMenu,
                               QScrollArea, QToolButton, QVBoxLayout, QWidget)
 
-from . import theme, tray_words as words
+from . import theme, tray_icon, tray_words as words
 from .tray_icon import FINISHED, PAUSED, RUNNING, UNKNOWN
 from .tray_menu import icon_pixmap
 from .widget_desktop import apply_layer
@@ -59,7 +59,9 @@ def _text(painter, rect, value, token, colour="text.mid", alignment=Qt.AlignVCen
     if shrink:
         width = QFontMetricsF(font).horizontalAdvance(value)
         if width > rect.width():
-            font.setPointSizeF(font.pointSizeF() * max(.72, rect.width() / width))
+            font.setPointSizeF(max(1, font.pointSizeF() * rect.width() / width))
+            while font.pointSizeF() > 1 and QFontMetricsF(font).horizontalAdvance(value) > rect.width():
+                font.setPointSizeF(max(1, font.pointSizeF() - .5))
     painter.setFont(font)
     painter.setPen(theme.color(colour) if isinstance(colour, str) else colour)
     value = QFontMetricsF(font).elidedText(value, Qt.ElideRight, rect.width())
@@ -73,6 +75,35 @@ def _ring(painter, rect, fraction, colour, width):
     if fraction is not None and fraction > 0:
         painter.setPen(QPen(colour, width, Qt.SolidLine, Qt.RoundCap))
         painter.drawArc(rect, 90 * 16, -round(360 * 16 * min(1.0, fraction)))
+
+
+def _rectangles(painter, size, playlist, wallpaper, percent, timer, outer, inner):
+    colours = tray_icon.palette()
+    back = tray_icon._rect(tray_icon.BACK, size)
+    front = tray_icon._rect(tray_icon.FRONT, size)
+    scale = tray_icon.scale(size)
+    # Give the percentage an opaque backing even over a bright desktop wallpaper.
+    painter.setPen(Qt.NoPen)
+    painter.setBrush(colours.body)
+    painter.drawRoundedRect(back, tray_icon.BACK[4] * scale, tray_icon.BACK[4] * scale)
+    back_edge, front_edge = tray_icon.fill_edges(size, wallpaper, playlist, "front_wallpaper")
+    tray_icon._draw_mark(painter, size, colours, inner, back_edge,
+                         back_colour=outer, front_edge=front_edge)
+    inset = tray_icon.BACK[5] * scale / 2
+    label = QRectF(back.left() + inset, back.top() + inset, back.width() - 2 * inset,
+                   front.top() - tray_icon.FRONT[5] * scale / 2 - back.top() - inset)
+    _text(painter, label, percent, "type.h3" if size >= 112 else "type.monoXs",
+          "text.hi", Qt.AlignCenter, True)
+    inset = tray_icon.FRONT[5] * scale / 2 + 2
+    label = front.adjusted(inset, inset, -inset, -inset)
+    on_fill = max((QColor(Qt.black), QColor(Qt.white)), key=lambda colour: theme.contrast(colour, inner))
+    for clip, colour in ((QRectF(front_edge, 0, size - front_edge, size), QColor(Qt.white)),
+                         (QRectF(0, 0, front_edge, size), on_fill)):
+        painter.save()
+        painter.setClipRect(clip, Qt.IntersectClip)
+        _text(painter, label, timer, "type.metricLg" if size >= 112 else "type.ring",
+              colour, Qt.AlignCenter, True)
+        painter.restore()
 
 
 class MonitorRow(QWidget):
@@ -105,8 +136,11 @@ class MonitorRow(QWidget):
         remaining = f"{words.count(self.remaining)} of {words.count(progress.total)} wallpapers left" if progress else "Playlist unknown"
         self.setAccessibleName(f"{monitor} · {playlist}")
         self.setAccessibleDescription(f"{status} · {timing} · {remaining} · {self.wallpaper_title} · {self.size_text}")
+        diagram = ("Rear rectangle: playlist progress · front rectangle: wallpaper elapsed"
+                   if self.options.get("design", "rectangles") == "rectangles"
+                   else "Outer ring: time left · inner ring: playlist left")
         self.setToolTip(f"{monitor}\n{playlist}\n{status}\n{timing}\n{remaining}\n"
-                        f"{self.wallpaper_title} · {self.size_text}\nOuter ring: time left · inner ring: playlist left\n"
+                        f"{self.wallpaper_title} · {self.size_text}\n{diagram}\n"
                         "Right-click for options · double-click to change view")
         self.setFixedHeight(self.options.get("size", 144) if compact else ROW_HEIGHT)
         self.update()
@@ -114,14 +148,28 @@ class MonitorRow(QWidget):
     def paintEvent(self, event):  # noqa: N802
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
+        rectangles = self.options.get("design", "rectangles") == "rectangles"
         outer = QColor(self.options.get("outer_color", "#4C8DFF"))
         inner = QColor(self.options.get("inner_color", "#22C3B0"))
         status_colour = theme.color(STATE_COLOUR[self.state])
-        if self.state in (PAUSED, UNKNOWN):
+        if rectangles and self.state == FINISHED:
+            outer = inner = status_colour
+        elif self.state == PAUSED:
+            outer = inner = status_colour
+        elif not rectangles and self.state == UNKNOWN:
             outer = status_colour
-        if self.state == PAUSED:
-            inner = status_colour
-        if self.compact:
+        if rectangles:
+            size = min(self.width(), self.height()) if self.compact else 68
+            painter.save()
+            if not self.compact:
+                painter.translate(9, 8)
+            playlist = (self.progress.seen / self.progress.total
+                        if self.progress is not None and self.progress.total else None)
+            percent = f"{self.progress.percent}%" if playlist is not None else "—%"
+            _state, wallpaper = words.icon_state(self.progress, self.countdown)
+            _rectangles(painter, size, playlist, wallpaper, percent, self.timer_text, outer, inner)
+            painter.restore()
+        elif self.compact:
             edge = min(self.width(), self.height())
             stroke = max(4, edge / 28)
             _ring(painter, QRectF(5, 5, edge - 10, edge - 10), self.fraction, outer, stroke)
@@ -138,13 +186,14 @@ class MonitorRow(QWidget):
             count = f"{words.count(self.remaining)} left" if self.remaining is not None else "playlist —"
             _text(painter, QRectF(x, edge * .595, text_width, edge * .13), count,
                   "type.monoSm", "text.body", Qt.AlignCenter, True)
-        else:
+        if not self.compact:
             ring = QRectF(9, 8, 68, 68)
-            _ring(painter, ring, self.fraction, outer, 4)
-            _ring(painter, ring.adjusted(8, 8, -8, -8), self.playlist_fraction, inner, 3)
-            _text(painter, QRectF(15, 26, 56, 19), self.timer_text, "type.ring", "text.hi", Qt.AlignCenter, True)
-            count = f"{words.count(self.remaining)} left" if self.remaining is not None else "— left"
-            _text(painter, QRectF(19, 45, 48, 15), count, "type.monoXs", "text.mid", Qt.AlignCenter, True)
+            if not rectangles:
+                _ring(painter, ring, self.fraction, outer, 4)
+                _ring(painter, ring.adjusted(8, 8, -8, -8), self.playlist_fraction, inner, 3)
+                _text(painter, QRectF(15, 26, 56, 19), self.timer_text, "type.ring", "text.hi", Qt.AlignCenter, True)
+                count = f"{words.count(self.remaining)} left" if self.remaining is not None else "— left"
+                _text(painter, QRectF(19, 45, 48, 15), count, "type.monoXs", "text.mid", Qt.AlignCenter, True)
             start, width = 91, max(0, self.width() - 103)
             _text(painter, QRectF(start, 7, width - 68, 20), self.monitor, "type.h3", "text.hi")
             _text(painter, QRectF(self.width() - 79, 7, 66, 20), STATE_TEXT[self.state],
@@ -161,7 +210,7 @@ class MonitorRow(QWidget):
         if self.hasFocus():
             painter.setPen(QPen(theme.color("border.focus"), 1))
             painter.setBrush(Qt.NoBrush)
-            if self.compact:
+            if self.compact and not rectangles:
                 painter.drawEllipse(QRectF(self.rect()).adjusted(1, 1, -1, -1))
             else:
                 painter.drawRoundedRect(QRectF(self.rect()).adjusted(2, 2, -2, -2), 6, 6)
@@ -318,6 +367,7 @@ class DesktopWidget(QWidget):
                 group.addAction(action)
 
         choices("View", "mode", (("Compact", "compact"), ("Expanded", "expanded")))
+        choices("Design", "design", (("Rectangles", "rectangles"), ("Rings", "rings")))
         monitors = dict.fromkeys((*self._readings[4], *(p.monitor for p in self._readings[0])))
         if self.profile_key == "default":
             choices("Monitor", "monitor", (("Selected tray monitor", "tray"), *((name, name) for name in monitors)))
@@ -326,8 +376,11 @@ class DesktopWidget(QWidget):
         choices("Layer", "layer", (("On desktop", "desktop"), ("Normal", "normal"), ("Always on top", "top")))
         choices("Size", "size", (("Small · 112 px", 112), ("Medium · 144 px", 144), ("Large · 176 px", 176)))
         choices("Opacity", "opacity", tuple((f"{value}%", value) for value in (40, 60, 80, 100)))
-        colours = menu.addMenu("Ring colours")
-        for title, key in (("Wallpaper timer…", "outer_color"), ("Playlist remaining…", "inner_color")):
+        rectangles = self.options["design"] == "rectangles"
+        colours = menu.addMenu("Rectangle colours" if rectangles else "Ring colours")
+        names = (("Playlist progress…", "outer_color"), ("Wallpaper timer…", "inner_color")) if rectangles else (
+            ("Wallpaper timer…", "outer_color"), ("Playlist remaining…", "inner_color"))
+        for title, key in names:
             colours.addAction(title, lambda _checked=False, k=key: self._choose_colour(k))
         menu.addSeparator()
         lock = menu.addAction("Lock position")
@@ -344,7 +397,7 @@ class DesktopWidget(QWidget):
         return menu
 
     def _choose_colour(self, key):
-        colour = QColorDialog.getColor(QColor(self.options[key]), self, "Ring colour")
+        colour = QColorDialog.getColor(QColor(self.options[key]), self, "Widget colour")
         if colour.isValid():
             self._set_option(key, colour.name())
 
@@ -496,6 +549,8 @@ class DesktopWidget(QWidget):
         event.accept()
 
     def paintEvent(self, event):  # noqa: N802
+        if self.mode == "compact" and self.options["design"] == "rectangles":
+            return
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
         painter.setBrush(theme.color("surface.overlay"))

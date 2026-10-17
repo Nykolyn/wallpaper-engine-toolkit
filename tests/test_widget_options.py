@@ -40,6 +40,14 @@ check("a profile edit is validated and kept separate from other monitors",
       and options.profile(store, "Monitor1")["outer_color"] == "#ABCDEF"
       and options.profile(store, "Monitor2")["mode"] == "compact")
 check("editing reloads before saving", store.reload_if_changed.call_count == 2 and store.save.call_count == 2)
+check("new and legacy profiles default to the rectangle design",
+      options.profile(store).get("design") == "rectangles"
+      and options.profile(store, "Monitor2").get("design") == "rectangles")
+options.set_option(store, "Monitor1", "design", "rings")
+check("the selected design is saved independently for each monitor",
+      options.profile(store, "Monitor1").get("design") == "rings"
+      and store.get("widget", "profiles", {}).get("Monitor1", {}).get("design") == "rings"
+      and options.profile(store, "Monitor2").get("design") == "rectangles")
 options.set_layout(store, "per_monitor")
 check("per-monitor layout follows discovered monitors in order without duplicates",
       options.chosen_profiles(store, ["Monitor2", "Monitor1", "Monitor2"]) == ["Monitor2", "Monitor1"])
@@ -58,7 +66,8 @@ check("a mismatched per-monitor binding is rejected", rejected)
 
 bad = [("size", True), ("size", 143), ("opacity", 39), ("opacity", 101),
        ("opacity", "80"), ("locked", 1), ("enabled", "false"), ("mode", "wide"),
-       ("layer", "background"), ("outer_color", "red"), ("inner_color", "#fff"),
+       ("layer", "background"), ("design", "wide"), ("design", None), ("design", ["rings"]),
+       ("outer_color", "red"), ("inner_color", "#fff"),
        ("monitor", ""), ("position", {"screen": "x", "x": float("nan"), "y": 0}),
        ("position", {"screen": "x", "x": 10**1000, "y": 0}), ("unknown", True)]
 before = store.save.call_count
@@ -78,17 +87,26 @@ damaged = Settings({"widget": {"profiles": {"default": {"size": -1, "opacity": N
                                                        "layer": [], "outer_color": False,
                                                        "locked": "false"}}}})
 check("individual malformed options use safe defaults", options.profile(damaged) == options.DEFAULTS)
+for value in ("wide", None, ["rings"], {"design": "rings"}):
+    damaged = Settings({"widget": {"profiles": {"default": {"design": value}}}})
+    damaged.save = Mock()
+    check(f"an invalid saved design falls back without rewriting it ({type(value).__name__})",
+          options.profile(damaged).get("design") == "rectangles"
+          and damaged.get("widget", "profiles", {})["default"]["design"] == value
+          and not damaged.save.called)
 
 options.set_option(store, "default", "monitor", "Monitor2")
 options.set_option(store, "default", "enabled", False)
 store.set("widget", "start_with_windows", True)
+options.set_option(store, "default", "design", "rings")
 options.reset_profile(store)
 reset = options.profile(store)
 check("reset removes legacy appearance and position but keeps the monitor and visibility",
-      reset["mode"] == "compact" and "position" not in reset
+      reset["mode"] == "compact" and reset.get("design") == "rectangles" and "position" not in reset
       and reset["monitor"] == "Monitor2" and not reset["enabled"])
 check("reset preserves other profiles, global visibility, layout and startup",
       options.profile(store, "Monitor1")["outer_color"] == "#ABCDEF"
+      and options.profile(store, "Monitor1").get("design") == "rings"
       and store.get("widget", "enabled", False) and store.get("widget", "layout", "") == "per_monitor"
       and store.get("widget", "start_with_windows", False))
 snapshot = options.profile(store)

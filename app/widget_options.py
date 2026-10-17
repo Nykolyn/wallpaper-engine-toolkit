@@ -5,7 +5,7 @@ import math
 import re
 
 DEFAULTS = {
-    "mode": "compact", "size": 144, "opacity": 100, "layer": "desktop",
+    "mode": "compact", "design": "rectangles", "size": 144, "opacity": 100, "layer": "desktop",
     "locked": False, "outer_color": "#4C8DFF", "inner_color": "#22C3B0",
     "monitor": "tray", "enabled": True,
 }
@@ -15,6 +15,8 @@ LAYERS = ("desktop", "normal", "top")
 
 def _value(name: str, value):
     if name == "mode" and value in ("compact", "expanded"):
+        return value
+    if name == "design" and value in ("rectangles", "rings"):
         return value
     if name == "size" and type(value) is int and value in SIZES:
         return value

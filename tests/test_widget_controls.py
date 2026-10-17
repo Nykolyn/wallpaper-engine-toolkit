@@ -364,8 +364,15 @@ feed = Feed()
 editor = WidgetPage(profile_store, feed=feed)
 check("loading all widget controls never writes settings", not profile_store.save.called)
 captions = [heading.text().casefold() for heading in editor.findChildren(Overline)]
-check("settings identify the outer timer ring and inner playlist ring correctly",
-      "outer ring · time remaining" in captions and "inner ring · playlist remaining" in captions)
+check("settings identify the rear playlist rectangle and front wallpaper rectangle",
+      "rear rectangle · playlist progress" in captions and "front rectangle · wallpaper time" in captions
+      and editor.outer_color.accessibleName() == "Rear rectangle color"
+      and editor.inner_color.accessibleName() == "Front rectangle color")
+design = editor.design
+check("design defaults to rectangles independently from compact or expanded view",
+      design.currentData() == "rectangles"
+      and editor.mode.currentData() == "compact" and editor.mode.itemText(0) == "Compact"
+      and editor.size_choice.accessibleName() == "Compact size")
 editor.layout_mode.setCurrentIndex(1)
 check("per-monitor layout selects a discovered monitor for customization",
       profile_store.get("widget", "layout", "") == "per_monitor"
@@ -377,6 +384,14 @@ editor.layer.setCurrentIndex(2)
 editor.locked.setChecked(True)
 editor.outer_color.setText("#abcdef")
 editor.outer_color.editingFinished.emit()
+design.setCurrentIndex(design.findData("rings"))
+captions = [heading.text().casefold() for heading in editor.findChildren(Overline)]
+check("changing design preserves view and switches the color labels to the original rings",
+      widget_options.profile(profile_store, "Monitor1").get("design") == "rings"
+      and editor.mode.currentData() == "expanded"
+      and "outer ring · time remaining" in captions and "inner ring · playlist remaining" in captions
+      and editor.outer_color.accessibleName() == "Outer ring color"
+      and editor.inner_color.accessibleName() == "Inner ring color")
 configured = widget_options.profile(profile_store, "Monitor1")
 check("the page saves all requested appearance and placement controls to the selected monitor",
       all(configured[key] == value for key, value in
@@ -386,6 +401,7 @@ before = profile_store.save.call_count
 editor.profile_selector.setCurrentIndex(1)
 check("switching the editor profile loads the other monitor without writing it",
       editor.mode.currentData() == "compact" and editor.size_choice.currentData() == 144
+      and design.currentData() == "rectangles"
       and editor.layer.currentData() == "desktop" and profile_store.save.call_count == before)
 editor.profile_enabled.setChecked(False)
 check("the page can hide one monitor widget while keeping global visibility and the other widget",
@@ -413,6 +429,7 @@ editor.layout_mode.setCurrentIndex(0)
 editor.target.setCurrentIndex(editor.target.findData("Monitor2"))
 editor.mode.setCurrentIndex(1)
 editor.opacity.setValue(60)
+design.setCurrentIndex(design.findData("rings"))
 check("the expanded shared profile labels its all-monitors default accurately",
       editor.target.itemText(0) == "All monitors")
 widget_options.set_option(profile_store, "default", "position", {"screen": "right", "x": 0.5, "y": 1})
@@ -420,9 +437,15 @@ with patch.object(widget_startup, "set_enabled") as startup_change:
     editor.reset.click()
     reset = widget_options.profile(profile_store)
     check("reset restores this widget's appearance and position without changing its binding or startup",
-          reset["mode"] == "compact" and reset["opacity"] == 100 and "position" not in reset
+          reset["mode"] == "compact" and reset.get("design") == "rectangles"
+          and reset["opacity"] == 100 and "position" not in reset
           and reset["monitor"] == "Monitor2" and reset["enabled"] and not startup_change.called
           and widget_options.profile(profile_store, "Monitor1")["mode"] == "expanded")
+captions = [heading.text().casefold() for heading in editor.findChildren(Overline)]
+check("reset restores rectangle design and its color labels only for the selected widget",
+      design.currentData() == "rectangles"
+      and "rear rectangle · playlist progress" in captions and "front rectangle · wallpaper time" in captions
+      and widget_options.profile(profile_store, "Monitor1").get("design") == "rings")
 empty_store = settings()
 empty_store.set("widget", "layout", "per_monitor")
 empty_editor = WidgetPage(empty_store)
