@@ -151,6 +151,12 @@ Wallpaper Engine shows the 39, because those are the ones it has files for, and
 so does this page. Reading the folder literally would mean re-reviewing every
 wallpaper ever put aside and since deleted, turning a week's 26 authors into 453.
 
+The same rule applies when deciding which works an author still has to offer:
+a Workshop directory containing only leftover shader caches is not a current
+subscription. Its works can return marked **was yours** instead of hiding the
+author. Subscriptions accepted in this window count immediately, even before
+Steam finishes downloading their files.
+
 ### Whether you have had a wallpaper before
 
 A card in a gallery says **already have** when a copy is kept in the Rotator's

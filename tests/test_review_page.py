@@ -591,6 +591,21 @@ check("by looking at the folder off the GUI thread, once while a look is out",
       page.library.threads == [False])
 page.library = real_library
 
+# A leftover shader directory is not a subscription made in another app.
+shader_item = next(w for w in page.cards[AUTHORS[4]].offered if w.id != other)
+(WORKSHOP / shader_item.id / "shaders").mkdir(parents=True)
+page._notice_subscriptions()
+check("the watcher checks shader leftovers without marking them subscribed",
+      wait_for(lambda: not page._watching) and not shader_item.subscribed
+      and shader_item.id not in session.find(AUTHORS[4]).subscribed
+      and shader_item.id not in library.subscribed())
+(WORKSHOP / shader_item.id / "project.json").write_text(
+    json.dumps({"title": shader_item.id}), encoding="utf-8")
+page._notice_subscriptions()
+check("the watcher notices a genuine download after the shader-only directory",
+      wait_for(lambda: shader_item.subscribed)
+      and shader_item.id in session.find(AUTHORS[4]).subscribed)
+
 print("-- the selection, and the bar --")
 busiest = max(session.authors, key=lambda a: a.new).id
 page.open_author(busiest)
@@ -664,7 +679,7 @@ final = ReviewState.from_json(json.loads(last_file.read_text(encoding="utf-8")))
 check("review_last.json says the review is finished", final.finished is not None
       and json.loads(last_file.read_text(encoding="utf-8"))["written"]["created"] == 4)
 check("the finished state: who went through, the numbers, the last scan",
-      page.texts()["done"][0].startswith("1 of 4 authors went through. 2 wallpapers were subscribed")
+      page.texts()["done"][0].startswith("1 of 4 authors went through. 3 wallpapers were subscribed")
       and page.texts()["done"][1].startswith("last scan ")
       and page.subtitle().startswith("5 wallpapers to scan · Finished "))
 check("and the database write is journalled", svc.journal.recent(1)[0].kind == "database.clean")

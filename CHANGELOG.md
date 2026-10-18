@@ -6,6 +6,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [4.5.1] - 2026-10-18
+
+### Fixed
+
+- Review no longer hides authors or their available works because removed
+  wallpapers left shader-cache directories behind. Scanning and subscription
+  watching now require a downloaded project, while subscriptions accepted in
+  the window still count before their files arrive.
+
 ## [4.5.0] - 2026-10-17
 
 ### Added
@@ -1861,7 +1870,8 @@ restructured yet; the tabs keep their layout and take on the new look.
   was right for one library and wrong for every other. Nothing is tagged now
   unless you ask for it.
 
-[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v4.5.0...HEAD
+[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v4.5.1...HEAD
+[4.5.1]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v4.5.0...v4.5.1
 [4.5.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v4.4.1...v4.5.0
 [4.3.1]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v4.3.0...v4.3.1
 [4.3.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v4.2.0...v4.3.0
