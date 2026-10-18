@@ -36,9 +36,10 @@ sys.path.insert(0, str(ROOT))
 # on CI) cannot always print; a check must not fail for the way its name is shown.
 sys.stdout.reconfigure(errors="replace")
 
-from PySide6.QtCore import Qt                                             # noqa: E402
+from PySide6.QtCore import Qt, QTimer                                      # noqa: E402
 from PySide6.QtGui import QImage                                           # noqa: E402
-from PySide6.QtWidgets import QApplication, QVBoxLayout, QWidget          # noqa: E402
+from PySide6.QtTest import QTest                                           # noqa: E402
+from PySide6.QtWidgets import QApplication, QDialog, QVBoxLayout, QWidget    # noqa: E402
 
 app = QApplication(sys.argv)
 
@@ -927,6 +928,47 @@ form.key.edit.setText(key)
 form.test()
 check("Test asks off the window's thread and says what came back",
       wait_for(lambda: form.key.verdict.text() == "Steam accepts the key"))
+# Exercise the real closing path: embedded specimens never ran done() here.
+closing = rs.ReviewSettingsDialog(rs.ReviewSettings(), host, folders={})
+finished = []
+closing.finished.connect(finished.append)
+for action, expected, invalid in (("Cancel", QDialog.Rejected, True),
+                                  ("Save", QDialog.Accepted, False),
+                                  ("Escape", QDialog.Rejected, True),
+                                  ("window close", QDialog.Rejected, False)):
+    closing.key.edit.setText("bad" if invalid else "")
+    closing.show()
+    app.processEvents()
+    before_finished = len(finished)
+    if action == "Cancel":
+        closing.cancel_button().click()
+    elif action == "Save":
+        closing.save_button().click()
+    elif action == "Escape":
+        QTest.keyClick(closing, Qt.Key_Escape)
+    else:
+        closing.close()
+    check(f"Review settings: {action} closes even after reopening, with the right result",
+          not closing.isVisible() and closing.result() == expected
+          and closing.result_value() is (expected == QDialog.Accepted)
+          and finished[before_finished:] == [expected] and closing._owner is None)
+    closing.hide()  # keep a broken closing path from blocking the next check
+
+# A bounded watchdog prevents a closing regression from hanging the suite.
+modal = rs.ReviewSettingsDialog(rs.ReviewSettings(), host, folders={})
+modal.mode.set_current_index(1)
+timed_out = []
+watchdog = QTimer()
+watchdog.setSingleShot(True)
+watchdog.timeout.connect(lambda: (timed_out.append(True), QDialog.done(modal, QDialog.Rejected)))
+watchdog.start(2000)
+QTimer.singleShot(30, modal.save_button().click)
+saved = modal.ask()
+watchdog.stop()
+check("Review settings: Save returns from the modal ask with the edited values",
+      saved is True and not timed_out and not modal.isVisible()
+      and modal.values().subscribe == rs.BY_PAGE)
+
 secrets.put(secrets.STEAM_API_KEY, "")
 settings.set("review", "subscribe", rs.BY_STEAM)
 settings.set("review", "backup_mirror", "")
@@ -954,6 +996,14 @@ check("and is done on a thread, after which the page knows to read it again",
       wait_for(lambda: dialog.restored))
 with AuthorsStore(DB) as back:
     check("the database is the backup again", back.count() == facts.backups[oldest].count)
+live_authors = rs.AuthorsDialog(settings, host)
+live_authors.show()
+app.processEvents()
+live_authors.initial_focus().click()
+check("the related authors database dialog closes and releases its owner",
+      not live_authors.isVisible() and live_authors.result() == QDialog.Rejected
+      and live_authors._owner is None)
+
 page.edit_authors = lambda: None
 
 print()

@@ -6,6 +6,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [4.7.1] - 2026-10-19
+
+### Fixed
+
+- Review settings closes with Cancel, Save, Escape and the window close action
+  again. Its background Steam-key reply handler no longer hides the dialog's
+  completion method, which previously raised an exception before closing.
+
 ## [4.7.0] - 2026-10-18
 
 ### Added
@@ -1898,7 +1906,8 @@ restructured yet; the tabs keep their layout and take on the new look.
   was right for one library and wrong for every other. Nothing is tagged now
   unless you ask for it.
 
-[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v4.7.0...HEAD
+[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v4.7.1...HEAD
+[4.7.1]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v4.7.0...v4.7.1
 [4.7.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v4.6.0...v4.7.0
 [4.6.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v4.5.1...v4.6.0
 [4.5.1]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v4.5.0...v4.5.1
