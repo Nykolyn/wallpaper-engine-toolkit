@@ -200,7 +200,7 @@ class Toggle(Interactive, Caster, QAbstractButton):
 # ---- SegmentedControl ----------------------------------------------------------------
 
 class SegmentedControl(Interactive, Caster, QWidget):
-    """Two or three exclusive segments ("Queue / Shown", "All / Problems").
+    """Two to four exclusive segments ("Queue / Shown", "All / Video / Scene / Other").
 
     The chosen one is surface.raised with text.hi, the others transparent with
     text.mid. Arrow keys move the choice; `changed` says where it went.
@@ -210,8 +210,8 @@ class SegmentedControl(Interactive, Caster, QWidget):
 
     def __init__(self, labels, parent: QWidget | None = None, *, current: int = 0):
         labels = [str(text) for text in labels]
-        if not 2 <= len(labels) <= 3:
-            raise ValueError(f"a SegmentedControl has two or three segments, not {len(labels)}: "
+        if not 2 <= len(labels) <= 4:
+            raise ValueError(f"a SegmentedControl has two to four segments, not {len(labels)}: "
                              "for one on/off setting use a Toggle, for more a Dropdown")
         QWidget.__init__(self, parent)
         self._labels = labels

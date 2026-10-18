@@ -6,7 +6,7 @@ Run it directly (needs Qt, but no windows on screen):
 
 Every class is built in every state and drawn. Beyond that, the rules the
 design states and a page would otherwise have to remember: the fourteen chip
-variants and no more, the Pagination's four numbers, two or three segments,
+variants and no more, the Pagination's four numbers, two to four segments,
 a Toggle that jumps when motion is off, Dropdown rows that cannot be chosen,
 a DangerButton that never takes Enter, and a focus ring for the keyboard only.
 """
@@ -254,12 +254,12 @@ check("and comes back with a second page", not pager.isHidden())
 pager.deleteLater()
 
 
-# ---- SegmentedControl: two or three -------------------------------------------------------------
+# ---- SegmentedControl: two to four --------------------------------------------------------------
 
 check("a SegmentedControl rejects one segment",
       raises(lambda: SegmentedControl(["Queue"]), ValueError))
-check("and four", raises(lambda: SegmentedControl(["a", "b", "c", "d"]), ValueError))
-segments = SegmentedControl(["All", "Problems", "Shown"])
+check("and five", raises(lambda: SegmentedControl(["a", "b", "c", "d", "e"]), ValueError))
+segments = SegmentedControl(["All", "Video", "Scene", "Other"])
 host.row.addWidget(segments)
 app.processEvents()
 chosen: list[int] = []
@@ -268,8 +268,8 @@ segments.setFocus(Qt.TabFocusReason)
 QTest.keyClick(segments, Qt.Key_Right)
 QTest.keyClick(segments, Qt.Key_End)
 QTest.keyClick(segments, Qt.Key_Right)
-check("takes two or three, and the arrow keys move the choice within them",
-      chosen == [1, 2] and segments.current_index() == 2)
+check("takes four, and the arrow keys reach the last choice without overflowing",
+      chosen == [1, 3] and segments.current_index() == 3)
 segments.deleteLater()
 
 

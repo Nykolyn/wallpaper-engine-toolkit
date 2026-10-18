@@ -901,6 +901,7 @@ class _FoundPanel(GlassPanel):
 
 
 VIEWS = ("grid", "list")
+WALLPAPER_TYPES = ("all", "video", "scene", "other")
 
 
 class _GalleryPanel(GlassPanel):
@@ -933,6 +934,19 @@ class _GalleryPanel(GlassPanel):
         row.addWidget(self.author_page)
         column.addWidget(head)
         column.addWidget(Rule())
+        self.type_row = QWidget()
+        filters = QHBoxLayout(self.type_row)
+        filters.setContentsMargins(pad_h, theme.SP_8, pad_h, theme.SP_8)
+        filters.setSpacing(theme.SP_12)
+        filters.addWidget(label("Wallpaper type", "type.label", "body"))
+        self.wallpaper_type = SegmentedControl([kind.title() for kind in WALLPAPER_TYPES])
+        self.wallpaper_type.setAccessibleName("Filter wallpapers by type")
+        self.wallpaper_type.setToolTip("Filter this author's wallpapers. Other includes web, "
+                                       "application and unknown types. Authors and visit dates "
+                                       "are unaffected.")
+        filters.addWidget(self.wallpaper_type)
+        filters.addStretch(1)
+        column.addWidget(self.type_row)
         self.stack = QStackedWidget()
         self.stack.addWidget(gallery)
         holder = QWidget()
@@ -972,6 +986,7 @@ class _GalleryPanel(GlassPanel):
         self.bar.setVisible(on)
         self.author_page.setVisible(on)
         self.view.setVisible(on)
+        self.type_row.setVisible(on)
 
     def set_mode(self, mode: str) -> None:
         self._mode = mode if mode in VIEWS else "grid"
@@ -980,7 +995,7 @@ class _GalleryPanel(GlassPanel):
             self.view.set_current_index(VIEWS.index(self._mode))
             self.view.blockSignals(False)
         if self._on:
-            self.stack.setCurrentIndex(VIEWS.index(self._mode))
+            self.stack.setCurrentIndex(VIEWS.index(self._mode) if self.stack.widget(0).total else 2)
 
     def mode(self) -> str:
         return self._mode
@@ -1266,6 +1281,8 @@ class ReviewPage(Page):
         g.done_with.clicked.connect(self.done_with_author)
         g.back.clicked.connect(self.close_review_list)
         g.view.changed.connect(lambda i: self.set_view(VIEWS[i]))
+        g.wallpaper_type.changed.connect(lambda _i: self.open_author(self.current)
+                                         if self.current and not self._listing else None)
         g.set_mode(self._stored_view())
         for view in (self.gallery, self.gallery_list):
             view.subscribe_requested.connect(self.subscribe)
@@ -1847,7 +1864,7 @@ class ReviewPage(Page):
             self._touch(previous)
         self._describe(author_id)
 
-    def _gallery_items(self, author_id: str) -> list:
+    def _gallery_items(self, author_id: str, *, filtered: bool = True) -> list:
         """An author's wallpapers as the scan offered them, newest first — the
         ones subscribed since still among them, set back where they stood."""
         card = self.cards.get(author_id)
@@ -1855,7 +1872,13 @@ class ReviewPage(Page):
         if card is None:
             return []
         taken = author.subscribed if author is not None else set()
-        return [w for w in card.items if w.new_since_visit and (w.offer or w.id in taken)]
+        items = [w for w in card.items if w.new_since_visit and (w.offer or w.id in taken)]
+        kind = WALLPAPER_TYPES[self.gallery_panel.wallpaper_type.current_index()]
+        if not filtered or kind == "all":
+            return items
+        if kind == "other":
+            return [w for w in items if (w.item.kind or "").strip().lower() not in ("video", "scene")]
+        return [w for w in items if (w.item.kind or "").strip().lower() == kind]
 
     def _describe(self, author_id: str) -> None:
         author = self.session.find(author_id)
@@ -1868,6 +1891,10 @@ class ReviewPage(Page):
         g.done_with.show()
         g.name.set_text(author.name)
         g.sub.set_text(gallery_subtitle(author, card, self._now()))
+        if not self.gallery.total:
+            g.empty.set_title("No wallpapers of this type")
+            g.empty.set_body("Choose another wallpaper type to see this author's wallpapers.")
+            g.empty.set_meta("")
         if author.done:
             following = self.session.next_waiting(after=author_id, order=self._ordered())
             g.done_with.setText("Next author →")
@@ -1949,7 +1976,7 @@ class ReviewPage(Page):
         groups, items, owner = [], [], {}
         for author_id in order:
             author = self.session.find(author_id)
-            wallpapers = self._gallery_items(author_id)
+            wallpapers = self._gallery_items(author_id, filtered=False)
             if author is None or not wallpapers:
                 continue
             groups.append(Group(author_id, author.name, note=f"{fmt.count(len(wallpapers))} new"))
@@ -1969,12 +1996,19 @@ class ReviewPage(Page):
         g.show_gallery(True)
         g.set_mode("list")
         g.view.hide()
+        g.type_row.hide()
         g.author_page.hide()
         g.done_with.hide()
         g.back.show()
         g.name.set_text("Every author")
         g.sub.set_text(f"{fmt.counted(self.gallery.total, 'new item')} from "
                        f"{fmt.counted(len(session.authors), 'author')}")
+        if not self.gallery.total:
+            g.empty.set_title("No wallpapers to show")
+            g.empty.set_body("Clear the author search to see this review's wallpapers."
+                             if self.authors.filter.text().strip()
+                             else "This review has no wallpapers to show.")
+            g.empty.set_meta("")
         self._update_bar()
 
     def _scroll_listing_to(self, author_id: str) -> None:
