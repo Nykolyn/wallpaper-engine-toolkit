@@ -296,8 +296,8 @@ class ReviewSettingsDialog(FormDialog):
                               "Review asks Steam with.", embedded=embedded)
         self._values = values
         self._tester = tester
-        self._answer = _Answer(self)
-        self._answer.done.connect(self._answered)
+        self._answers = _Answer(self)
+        self._answers.done.connect(self._answered)
 
         self.source = Dropdown()
         self.source.setAccessibleName("Review source")
@@ -389,7 +389,7 @@ class ReviewSettingsDialog(FormDialog):
             return
         self.key.say("Asking Steam…")
         self.key.test_button.setEnabled(False)
-        _ask(self._answer, "test", lambda: self._tester(value))
+        _ask(self._answers, "test", lambda: self._tester(value))
 
     def _answered(self, what: str, found) -> None:
         if what != "test":
