@@ -67,7 +67,7 @@ from typing import Callable
 
 from PySide6.QtCore import QObject, Qt, QTimer, Signal
 from PySide6.QtWidgets import (
-    QAbstractItemView, QHBoxLayout, QMenu, QStackedLayout, QVBoxLayout, QWidget,
+    QAbstractItemView, QHBoxLayout, QMenu, QStackedLayout, QStackedWidget, QVBoxLayout, QWidget,
 )
 
 from .. import external, theme
@@ -84,7 +84,7 @@ from ..tracker_feed import tray_running
 from ..ui.kit import (
     AccentButton, ButtonsCell, Callout, Cell, CellButton, Column, ConfirmDialog, EmptyState, FormDialog, GhostButton, Glyph, GlassPanel, Group, IconButton, LinkButton,
     MonitorCard, MonitorView, NavState, Overline, PathField, Rule, SecondaryButton,
-    SegmentedControl, Table, TableBar, TableFooter, TableModel, TagsCell, TextInput, format as fmt, label,
+    SegmentedControl, Table, TableBar, ThumbGrid, TableFooter, TableModel, TagsCell, TextInput, format as fmt, label,
 )
 from ..ui.kit.base import set_tone
 from ..ui.kit.cards import qualified_html
@@ -560,10 +560,11 @@ COLUMNS = (
     Column("Remaining", 86, "right", mono=True, tone="text.mid"),
     Column("", theme.TRACKER_COLUMNS["actions"], "right", sortable=False),
 )
-TYPE, SIZE, SHOWN_FOR = 2, 3, 4
+TYPE, SIZE, SHOWN_FOR, STATE = 2, 3, 4, 5
 MULTIPLIER, REMAINING = 8, 9
 ACTIONS = len(COLUMNS) - 1
 GROUPS = (Group(SHOWN, "Already shown this cycle"), Group(QUEUE, "Queue"))
+VIEWS = ("table", "grid")
 
 
 class PlaylistModel(TableModel):
@@ -1153,11 +1154,14 @@ class TrackerPage(Page):
         self.jump = SegmentedControl(("Shown", "Queue"))
         self.jump.setAccessibleName("Go to")
         self.jump.changed.connect(self._jump_to)
+        self.view = SegmentedControl(("Table", "Grid"))
+        self.view.setAccessibleName("Show the playlist as a table or a grid")
         self.reload = IconButton("refresh", "Read the titles and authors again")
         self.reload.clicked.connect(self.read_again)
         for widget in (self.filter, self.jump):
             bar.add(widget)
         bar.add_stretch()
+        bar.add(self.view)
         bar.add(self.reload)
         column.addWidget(bar)
         self.model = PlaylistModel(self)
@@ -1173,11 +1177,46 @@ class TrackerPage(Page):
         self.table.activated.connect(self._row_clicked)
         self.table.action_clicked.connect(self._action_clicked)
         self.table.verticalScrollBar().valueChanged.connect(self._follow_scroll)
-        column.addWidget(self.table, 1)
+        # The grid reads the same model: a filter or a new list shows in both.
+        self.grid = ThumbGrid(1, (0, STATE, SHOWN_FOR))
+        self.grid.setAccessibleName("The playlist")
+        self.grid.setModel(self.model)
+        self.grid.item_clicked.connect(self._row_clicked)
+        self.grid.verticalScrollBar().valueChanged.connect(self._follow_scroll)
+        self.views = QStackedWidget()
+        self.views.addWidget(self.table)
+        self.views.addWidget(self.grid)
+        column.addWidget(self.views, 1)
+        self.view.changed.connect(self._set_view)
+        self._set_view(VIEWS.index(self._saved_view()), save=False)
         self.footer = TableFooter("")
         self.footer.set_note(FOOTER_NOTE)
         column.addWidget(self.footer)
         return card
+
+    def _saved_view(self) -> str:
+        view = self._settings.get("tracker", "view", VIEWS[0]) if self._settings is not None else None
+        return view if view in VIEWS else VIEWS[0]
+
+    def _set_view(self, segment: int, save: bool = True) -> None:
+        """Table or Grid, remembered in the settings."""
+        if self.view.current_index() != segment:
+            self.view.blockSignals(True)
+            self.view.set_current_index(segment)
+            self.view.blockSignals(False)
+        self.views.setCurrentIndex(segment)
+        self._select_on_screen()
+        if save and self._settings is not None:
+            self._settings.reload_if_changed()
+            self._settings.set("tracker", "view", VIEWS[segment])
+            self._settings.save()
+
+    def grid_shown(self) -> bool:
+        return self.views.currentWidget() is self.grid
+
+    def _repaint(self) -> None:
+        self.table.viewport().update()
+        self.grid.viewport().update()
 
     def make_header_actions(self) -> list[QWidget]:
         settings = GhostButton("Playlist settings", outlined=True)
@@ -1265,7 +1304,7 @@ class TrackerPage(Page):
                 if start is not None:
                     row.shown_for = max((now - start).total_seconds(), 0.0)
         self.model.now = now
-        self.table.viewport().update()
+        self._repaint()
 
     def _current_since(self, monitor: str | None):
         p = next((r for r in self._results if r.monitor == monitor), None)
@@ -1454,7 +1493,7 @@ class TrackerPage(Page):
         if self.model.sort_column() in (MULTIPLIER, REMAINING):
             self.table.sort_by(self.model.sort_column(), self.model.sort_order())
         else:
-            self.table.viewport().update()
+            self._repaint()
 
     def _show_rows(self, monitor: str, rows: list[PlaylistRow], in_order: bool,
                    now: datetime) -> None:
@@ -1487,7 +1526,7 @@ class TrackerPage(Page):
             if self._filtering() or self.model.sort_column() >= 0:
                 self._apply_filter()
             else:
-                self.table.viewport().update()
+                self._repaint()
 
     def _items_sized(self, found: dict) -> None:
         changed = False
@@ -1500,7 +1539,7 @@ class TrackerPage(Page):
             if self.model.sort_column() == SIZE:
                 self._apply_filter()
             else:
-                self.table.viewport().update()
+                self._repaint()
 
     def _filtering(self) -> bool:
         return bool(self.filter.text().strip())
@@ -1517,10 +1556,13 @@ class TrackerPage(Page):
 
     def _select_on_screen(self) -> None:
         index = next((i for i, row in enumerate(self.model.items()) if row.on_screen), -1)
-        if index >= 0 and self.model.row_of_item(index) >= 0:
+        row = self.model.row_of_item(index) if index >= 0 else -1
+        if row >= 0:
             self.table.select_items([index])
+            self.grid.setCurrentIndex(self.model.index(row, 1))
         else:
             self.table.clearSelection()
+            self.grid.clearSelection()
 
     def _jump_to(self, segment: int) -> None:
         """Shown / Queue: bring that group's header to the top."""
@@ -1530,10 +1572,11 @@ class TrackerPage(Page):
         if key in keys:
             self.table.scrollTo(self.model.index(rows[keys.index(key)], 0),
                                 QAbstractItemView.PositionAtTop)
+            self.grid.scroll_to_row(rows[keys.index(key)] + 1)     # the grid has no headers
 
     def _follow_scroll(self, *_args) -> None:
         """The segment says which group is at the top of the table."""
-        top = self.table.rowAt(0)
+        top = self.grid.first_visible_row() if self.grid_shown() else self.table.rowAt(0)
         rows = self.model.group_rows()
         group = None
         for r in rows:
@@ -1585,7 +1628,7 @@ class TrackerPage(Page):
         destination = self._destination()
         if destination != self.model.destination:
             self.model.destination = destination
-            self.table.viewport().update()
+            self._repaint()
 
     def _action_clicked(self, row: int, _column: int, key: str) -> None:
         item = self.model.item_at(row)
@@ -1617,7 +1660,7 @@ class TrackerPage(Page):
                               "has finished.")
             return False
         self.model.renaming.add(folder_key(folder))
-        self.table.viewport().update()
+        self._repaint()
         self._offload.run(lambda: protect_folder(folder),
                           lambda result: self._protected(folder, result))
         return True
@@ -1629,7 +1672,7 @@ class TrackerPage(Page):
         if isinstance(result, Exception):
             reason = (str(result) if isinstance(result, ProtectError)
                       else f"{result}.")
-            self.table.viewport().update()
+            self._repaint()
             self._say("danger", f"Could not mark {old} [protected]: {reason} "
                                 f"Nothing was changed.")
             return
@@ -1637,8 +1680,9 @@ class TrackerPage(Page):
         for row in self.model.items():
             if folder_key(row.folder) == folder_key(folder):
                 row.folder, row.stale = result, True
-        self.table.viewport().update()
+        self._repaint()
         self.table.request_visible_thumbs()
+        self.grid.request_visible_thumbs()
         self._say("ok", f"{old} is now {new}: the Rotator leaves it in myprojects. Wallpaper "
                         f"Engine's playlist still has the old name; that entry stops working "
                         f"until the next rotation.")
@@ -1664,7 +1708,7 @@ class TrackerPage(Page):
                               "finished.")
             return False
         self.model.deleting.add(folder_key(folder))
-        self.table.viewport().update()
+        self._repaint()
         self._offload.run(lambda: self._delete_folder(folder),
                           lambda result: self._deleted_folder(folder, name, result))
         return True
@@ -1685,7 +1729,7 @@ class TrackerPage(Page):
             if self._feed is not None:
                 self._feed.refresh()        # the count, without it
         else:
-            self.table.viewport().update()
+            self._repaint()
         self._say(tone, words)
 
     def _rotating(self) -> bool:

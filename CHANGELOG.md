@@ -6,6 +6,25 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [4.6.0] - 2026-10-18
+
+### Added
+
+- The Tracker's playlist can be shown as a Grid of preview cards — preview,
+  title and state — beside the Table. The switch is at the right of the
+  table's bar, and the last view chosen is remembered.
+- Settings has an Appearance panel, with the first of its options: the size of
+  the wallpaper previews in the tables and the Tracker's grid (120 to 300 px).
+  A new size is applied at once, in every page.
+
+### Changed
+
+- Table previews are 250 × 250 by default, up from 200 × 200.
+- The window remembers its height and whether it was maximised, not just its
+  width, and opens the same way. The size is saved as soon as you stop
+  resizing, so an update, which closes the window from outside, no longer
+  brings it back at its first-start width.
+
 ## [4.5.1] - 2026-10-18
 
 ### Fixed
@@ -1870,7 +1889,8 @@ restructured yet; the tabs keep their layout and take on the new look.
   was right for one library and wrong for every other. Nothing is tagged now
   unless you ask for it.
 
-[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v4.5.1...HEAD
+[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v4.6.0...HEAD
+[4.6.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v4.5.1...v4.6.0
 [4.5.1]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v4.5.0...v4.5.1
 [4.5.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v4.4.1...v4.5.0
 [4.3.1]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v4.3.0...v4.3.1

@@ -1,9 +1,10 @@
 # Configuration
 
 The window starts at 1780 px wide (limited to the available screen space).
-Closing it saves its normal width in `suite.json` under `window.width`; the
-next launch restores that width. Closing a maximised window keeps the width
-it will have when restored.
+Its size is saved in `suite.json` under `window.width` and `window.height`
+half a second after you stop resizing it, and on close — so an update, which
+closes the window from outside, keeps it too. `window.maximized` says it was
+maximised; it opens maximised again, and restores to the saved size.
 
 Every setting, every file this app writes, and what is worth backing up.
 

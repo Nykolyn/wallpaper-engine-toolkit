@@ -603,9 +603,47 @@ remember.showMaximized()
 wait(50)
 normal_width = remember.normalGeometry().width()
 remember.close()
-check("closing maximised preserves the restored width",
-      remember.settings.get("window", "width", None) == normal_width)
+check("closing maximised preserves the restored width and says it was maximised",
+      remember.settings.get("window", "width", None) == normal_width
+      and remember.settings.get("window", "maximized", None) is True)
+remember.settings.set("window", "height", 990)
+with patch.object(remember, "screen", return_value=room):
+    check("reopening uses the last height too", remember.opening_size().height() == 990)
+    remember.settings.set("window", "height", 300)
+    check("a height below the minimum is ignored", remember.opening_size().height() >= 860)
 remember.deleteLater()
+
+print("-- the size is saved without a close --")
+Settings({}).save()
+live = make_window()
+live.show()
+live.resize(1600, 900)
+check("a resize is saved soon after, before any close",
+      wait_for(lambda: Settings.load().get("window", "width", None) == 1600)
+      and Settings.load().get("window", "height", None) == 900)
+live.showMaximized()
+check("maximising is saved too", wait_for(lambda: Settings.load().get("window", "maximized", None) is True))
+again = make_window()
+check("a window opened after that comes up maximised", bool(again.windowState() & Qt.WindowMaximized))
+live.hide()
+settings.section("window").clear()      # the windows made below open as they always did
+live.deleteLater()
+again.deleteLater()
+
+print("-- Settings › Appearance: the preview size --")
+appearance = w.pages["settings"]
+check("Appearance offers the preview sizes, 250 chosen at first",
+      appearance.preview_size.count() == len(theme.ROW_THUMB_SIDES)
+      and appearance.preview_size.itemData(appearance.preview_size.currentIndex()) == 250)
+appearance.preview_size.activated.emit(theme.ROW_THUMB_SIDES.index(160))
+check("choosing one resizes the previews and is saved",
+      theme.THUMB["row"][:2] == (160, 160)
+      and Settings.load().get("appearance", "preview_size", None) == 160)
+theme.THUMB["row"] = (250, 250, theme.THUMB["row"][2])
+reopened = make_window()
+check("a window opened later uses the saved size", theme.THUMB["row"][:2] == (160, 160))
+appearance.preview_size.activated.emit(theme.ROW_THUMB_SIDES.index(250))
+reopened.deleteLater()
 
 print("-- snapshots --")
 s = make_window("rotator")

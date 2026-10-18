@@ -57,7 +57,7 @@ from PySide6.QtGui import (
     QCursor, QFont, QFontMetricsF, QMovie, QPainter, QPainterPath, QPen, QPixmap,
 )
 from PySide6.QtWidgets import (
-    QAbstractItemView, QHBoxLayout, QHeaderView, QLabel, QListView, QSizePolicy, QStyle,
+    QAbstractItemView, QApplication, QHBoxLayout, QHeaderView, QLabel, QListView, QSizePolicy, QStyle,
     QStyledItemDelegate, QTableView, QToolTip, QWidget,
 )
 
@@ -137,6 +137,20 @@ def thumb_tile(pixmap: QPixmap | None, state: str, size: str, dpr: float) -> QPi
     if state != "image":
         _state_tiles[key] = tile
     return tile
+
+
+def set_row_thumb(side: int) -> None:
+    """The tables' preview size (Settings): `theme.THUMB["row"]`, redrawn at
+    once in every table and grid that shows it."""
+    if theme.THUMB["row"][:2] == (side, side):
+        return
+    theme.THUMB["row"] = (side, side, theme.THUMB["row"][2])
+    _state_tiles.clear()
+    app = QApplication.instance()
+    for widget in app.allWidgets() if app is not None else ():
+        resized = getattr(widget, "thumbs_resized", None)
+        if callable(resized):
+            resized()
 
 
 def thumb_box(size: str) -> tuple[int, int, int]:
@@ -1620,12 +1634,20 @@ class Table(QTableView):
         self._apply_columns()
         self._model_reset()
 
+    @staticmethod
+    def _fixed_width(column: Column) -> int:
+        """A fixed column's width; one holding a thumb is as wide as the thumb,
+        whose size Settings may change."""
+        if column.width is not None and column.thumb:
+            return theme.THUMB[column.thumb][0]
+        return column.width if column.width is not None else column.min_width
+
     def _apply_columns(self) -> None:
         header = self.horizontalHeader()
         model: TableModel = self.model()
         last = len(model.columns) - 1
-        minimum = sum((column.width if column.width is not None else column.min_width)
-                      + sum(self._pads(c, last)) for c, column in enumerate(model.columns))
+        minimum = sum(self._fixed_width(column) + sum(self._pads(c, last))
+                      for c, column in enumerate(model.columns))
         scroll = any(column.min_width for column in model.columns)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded if scroll else Qt.ScrollBarAlwaysOff)
         cramped = minimum > self.viewport().width() - self.verticalScrollBar().sizeHint().width()
@@ -1635,9 +1657,23 @@ class Table(QTableView):
                 header.setSectionResizeMode(c, QHeaderView.Stretch)
             else:
                 header.setSectionResizeMode(c, QHeaderView.Fixed)
-                header.resizeSection(c, (column.width if column.width is not None else column.min_width)
-                                     + left + right)
+                header.resizeSection(c, self._fixed_width(column) + left + right)
         self._spans = None
+
+    def thumbs_resized(self) -> None:
+        """`theme.THUMB["row"]` changed (Settings): drop the pictures and tiles
+        made at the old size, lay the columns and rows out again, ask anew."""
+        self._pixmaps.clear()
+        self._tiles.clear()
+        self._frames.clear()
+        self._delegate.tiles.clear()
+        self._loader.retarget_local()
+        if isinstance(self.model(), TableModel):
+            self._apply_columns()
+            self._check_narrow()
+            self._resize_rows()
+            self.request_visible_thumbs()
+        self.viewport().update()
 
     def refresh_columns(self) -> None:
         """The model's columns changed their widths (a chip column widened for

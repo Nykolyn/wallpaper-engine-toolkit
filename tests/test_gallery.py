@@ -766,7 +766,7 @@ queue_loader.stop()
 
 list_source = gal.GalleryView()
 listing = gal.GalleryList(list_source)
-listing.resize(900, 600)
+listing.resize(1000, 600)    # room for the 250 px previews and every column
 listing.show()
 rows = [wallpaper("l0", owned_checked=True, kind="Scene", size=214 * 1024 ** 2),
         wallpaper("l1", owned_checked=True, once_had=True),
