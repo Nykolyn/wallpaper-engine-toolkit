@@ -20,6 +20,7 @@ import sys
 import tempfile
 import threading
 import time
+from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import patch
@@ -522,6 +523,79 @@ journal = svc.journal.recent(1)[0]
 check("and the scan is in the activity journal",
       journal.kind == "scan.clean" and journal.title == "13 new items to look at")
 check("the job is gone from the status line", not svc.jobs.is_running("review"))
+
+print("-- wallpaper type filter --")
+type_filter = page.gallery_panel.wallpaper_type
+check("Review starts with all wallpaper types", type_filter.current_index() == 0)
+original_items = page.cards[AUTHORS[3]].items
+types = ["Video", "vIdEo", "Scene", "Web", "Application", ""]
+mixed = [rv.Wallpaper(item=replace(item(f"970{k}", AUTHORS[3], 1), kind=kind),
+                      owned_checked=True) for k, kind in enumerate(types)]
+mixed += [rv.Wallpaper(item=replace(item(f"980{k}", AUTHORS[3], 1), kind="Video"),
+                       owned_checked=True) for k in range(gallery_mod.PAGE_SIZE)]
+page.cards[AUTHORS[3]].items = mixed
+page.open_author(AUTHORS[3])
+authors_before = page.authors.list.model_.ids()
+visits_before = [card.record.visited for card in page.cards.values() if card.record]
+for mode in ("grid", "list"):
+    page.set_view(mode)
+    for index, expected in ((1, mixed[:2] + mixed[6:]), (2, mixed[2:3]),
+                            (3, mixed[3:6]), (0, mixed)):
+        type_filter.set_current_index(index)
+        check(f"{mode}: {type_filter.labels()[index]} shows the matching wallpapers",
+              page.gallery.showing() == expected
+              and page.gallery_list.model_.rowCount() == min(len(expected), gallery_mod.PAGE_SIZE))
+        check(f"{mode}: filtering leaves the authors and visit dates alone",
+              page.authors.list.model_.ids() == authors_before
+              and [card.record.visited for card in page.cards.values() if card.record]
+              == visits_before)
+page.gallery.set_page(2)
+page.gallery.toggle(mixed[-1].id)
+type_filter.set_current_index(2)
+check("changing type returns to page one and drops hidden selections",
+      page.gallery.page == 1 and not page.gallery.selected_ids()
+      and page.gallery_panel.pagination.isHidden())
+queued_types = []
+with patch.object(page.subscriptions, "add", side_effect=lambda ids: queued_types.extend(ids)):
+    settings.set("review", "subscribe", rs.BY_STEAM)
+    page.subscribe_page()
+check("Subscribe page queues only the filtered wallpapers", queued_types == [mixed[2].id])
+page.gallery.mark_busy(mixed[2].id, None)
+page.open_author(AUTHORS[0])
+check("the same type filter is kept when opening another author",
+      page.gallery.total == 1 and not type_filter.isHidden())
+type_filter.set_current_index(1)
+check("an empty filtered gallery leaves the author visible and Subscribe page disabled",
+      page.gallery.total == 0 and not page.gallery_panel.subscribe_page.isEnabled()
+      and page.authors.list.model_.ids() == authors_before and not type_filter.isHidden())
+for mode in ("grid", "list"):
+    page.set_view(mode)
+    check(f"{mode}: an empty type explains what happened and keeps the filter available",
+          page.gallery_panel.stack.currentWidget() is page.gallery_panel.empty
+          and page.gallery_panel.empty.title() == "No wallpapers of this type"
+          and not page.gallery_panel.type_row.isHidden())
+page.open_review_list()
+check("the combined review list is unfiltered and hides the type control",
+      any(w.item.kind == "Scene" for w in page.gallery.showing())
+      and any(w.item.kind == "Video" for w in page.gallery.showing())
+      and page.gallery_panel.type_row.isHidden())
+page.close_review_list()
+page.authors.filter.setText("no matching author")
+page.open_review_list()
+check("an empty combined list never points at the hidden type filter",
+      page.gallery_panel.stack.currentWidget() is page.gallery_panel.empty
+      and page.gallery_panel.empty.title() == "No wallpapers to show"
+      and "author search" in page.gallery_panel.empty.body()
+      and page.gallery_panel.type_row.isHidden())
+page.close_review_list()
+page.authors.filter.clear()
+page.open_author(AUTHORS[0])
+check("returning to an author restores the active type filter",
+      page.gallery.total == 0 and not type_filter.isHidden())
+type_filter.set_current_index(0)
+page.cards[AUTHORS[3]].items = original_items
+page.open_author(AUTHORS[3])
+page.set_view("grid")
 
 page.done_with_author()
 check("Done with Dan: ticked, the next opened, 1 / 4",
