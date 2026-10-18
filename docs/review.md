@@ -72,6 +72,13 @@ stays visible alongside the current scan or review status.
    [a gallery](gallery.md) — a grid of cards or a list. Click a card to
    subscribe; Ctrl-click or its check selects several, for **Subscribe
    selected**.
+   Use **Wallpaper type** above the gallery to show **All** (the default),
+   **Video**, **Scene**, or **Other** (web, application and unknown types).
+   The filter applies to both Grid and List. Changing it returns to the first
+   page and clears the selection; **Subscribe page** uses the filtered page.
+   It does not change the authors list, scan, visit dates or the finished
+   review's **Open review as a list** view. The choice lasts while this Review
+   page is open; restarting the app starts with All.
 4. Press **Done with <author> →**. The author is ticked, the next one opens,
    and the count at the top of the list moves on: **3 / 12**.
 5. Press **Finish review** in the header. The page lists what it will write
