@@ -101,7 +101,7 @@ WE_CONFIG.write_text(json.dumps({
 library = lib_mod.Library(workshop=WORKSHOP, roots=[RESERVE, PROJECTS],
                           index_path=TMP / "library.json",
                           places={RESERVE: lib_mod.RESERVE, PROJECTS: lib_mod.ROTATION})
-check("what is subscribed is a directory listing, nothing cleverer",
+check("downloaded projects count as subscribed",
       library.subscribed() == {"1001", "1002"})
 
 report = library.refresh()
@@ -188,7 +188,7 @@ leftover.mkdir(exist_ok=True)
 check("only a subscribed folder with a manifest can be shown",
       library.listable() == {"1001", "1002"})
 check("a folder holding no project.json is not a wallpaper",
-      "1003" in library.subscribed() and "1003" not in library.listable())
+      "1003" not in library.subscribed() and "1003" not in library.listable())
 
 
 # ---- Steam, as a dictionary ------------------------------------------------
@@ -754,6 +754,48 @@ import app.engines.review_flow as rf                                     # noqa:
 from app.engines.authors_store import StoreDamaged                      # noqa: E402
 from app.engines.steam_api import SteamAuthError, SteamError, SteamUnreachable  # noqa: E402
 from app.services.snapshot import ReviewState                            # noqa: E402
+
+# The real Baka failure: six downloaded projects identify the author, but five
+# removed works leave shader-only folders and must still be offered as "was yours".
+shader_root = TMP / "shader-review"
+shader_workshop = shader_root / "workshop"
+downloaded_ids = ["3818309124", "3819665108", "3819696368", "3820241795", "3820801933", "3821549634"]
+removed_ids = ["3818501358", "3818553166", "3819138164", "3821485473", "3821965070"]
+published = [1791775516, 1791984309, 1791988020, 1792074246, 1792158408, 1792248833,
+             1791811248, 1791817243, 1791902346, 1792242919, 1792291738]
+baka_id = "76561199182397594"
+shader_items = [ItemDetails(id=item_id, ok=True, creator=baka_id, created=created)
+                for item_id, created in zip(downloaded_ids + removed_ids, published)]
+for item_id in downloaded_ids + removed_ids:
+    folder = shader_workshop / item_id
+    (folder / "shaders").mkdir(parents=True)
+    if item_id in downloaded_ids:
+        (folder / "project.json").write_text(json.dumps({"title": item_id}), encoding="utf-8")
+shader_config = shader_root / "config.json"
+shader_config.write_text(json.dumps({"user": {"general": {"browser": {"folders": [
+    {"title": "new", "items": {item_id: 1 for item_id in downloaded_ids + removed_ids}}]}}}}),
+    encoding="utf-8")
+shader_library = lib_mod.Library(workshop=shader_workshop, roots=[], index_path=shader_root / "library.json")
+shader_steam = FakeSteam(items={item.id: item for item in shader_items}, authors={baka_id: shader_items},
+                         profiles={baka_id: Profile(id64=baka_id, name="Baka")})
+shader_review = rv.Review(FakeDb([Author(steam_id=baka_id, name="Hurricane Baka",
+                                      visited=utc(2026, 10, 9, 3, 34, 11))]), shader_steam, shader_library)
+shader_outcome = rf.ScanFlow(lambda step: shader_review, rv.DEFAULT_SCOPE, config_path=shader_config).run()
+shader_card = shader_outcome.result.cards[0]
+check("shader leftovers do not hide the author's five removed post-visit works",
+      shader_outcome.state == rf.DONE and shader_card.badge == 5
+      and {item.id for item in shader_card.offered} == set(removed_ids))
+shader_session = rf.Session.from_result(shader_outcome.result, scanned=utc(2026, 10, 18))
+check("the author stays visible in the session with all five marked was yours",
+      [author.id for author in shader_session.authors] == [baka_id]
+      and shader_session.items == 5 and shader_session.yours == 5)
+check("all six downloaded works remain subscribed and absent from the gallery",
+      {item.id for item in shader_card.items if item.subscribed} == set(downloaded_ids))
+shader_pending = removed_ids[0]
+shader_library.note_subscribed(shader_pending)
+shader_library.workshop = None
+check("an accepted subscription survives even when the workshop is unavailable",
+      shader_library.subscribed() == {shader_pending})
 
 WEEK = [f"7656119800000020{i}" for i in range(1, 6)]
 NAMES = ["Ann", "Ben", "Cat", "Dan", "Eve"]

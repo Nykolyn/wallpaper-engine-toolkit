@@ -3,9 +3,9 @@
 A review is mostly a question about two sets. Both live on disk and neither is
 expensive to be wrong about, so both are worth getting exactly right:
 
-* **Subscribed now** — the folders under `steamapps/workshop/content/431960`,
-  named by workshop id. 1 288 of them here. This is what decides whether a
-  wallpaper appears in the gallery at all.
+* **Subscribed now** — Workshop projects with a `project.json`, plus subscriptions
+  accepted before their download arrives. Shader-only leftovers do not count.
+  This is what decides whether a wallpaper appears in the gallery at all.
 * **Ever had** — wallpapers that came from the workshop, were kept, and are no
   longer subscribed. There are 4 266 of those, and without marking them a list
   of two thousand cards is half things already rejected once.
@@ -117,16 +117,8 @@ class Library:
     # -- subscribed now ----------------------------------------------------
 
     def subscribed(self) -> set[str]:
-        """Workshop ids Steam has downloaded here. A directory listing, no more."""
-        if not self.workshop:
-            return set()
-        try:
-            found = {e.name for e in os.scandir(self.workshop)
-                     if e.is_dir() and e.name.isdigit()}
-        except OSError as err:
-            self._log(f"cannot read {self.workshop}: {err}")
-            found = set()
-        return found | self._just_subscribed
+        """Downloaded projects and subscriptions accepted before files arrive."""
+        return self.listable() | self._just_subscribed
 
     def listable(self) -> set[str]:
         """Subscribed wallpapers Wallpaper Engine can actually show.
