@@ -870,6 +870,26 @@ check("tracking is frame 02: 4 / 201, 26 min left, a second monitor",
       and said["summaries"][0]["name"] == "Monitor2" and said["lead"]["chip"] == "KNOWN")
 check("its table: four shown, the rest queued", fixture_page.model.group_note(
     fixture_page.model.group_rows()[0]) == "4 of 201")
+
+print("-- Table / Grid --")
+view_settings = Settings({})
+grid_page = TrackerPage(None, None, settings=view_settings)
+grid_page.load_fixture("tracking")
+check("the playlist opens as a table", not grid_page.grid_shown())
+grid_page.view.set_current_index(1)
+check("Grid shows the cards and is remembered",
+      grid_page.grid_shown() and view_settings.get("tracker", "view", None) == "grid")
+heads = grid_page.model.group_rows()
+check("the grid hides the group headers and shows the wallpapers",
+      all(grid_page.grid.isRowHidden(r) for r in heads) and not grid_page.grid.isRowHidden(heads[0] + 1))
+grid_page.resize(1400, 900)
+grid_page.show()
+check("the cards paint", not grid_page.grid.grab().isNull() and grid_page.grid.visible_rows())
+grid_page.hide()
+check("a page opened later starts in Grid",
+      TrackerPage(None, None, settings=view_settings).grid_shown())
+view_settings.set("tracker", "view", "mosaic")
+check("an unknown view opens as a table", not TrackerPage(None, None, settings=view_settings).grid_shown())
 fixture_page.load_fixture("paused")
 check("paused: the time left in warn", fixture_page.texts()["lead"]["facts"].split(" | ")[1]
       == "21 min paused")

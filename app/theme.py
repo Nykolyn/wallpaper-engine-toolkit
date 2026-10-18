@@ -730,7 +730,8 @@ THUMB: dict[str, tuple[int, int, int]] = {
     "sm": (40, 23, 4),
     "md": (64, 36, 5),
     "card": (100, 100, 5),   # a compact MonitorCard
-    "row": (200, 200, 8),    # a table's thumb column: square, as Wallpaper Engine's browser
+    "row": (250, 250, 8),    # a table's thumb column: square, as Wallpaper Engine's browser;
+                             # Settings › Appearance chooses its side (ROW_THUMB_SIDES)
     "rowsm": (120, 120, 6),  # the same, in a table too narrow for it (THUMB_NARROWER)
     "rowxs": (72, 72, 5),    # and narrower still
     "wide": (200, 200, 5),   # the leading monitor's preview (Tracker)
@@ -738,6 +739,15 @@ THUMB: dict[str, tuple[int, int, int]] = {
 }
 # Sizes that fill their box, the picture cropped about its middle, rather than
 # letterboxed in it: a square well around a 16:9 picture is mostly empty.
+ROW_THUMB_SIDES = (120, 160, 200, 250, 300)
+ROW_THUMB_DEFAULT = 250
+
+
+def row_thumb_side(value) -> int:
+    """A saved preview side, or the default when it is not one of the choices."""
+    return value if type(value) is int and value in ROW_THUMB_SIDES else ROW_THUMB_DEFAULT
+
+
 THUMB_COVER = frozenset({"row", "rowsm", "rowxs", "card", "wide"})
 THUMB_GAP = 9            # a thumb to the text beside it
 # A table's stretched thumb column too narrow to leave its words this much (about a
@@ -913,6 +923,7 @@ CONFIRM_LINES_PAD = (8, 11)  # their well: vertical, horizontal
 
 WINDOW_SIZE = (1780, 860)     # at first start
 WINDOW_MIN = (1040, 720)
+WINDOW_SAVE_DELAY = 500      # ms after the last resize before the size is saved
 
 # The design sizes the frame's bands by their content (CSS content-box): each
 # divider and edge is 1 px more than the size it names, and the sidebar's sides

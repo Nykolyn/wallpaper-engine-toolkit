@@ -349,7 +349,7 @@ check("# goes back to the order given, not a sort of its own",
       order() == ["c", "a", "b"] and numbers.sort_column() == -1)
 
 print("-- square previews, cropped to fill --")
-check("a table's thumb is 200 × 200, square", theme.THUMB["row"][:2] == (200, 200)
+check("a table's thumb is 250 × 250 by default, square", theme.THUMB["row"][:2] == (250, 250)
       and "row" in theme.THUMB_COVER)
 from PySide6.QtGui import QColor, QPixmap                                 # noqa: E402
 
@@ -415,6 +415,23 @@ preview_table.request_visible_thumbs()
 app.processEvents()
 check("with motion off, nothing plays either", preview_table.players() == [])
 animations.ENABLED = True
+
+print("-- the preview size, changed in Settings --")
+from app.ui.kit.tables import set_row_thumb                               # noqa: E402
+
+tall = preview_table.row_height()
+set_row_thumb(120)
+check("the rows shrink with the previews at once",
+      preview_table.row_height() == tall - 130
+      and preview_table.verticalHeader().defaultSectionSize() == tall - 130)
+preview_table.request_visible_thumbs()
+check("and the pictures are read again at the new size", wait_for(
+    lambda: preview_table.thumb_state(str(still_folder))[0] == "image")
+      and preview_table.thumb_tile(str(still_folder), "row").deviceIndependentSize().toSize().width() == 120)
+set_row_thumb(theme.ROW_THUMB_DEFAULT)
+check("and grow back", preview_table.row_height() == tall)
+check("a saved size that is not a choice opens at the default",
+      [theme.row_thumb_side(v) for v in (160, 999, "200", True, None)] == [160, 250, 250, 250, 250])
 preview_host.hide()
 
 print("-- the copies played are kept within their budget --")

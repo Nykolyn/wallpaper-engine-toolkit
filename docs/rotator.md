@@ -104,7 +104,7 @@ own pace). The table shows the history, the run just finished marked.
   on one with no readable `project.json`. Remaining determines eligibility;
   a wallpaper already selected can still have quota left.
   `[protected]` folders are marked with a lock. The preview is a square
-  200 × 200 (120 or 72 in a window too narrow for it), and a GIF one plays
+  250 × 250 or the [size Settings chooses](settings.md#appearance) (120 or 72 in a window too narrow for it), and a GIF one plays
   while its row is on screen. Rows appear as soon as the
   folders are listed; titles, authors and sizes fill in as they are read, the
   visible rows first. Clicking a row opens that folder in Explorer. Each row

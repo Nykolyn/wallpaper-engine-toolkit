@@ -1593,6 +1593,10 @@ class GalleryList(Table):
 
     # -- previews: the gallery's own, cropped to the row's thumb
 
+    def thumbs_resized(self) -> None:
+        self._covers.clear()
+        super().thumbs_resized()
+
     def thumb_state(self, source) -> tuple[str, QPixmap | None]:
         if not source:
             return "placeholder", None

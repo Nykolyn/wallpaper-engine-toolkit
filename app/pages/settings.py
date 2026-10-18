@@ -43,6 +43,7 @@ from ..ui.kit import (
     NavState, Overline, PathField, ProgressBar, SecondaryButton, SpinBox, Toggle, format as fmt, label,
 )
 from ..ui.kit.base import set_tone
+from ..ui.kit.tables import set_row_thumb
 from .base import Page
 
 # The Rotator's batch: at least one folder, and no more than a reserve could hold.
@@ -144,6 +145,7 @@ class SettingsPage(Page):
         left = QVBoxLayout()
         left.setSpacing(theme.PANEL_GAP)
         left.addWidget(self._folders_panel())
+        left.addWidget(self._appearance_panel())
         left.addStretch(1)
         right = QVBoxLayout()
         right.setSpacing(theme.PANEL_GAP)
@@ -244,6 +246,31 @@ class SettingsPage(Page):
             "down. This is only the safety check in between, for what nothing announces "
             "— a wallpaper deleted from disk, say."))
         return panel
+
+    def _appearance_panel(self) -> GlassPanel:
+        """How the window shows things. A new option is one more _Row here,
+        saved under the "appearance" section."""
+        panel, column = self._panel("Appearance", "Applied at once, in every page")
+        self.preview_size = Dropdown()
+        self.preview_size.setAccessibleName("Preview size")
+        for side in theme.ROW_THUMB_SIDES:
+            default = " (default)" if side == theme.ROW_THUMB_DEFAULT else ""
+            self.preview_size.add_item(f"{side} × {side} px{default}", side)
+        self.preview_size.setCurrentIndex(theme.ROW_THUMB_SIDES.index(
+            theme.row_thumb_side(self.settings.get("appearance", "preview_size", None))))
+        self.preview_size.activated.connect(self._set_preview_size)
+        column.addWidget(_Row(
+            "Preview size", _left(self.preview_size),
+            "The wallpaper previews in the Tracker, Rotator, Review list and Creator "
+            "tables, and the Tracker's grid."))
+        return panel
+
+    def _set_preview_size(self, row: int) -> None:
+        side = self.preview_size.itemData(row)
+        self.settings.reload_if_changed()
+        self.settings.set("appearance", "preview_size", side)
+        self.settings.save()
+        set_row_thumb(side)
 
     def _tracker_panel(self) -> GlassPanel:
         panel, column = self._panel("Tracker and tray")

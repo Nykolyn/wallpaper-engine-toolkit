@@ -35,6 +35,7 @@ from .settings import Settings
 from .tracker_feed import TrackerFeed, heartbeat_setting
 from .ui.kit import BrandMark, NavState, PageHeader, Sidebar, StatusLine, TitleBar, ToastHost
 from .ui.kit import base as kit_base
+from .ui.kit.tables import set_row_thumb
 from .ui.kit import format as fmt
 from .window_frame import NativeFrame
 
@@ -268,10 +269,16 @@ class MainWindow(QMainWindow):
                  defer: bool = False):
         super().__init__()
         self.settings = settings if settings is not None else Settings.load()
+        # Before any page: their tables read the preview size as they are made.
+        set_row_thumb(theme.row_thumb_side(self.settings.get("appearance", "preview_size", None)))
         self.setWindowTitle(DISPLAY_NAME)
         self.setWindowFlags(self.windowFlags() | Qt.FramelessWindowHint)
         self.setMinimumSize(*theme.WINDOW_MIN)
         self.resize(*theme.WINDOW_SIZE)
+        # Saved soon after every resize and maximise, not only on close: an
+        # update or a crash that skips the close kept the size from before.
+        self._size_saver = QTimer(self, singleShot=True, interval=theme.WINDOW_SAVE_DELAY)
+        self._size_saver.timeout.connect(self._remember_size)
 
         self.backdrop = Backdrop()
         frame = QVBoxLayout(self.backdrop)
@@ -348,6 +355,8 @@ class MainWindow(QMainWindow):
                 pages = build_pages(self)
             self._install(pages)
         self.resize(self.opening_size())
+        if self.settings.get("window", "maximized", False) is True:
+            self.setWindowState(Qt.WindowMaximized)    # takes effect when shown
         self._place_rail()
 
     def _install(self, pages) -> None:
@@ -557,12 +566,14 @@ class MainWindow(QMainWindow):
     # -- the frame's own behaviour
 
     def opening_size(self) -> QSize:
-        """Use the last width, or fit the pages on first launch, within the screen."""
+        """Use the last size, or fit the pages on first launch, within the screen."""
         base_w, base_h = theme.WINDOW_SIZE
         width, height = base_w, base_h
-        saved_width = self.settings.get("window", "width", None)
+        saved_width, saved_height = (self.settings.get("window", key, None) for key in ("width", "height"))
         if type(saved_width) is not int or saved_width < theme.WINDOW_MIN[0]:
             saved_width = None
+        if type(saved_height) is not int or saved_height < theme.WINDOW_MIN[1]:
+            saved_height = None
         frame_w = theme.SIDEBAR_WIDTH
         frame_h = theme.TITLE_BAR_HEIGHT + theme.HEADER_HEIGHT + theme.STATUS_HEIGHT
         for page in self.pages.values():
@@ -580,15 +591,26 @@ class MainWindow(QMainWindow):
                 height = max(height, frame_h + need.height())
         if room is not None:
             height = max(base_h, min(height, room.height()))
+        if saved_height is not None:
+            height = saved_height if room is None else min(saved_height, room.height())
         return QSize(width, height)
+
+    def _remember_size(self) -> None:
+        """Save the restored size and whether the window is maximised."""
+        self._size_saver.stop()
+        maximized = self.isMaximized()
+        size = self.normalGeometry().size() if maximized or self.isMinimized() else self.size()
+        self.settings.reload_if_changed()
+        window = self.settings.section("window")
+        if window == {**window, "width": size.width(), "height": size.height(), "maximized": maximized}:
+            return
+        window.update(width=size.width(), height=size.height(), maximized=maximized)
+        self.settings.save()
 
     def closeEvent(self, event) -> None:        # noqa: N802 - Qt's name
         super().closeEvent(event)
         if event.isAccepted():
-            width = self.normalGeometry().width() if self.isMaximized() or self.isMinimized() else self.width()
-            self.settings.reload_if_changed()
-            self.settings.set("window", "width", width)
-            self.settings.save()
+            self._remember_size()
 
     def _place_rail(self) -> None:
         self.sidebar.set_rail(self.width() < theme.RAIL_BELOW)
@@ -598,6 +620,8 @@ class MainWindow(QMainWindow):
         self._place_rail()
         self._fit_maximised()
         self._place_cover()
+        if self.isVisible():
+            self._size_saver.start()
 
     def showEvent(self, event) -> None:         # noqa: N802 - Qt's name
         if self._native is None:
@@ -608,6 +632,8 @@ class MainWindow(QMainWindow):
         super().changeEvent(event)
         if event.type() == QEvent.WindowStateChange:
             QTimer.singleShot(0, self._fit_maximised)
+            if self.isVisible() and not self.isMinimized():
+                self._size_saver.start()
 
     def _fit_maximised(self) -> None:
         """Maximised, Windows puts the frame's width off each edge of the screen;

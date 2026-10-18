@@ -47,6 +47,7 @@ from .tables import (
     CheckCell, TagsCell, ProgressCell, SpinCell,
 )
 from .tags import TagPopup, TagSelect
+from .thumbgrid import ThumbGrid
 from .thumbs import ThumbLoader
 from .toast import Toast, ToastHost
 
@@ -69,7 +70,7 @@ __all__ = [
     "TagsCell", "CheckCell", "ProgressCell", "SpinCell",
     "TableBar", "TableSummary", "TableFooter", "ListRow", "ListRowDelegate", "RowList",
     "SkeletonRows",
-    "paint_list_row", "Thumb", "paint_thumb", "ThumbLoader",
+    "paint_list_row", "Thumb", "paint_thumb", "ThumbGrid", "ThumbLoader",
     "LogPanel", "LogModel", "LogView", "LogLine", "ProblemsFilter", "ConsoleExcerpt",
     "Toast", "ToastHost", "StatusLine",
     "TitleBar", "CaptionButton", "BrandMark", "Sidebar", "NavSection", "NavItem", "NavState",

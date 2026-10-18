@@ -35,6 +35,14 @@ The Rotator keeps its own file, `data/config.json`, as it always has; the
 Settings page writes to it through the Rotator's own code, and everything else
 to `data/suite.json`. See [Configuration](configuration.md#folder-settings).
 
+## Appearance
+
+How the window shows things; applied at once, in every page.
+
+| Field | What it is | Stored in |
+|---|---|---|
+| Preview size | The square wallpaper previews in the Tracker, Rotator, Review list and Creator tables, and the cards of the Tracker's grid: 120, 160, 200, 250 (the default) or 300 px. | `data/suite.json` (`appearance.preview_size`) |
+
 ## Wallpaper Engine
 
 - **config.json** — Wallpaper Engine's settings file, where the

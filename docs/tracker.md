@@ -92,14 +92,20 @@ need it — see [cycles](#cycles).
   green, the card gets a green edge and a note says "Whole playlist shown —
   time to rotate", with **Open Rotator**. The count in the sidebar turns green
   too.
-- **The playlist**, as a table: *Already shown this cycle*, newest first, the
+- **The playlist**, as a **Table** or a **Grid** of preview cards (the
+  switch at the right of its bar; the last one chosen is remembered, in
+  `suite.json` under `tracker.view`). The grid shows each wallpaper's
+  preview, title and state, in the same order and filter as the table; a
+  click opens it as a row does, and the row actions and the Multiplier stay
+  in the table. As a table: *Already shown this cycle*, newest first, the
   one on screen at the top and selected; then the *Queue*. The columns:
   - **#**: the place in the queue of a sorted playlist. A random one has no
     queue (see [what comes next](#what-comes-next)), so its rows keep the
     playlist's own order and **#** is the place in the playlist. Clicking
     **#** undoes whatever sort another column's title put the table in, back
     to the order above; its title is lit while nothing else sorts.
-  - **WALLPAPER**: a square 200 × 200 preview and the title. A GIF preview
+  - **WALLPAPER**: a square preview (250 × 250 unless [Settings](settings.md#appearance)
+    chooses another size) and the title. A GIF preview
     plays, for the rows on screen (eight at most, and none with Windows'
     animations off). A window too narrow to leave the title room draws the
     preview at 120 or 72 instead.
