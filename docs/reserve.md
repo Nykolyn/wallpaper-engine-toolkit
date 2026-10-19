@@ -26,7 +26,10 @@ prevent copying. The footer shows the total size and the size of the selection.
 
 Copying preserves the Workshop originals and subscriptions. Progress shows the
 current wallpaper, bytes and wallpaper count, both on this page and in the shared
-status line. Each copy is staged beside the reserve, checked against the source
+status line, refreshed up to five times a second. Scanning and copying use
+background CPU, disk and memory priority. Copies are capped at **16 MiB/s** so
+they leave room for games and other disk activity; animated previews pause during
+the operation. Each copy is staged beside the reserve, checked against the source
 file list and sizes, then published without replacing an existing folder. Failed
 or cancelled copies are cleaned up; any cleanup failure reports the location.
 Failed rows keep their error message for retry.

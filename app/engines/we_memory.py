@@ -244,6 +244,10 @@ class _MBI(ctypes.Structure):
 
 if os.name == "nt":
     _k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    _k32.GetCurrentThread.restype = wintypes.HANDLE
+    _k32.GetCurrentThread.argtypes = []
+    _k32.SetThreadPriority.restype = wintypes.BOOL
+    _k32.SetThreadPriority.argtypes = [wintypes.HANDLE, ctypes.c_int]
     _k32.OpenProcess.restype = wintypes.HANDLE
     _k32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
     _k32.VirtualQueryEx.restype = ctypes.c_size_t
@@ -259,12 +263,15 @@ else:                                                      # pragma: no cover
 _BACKGROUND_BEGIN, _BACKGROUND_END = 0x00010000, 0x00020000
 
 
-def background_mode(on: bool) -> None:
+def background_mode(on: bool) -> bool:
     """Ask Windows to schedule this thread, and its reads, behind everything else."""
     if _k32 is None:
-        return
-    _k32.SetThreadPriority(_k32.GetCurrentThread(),
-                           _BACKGROUND_BEGIN if on else _BACKGROUND_END)
+        return False
+    try:
+        return bool(_k32.SetThreadPriority(_k32.GetCurrentThread(),
+                                          _BACKGROUND_BEGIN if on else _BACKGROUND_END))
+    except OSError:
+        return False
 
 
 class ProcessMemory:

@@ -6,7 +6,22 @@ import json
 import shutil
 import tempfile
 import time
+from contextlib import contextmanager
 from pathlib import Path
+
+COPY_BYTES_PER_SECOND = 16 * 1024 * 1024
+
+
+@contextmanager
+def background_io():
+    """Lower this worker's CPU, disk and memory priority; preserve outer scopes."""
+    from .we_memory import background_mode
+    changed = background_mode(True)
+    try:
+        yield
+    finally:
+        if changed:
+            background_mode(False)
 
 
 def _raise(error):
@@ -83,6 +98,7 @@ def wallpaper_project(folder, files):
     return project
 
 
+@background_io()
 def copy_to_reserve(folder, reserve, *, on_progress=None, cancelled=lambda: False):
     """Publish a verified copy without overwriting; leave the source alone."""
     if not reserve or not reserve.strip():
@@ -111,11 +127,18 @@ def copy_to_reserve(folder, reserve, *, on_progress=None, cancelled=lambda: Fals
             while True:
                 if cancelled():
                     raise InterruptedError("Copy stopped.")
+                started = time.monotonic()
                 chunk = incoming.read(1024 * 1024)
                 if not chunk:
                     break
                 outgoing.write(chunk)
                 done += len(chunk)
+                # Keep a large copy from monopolizing the disk used by the game.
+                until = started + len(chunk) / COPY_BYTES_PER_SECOND
+                while (delay := until - time.monotonic()) > 0:
+                    if cancelled():
+                        raise InterruptedError("Copy stopped.")
+                    time.sleep(min(.05, delay))
                 now = time.monotonic()
                 if on_progress and now - last_report >= .1:
                     on_progress(done, total)
