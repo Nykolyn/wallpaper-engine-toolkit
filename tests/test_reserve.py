@@ -128,6 +128,54 @@ class ReserveTests(unittest.TestCase):
         self.assertEqual(len(result.rows), 1)
         self.assertIn("author", result.warning.lower())
 
+    def test_packed_scenes_are_listed_and_copied_with_their_original_files(self):
+        sources = []
+        for number, payload in enumerate(("scene.json", "gifscene.json", "media/SCENE.JSON"), 1002):
+            folder = wallpaper(self.workshop, str(number))
+            (folder / "video.mp4").unlink()
+            (folder / "project.json").write_text(json.dumps({
+                "title": payload, "type": "Scene", "file": payload,
+            }))
+            packed = folder / Path(payload).with_suffix(".pkg")
+            packed.parent.mkdir(parents=True, exist_ok=True)
+            packed.write_bytes(b"packed scene")
+            self.ugc.flags[str(number)] = 5
+            sources.append(folder)
+        result = engine.scan(str(self.reserve), **self.options)
+        self.assertEqual({Path(row.folder).name for row in result.rows}, {"1001", "1002", "1003", "1004"})
+        self.assertEqual(result.skipped, 0)
+        for folder in sources:
+            with self.subTest(folder=folder.name):
+                before = {p.relative_to(folder): p.read_bytes() for p in folder.rglob("*") if p.is_file()}
+                target = Path(engine.copy_to_reserve(str(folder), str(self.reserve), ugc=self.ugc))
+                self.assertEqual({p.relative_to(target): p.read_bytes() for p in target.rglob("*") if p.is_file()}, before)
+                self.assertEqual({p.relative_to(folder): p.read_bytes() for p in folder.rglob("*") if p.is_file()}, before)
+
+    def test_package_fallback_rejects_missing_empty_unrelated_and_escaped_payloads(self):
+        cases = (
+            ("scene", "scene.json", {}),
+            ("scene", "scene.json", {"scene.pkg": b""}),
+            ("scene", "scene.json", {"other.pkg": b"packed"}),
+            ("scene", "scene.json", {"scene.json": b"", "scene.pkg": b"packed"}),
+            ("scene", "../outside.json", {"outside.pkg": b"packed"}),
+            ("video", "clip.mp4", {"clip.pkg": b"packed"}),
+            ("web", "index.html", {"index.pkg": b"packed"}),
+        )
+        for number, (kind, payload, contents) in enumerate(cases, 1002):
+            folder = wallpaper(self.workshop, str(number))
+            (folder / "video.mp4").unlink()
+            (folder / "project.json").write_text(json.dumps({"type": kind, "file": payload}))
+            for name, data in contents.items():
+                (folder / name).write_bytes(data)
+            self.ugc.flags[str(number)] = 5
+            with self.subTest(kind=kind, payload=payload, contents=contents):
+                with self.assertRaises(ValueError):
+                    engine.copy_to_reserve(str(folder), str(self.reserve), ugc=self.ugc)
+        result = engine.scan(str(self.reserve), **self.options)
+        self.assertEqual([Path(row.folder).name for row in result.rows], ["1001"])
+        self.assertEqual(result.skipped, len(cases))
+        self.assertEqual(list(self.reserve.iterdir()), [])
+
     def test_copy_retains_subscription_and_source_with_byte_progress_and_no_overwrite(self):
         before = {p.name: p.read_bytes() for p in self.source.iterdir()}
         progress = []

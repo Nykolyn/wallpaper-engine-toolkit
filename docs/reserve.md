@@ -11,6 +11,10 @@ content are listed. Copies already in the reserve are excluded by Workshop ID,
 including renamed folders. A folder named after the same Workshop ID also blocks
 another copy, so nothing is overwritten.
 
+Compiled scene projects may name `scene.json`, `gifscene.json` or another scene
+file stored inside the corresponding `.pkg`. The matching nonempty package is
+accepted when the named scene file is absent, including files in subfolders.
+
 The table shows a preview, title, author, type and folder size. Author names use
 the existing Steam cache; missing names are looked up through the same Steam
 client as Review. A name Steam cannot supply is shown as a dash and does not
@@ -30,8 +34,8 @@ status line, refreshed up to five times a second. Scanning and copying use
 background CPU, disk and memory priority. Copying has no application speed limit;
 animated previews pause during the operation. Each copy is staged beside the
 reserve, checked against the source file list and sizes, then published without
-replacing an existing folder. Failed
-or cancelled copies are cleaned up; any cleanup failure reports the location.
+replacing an existing folder. Failed or cancelled copies are cleaned up; any
+cleanup failure reports the location.
 Failed rows keep their error message for retry.
 
 Rotator and Cleaner cannot change the reserve during a copy. Reserve settings
