@@ -9,8 +9,6 @@ import time
 from contextlib import contextmanager
 from pathlib import Path
 
-COPY_BYTES_PER_SECOND = 16 * 1024 * 1024
-
 
 @contextmanager
 def background_io():
@@ -127,18 +125,11 @@ def copy_to_reserve(folder, reserve, *, on_progress=None, cancelled=lambda: Fals
             while True:
                 if cancelled():
                     raise InterruptedError("Copy stopped.")
-                started = time.monotonic()
                 chunk = incoming.read(1024 * 1024)
                 if not chunk:
                     break
                 outgoing.write(chunk)
                 done += len(chunk)
-                # Keep a large copy from monopolizing the disk used by the game.
-                until = started + len(chunk) / COPY_BYTES_PER_SECOND
-                while (delay := until - time.monotonic()) > 0:
-                    if cancelled():
-                        raise InterruptedError("Copy stopped.")
-                    time.sleep(min(.05, delay))
                 now = time.monotonic()
                 if on_progress and now - last_report >= .1:
                     on_progress(done, total)

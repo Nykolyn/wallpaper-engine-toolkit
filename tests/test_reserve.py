@@ -391,15 +391,16 @@ class ReserveTests(unittest.TestCase):
                 file_copy.copy_to_reserve(str(self.source), str(self.reserve))
         self.assertEqual([c.args for c in priority.call_args_list], [(True,), (False,)])
 
-    def test_copy_paces_disk_traffic_with_cancellable_waits(self):
+    def test_copy_does_not_add_artificial_delays(self):
         (self.source / "video.mp4").write_bytes(b"x" * (2 * 1024 * 1024))
         now = [0.0]
         def sleep(seconds):
             now[0] += seconds
         with patch.object(file_copy.time, "monotonic", side_effect=lambda: now[0]), \
              patch.object(file_copy.time, "sleep", side_effect=sleep):
-            file_copy.copy_to_reserve(str(self.source), str(self.reserve))
-        self.assertGreaterEqual(now[0], .125, "The copy can saturate the disk without yielding")
+            target = file_copy.copy_to_reserve(str(self.source), str(self.reserve))
+        self.assertEqual((Path(target) / "video.mp4").read_bytes(), b"x" * (2 * 1024 * 1024))
+        self.assertEqual(now[0], 0, "Copying added a deliberate delay instead of using available throughput")
 
     def test_nested_background_work_does_not_restore_priority_too_early(self):
         self.assertTrue(hasattr(file_copy, "background_io"))
