@@ -289,7 +289,7 @@ class CleanerPage(Page):
     def _rotating(self):
         jobs = getattr(self.services, "jobs", None)
         page = getattr(self.window(), "pages", {}).get("rotator")
-        return ((jobs is not None and jobs.is_running("rotator"))
+        return ((jobs is not None and any(jobs.is_running(k) for k in ("rotator", "reserve")))
                 or (page is not None and (page.state == "running" or page._starting)))
 
     def _action(self, row, column, key):
@@ -302,7 +302,7 @@ class CleanerPage(Page):
         if self.scanning or self.acting:
             return False
         if self._rotating():
-            self._say("warn", "Wait for the rotation to finish before processing wallpapers.")
+            self._say("warn", "Wait for the rotation or reserve copy to finish before processing wallpapers.")
             return False
         reserve = self.config.source
         name = f"“{items[0].title}”" if len(items) == 1 else fmt.counted(len(items), "selected wallpaper")

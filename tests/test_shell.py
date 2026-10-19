@@ -148,7 +148,7 @@ svc = services.Services(data_dir=TMP / "data", settings=settings)
 
 def make_window(initial=None) -> MainWindow:
     stand_ins = [StandIn(key, key.title(), "tracker" if key in ("widget", "tray") else key) for key in
-                 ("rotator", "tracker", "review", "widget", "tray", "cleaner", "creator")]
+                 ("rotator", "tracker", "review", "widget", "tray", "cleaner", "creator", "reserve")]
     pages = [OverviewPage(svc, feed), *stand_ins,
              SettingsPage(settings, config, feed=feed, services=svc)]
     return MainWindow(settings=settings, feed=feed, services_=svc, pages=pages,

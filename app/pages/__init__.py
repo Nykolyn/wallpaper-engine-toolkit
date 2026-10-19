@@ -45,6 +45,7 @@ def build_pages(window) -> list[Page]:
     from ..services.snapshot import RESERVE, ROTATION
     from ..engines.multipliers import MultiplierStore
     from .cleaner import CleanerPage
+    from .reserve import ReservePage
     from .creator import CreatorPage
     from .overview import OverviewPage
     from .review import ReviewPage
@@ -100,4 +101,5 @@ def build_pages(window) -> list[Page]:
     services.jobs.finished.connect(tracker_page.refresh_multipliers)
     on_steam_found(settings_page, steam_found)
     return [OverviewPage(services, feed, settings=settings), rotator_page, tracker_page,
-            review_page, WidgetPage(settings, feed=feed), TrayPage(settings), cleaner, creator_page, settings_page]
+            review_page, WidgetPage(settings, feed=feed), TrayPage(settings), cleaner, creator_page,
+            ReservePage(settings, services, config), settings_page]

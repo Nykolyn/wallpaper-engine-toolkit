@@ -6,6 +6,20 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [4.8.0] - 2026-10-19
+
+### Added
+
+- To reserve, under Utilities: list active, fully downloaded Workshop wallpapers
+  missing from the reserve, regardless of Wallpaper Engine folders. Copy all,
+  selected or individual wallpapers with previews, authors, sizes, byte progress
+  and a Stop button. Originals and subscriptions stay in place; incomplete
+  projects are excluded and existing reserve copies are matched by Workshop ID.
+- Shared verified reserve copying stages output outside the reserve and publishes
+  only complete copies. Failed rows remain available for retry; Rotator and
+  Cleaner wait while a reserve copy is running. Existing Ctrl+1…9 shortcuts are
+  preserved; Ctrl+0 opens To reserve.
+
 ## [4.7.1] - 2026-10-19
 
 ### Fixed
@@ -1906,7 +1920,8 @@ restructured yet; the tabs keep their layout and take on the new look.
   was right for one library and wrong for every other. Nothing is tagged now
   unless you ask for it.
 
-[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v4.7.1...HEAD
+[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v4.8.0...HEAD
+[4.8.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v4.7.1...v4.8.0
 [4.7.1]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v4.7.0...v4.7.1
 [4.7.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v4.6.0...v4.7.0
 [4.6.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v4.5.1...v4.6.0

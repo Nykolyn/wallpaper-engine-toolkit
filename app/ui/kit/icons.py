@@ -62,6 +62,7 @@ _BODIES: dict[str, str] = {
 }
 
 _BODIES["cleaner"] = _BODIES["warn"]
+_BODIES["reserve"] = _BODIES["copier"]
 NAMES: tuple[str, ...] = tuple(_BODIES)
 
 

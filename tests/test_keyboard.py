@@ -42,7 +42,7 @@ app = QApplication(sys.argv)
 
 import ui_snapshot  # noqa: E402
 from app import animations, theme  # noqa: E402
-from app.main_window import PAGE_ORDER, load_shell_fixture, page_for  # noqa: E402
+from app.main_window import PAGE_ORDER, PAGE_SHORTCUTS, load_shell_fixture, page_for  # noqa: E402
 from app.ui.kit import Elided, Table  # noqa: E402
 from app.ui.kit.base import TONE_TOKENS, tab_stops  # noqa: E402
 import app.pages, app.pages.creator, app.pages.overview  # noqa: E401,E402,F401
@@ -159,12 +159,12 @@ check("nothing touched the wallpaper disk from the GUI thread, building or showi
 
 # ---- shortcuts -------------------------------------------------------------------------------------
 
-for number, key in enumerate(PAGE_ORDER, start=1):
-    QTest.keyClick(window, getattr(Qt, f"Key_{number}"), Qt.ControlModifier)
+for key, sequence in PAGE_SHORTCUTS.items():
+    QTest.keyClick(window, getattr(Qt, f"Key_{sequence[-1]}"), Qt.ControlModifier)
     settle(5)
     if window.current_page() != key:
         break
-check("Ctrl+1 … Ctrl+9 go to the nine pages in the sidebar's order", window.current_page() == PAGE_ORDER[-1])
+check("Ctrl+1 … Ctrl+9 keep their pages, Ctrl+0 opens To reserve", window.current_page() == "reserve")
 
 found = {}
 for key in ("tracker", "rotator", "review"):

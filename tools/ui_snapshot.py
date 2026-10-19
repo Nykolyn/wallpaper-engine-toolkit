@@ -85,6 +85,7 @@ def main(argv=None) -> int:
     if args.list:
         from app.pages.overview import OverviewPage
         from app.pages.creator import CreatorPage
+        from app.pages.reserve import ReservePage
         from app.pages.review import ReviewPage
         from app.pages.rotator import RotatorPage
         from app.pages.settings import SettingsPage
@@ -92,7 +93,7 @@ def main(argv=None) -> int:
         from app.pages.widget import WidgetPage
         from app.pages.tray import TrayPage
         print("states:", ", ".join(states))
-        for page in (OverviewPage, RotatorPage, TrackerPage, ReviewPage, CreatorPage, WidgetPage, TrayPage, SettingsPage):
+        for page in (OverviewPage, RotatorPage, TrackerPage, ReviewPage, CreatorPage, ReservePage, WidgetPage, TrayPage, SettingsPage):
             print(f"{page.key}:", ", ".join(page.FIXTURES))
         return 0
     if out is None:
@@ -184,6 +185,7 @@ def build_window(page_key: str):
     from app.pages.overview import OverviewPage
     from app.pages.creator import CreatorPage
     from app.pages.cleaner import CleanerPage
+    from app.pages.reserve import ReservePage
     from app.pages.review import ReviewPage
     from app.pages.rotator import RotatorPage
     from app.pages.settings import SettingsPage
@@ -232,6 +234,7 @@ def build_window(page_key: str):
              TrayPage(settings),
              CleanerPage(settings, svc, config),
              CreatorPage(settings, svc, config),
+             ReservePage(settings, svc, config),
              # wired as build_pages wires it, so its two buttons draw as they are
              SettingsPage(settings, config, feed=feed, services=svc,
                           on_review_settings=review.edit_settings, on_authors=review.edit_authors)]

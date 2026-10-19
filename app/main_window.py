@@ -9,8 +9,8 @@
     └──────────────────────────────────────────────────────────────┘
 
 The pages are in the order of the loop — Overview, Rotator, Tracker, Review,
-then Tools (Widget and Tray), Utilities (Cleaner and Creator), and Settings
-at the foot; Ctrl+1…9 goes to each.
+then Tools (Widget and Tray), Utilities (Cleaner, Creator and To reserve), and Settings
+at the foot; Ctrl+1…9 keeps its existing destinations, Ctrl+0 opens To reserve.
 The window opens on Overview. Each tool owns its page.
 
 The sidebar and the status line are live and read one place, the services
@@ -40,13 +40,16 @@ from .ui.kit import format as fmt
 from .window_frame import NativeFrame
 
 # The pages, in the order of the loop; Ctrl+1 is the first.
-PAGE_ORDER = ("overview", "rotator", "tracker", "review", "widget", "tray", "cleaner", "creator", "settings")
+PAGE_ORDER = ("overview", "rotator", "tracker", "review", "widget", "tray", "cleaner", "creator", "reserve", "settings")
+PAGE_SHORTCUTS = {key: f"Ctrl+{number}" for number, key in
+                  enumerate((key for key in PAGE_ORDER if key != "reserve"), start=1)}
+PAGE_SHORTCUTS["reserve"] = "Ctrl+0"
 DEFAULT_PAGE = "overview"
 # The sidebar's groups: which pages open each.
 SECTIONS = {"overview": "The loop", "widget": "Tools", "cleaner": "Utilities"}
 FOOTER = ("settings",)
 TOOL_NAMES = {"rotator": "Rotator", "tracker": "Tracker", "review": "Review",
-              "creator": "Creator", "cleaner": "Cleaner"}
+              "creator": "Creator", "cleaner": "Cleaner", "reserve": "To reserve"}
 
 
 def page_for(name: str | None) -> str | None:
@@ -333,8 +336,8 @@ class MainWindow(QMainWindow):
                                             parent=self)
         self.services.snapshot.refreshed.connect(self._snapshot_refreshed)
         self._snapshot_refreshed([PLAYLIST])
-        for number, key in enumerate(PAGE_ORDER, start=1):
-            shortcut = QShortcut(QKeySequence(f"Ctrl+{number}"), self)
+        for key, sequence in PAGE_SHORTCUTS.items():
+            shortcut = QShortcut(QKeySequence(sequence), self)
             shortcut.activated.connect(lambda k=key: self.show_page(k))
         find = QShortcut(QKeySequence.Find, self)
         find.activated.connect(self.focus_filter)

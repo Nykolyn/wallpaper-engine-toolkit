@@ -43,7 +43,7 @@ FILE_NAME = "activity.jsonl"
 ROTATED_NAME = "activity.1.jsonl"
 MAX_BYTES = 2_000_000
 
-TOOLS = ("rotator", "tracker", "review", "creator", "copier", "cleaner")
+TOOLS = ("rotator", "tracker", "review", "creator", "copier", "cleaner", "reserve")
 
 # The kinds this build writes. A piece of work ends as `<activity>.<outcome>`,
 # the outcome being the JobCenter's result (clean, problems, stopped, failed);
@@ -65,6 +65,7 @@ ACTIVITIES = {
     "build": ("creator", "a Creator build"),
     "copy": ("copier", "a Copier run"),
     "reserve_move": ("cleaner", "keeping an unavailable Workshop wallpaper in the reserve"),
+    "reserve_copy": ("reserve", "copying subscribed wallpapers to the reserve"),
     "unavailable_delete": ("cleaner", "unsubscribing and recycling an unavailable wallpaper"),
 }
 EVENTS = {

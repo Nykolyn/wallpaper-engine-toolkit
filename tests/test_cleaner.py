@@ -25,6 +25,7 @@ from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication
 from app import animations, services, theme
 from app.engines import unavailable as engine
+from app.engines import file_copy
 from app.engines.steam_api import ItemDetails, SteamClient, SteamError, ITEM_CACHE
 from app.engines.rotator.config import Config
 from app.engines.wallpaper_delete import Deleted
@@ -137,7 +138,7 @@ class CleanerTests(unittest.TestCase):
 
     def test_copy_failure_and_collision_preserve_source(self):
         reserve = self.root / "reserve"
-        with patch.object(engine, "verify_copy", side_effect=OSError("size differs")):
+        with patch.object(file_copy, "verify_copy", side_effect=OSError("size differs")):
             with self.assertRaisesRegex(OSError, "size differs"):
                 engine.move_to_reserve(str(self.folder), str(reserve), remove=lambda _: self.fail("remove"))
         self.assertTrue(self.folder.exists())
@@ -163,7 +164,7 @@ class CleanerTests(unittest.TestCase):
         for reserve in ("", str(self.folder), str(self.folder / "nested"), str(self.root)):
             with self.assertRaises(ValueError):
                 engine.move_to_reserve(str(self.folder), reserve)
-        with patch.object(engine, "destination_info", return_value={"free": 0}):
+        with patch.object(file_copy, "destination_info", return_value={"free": 0}):
             with self.assertRaisesRegex(OSError, "free space"):
                 engine.move_to_reserve(str(self.folder), str(self.root / "reserve"))
         (self.folder / "video.mp4").write_bytes(b"")

@@ -29,6 +29,7 @@ app/
 │   ├── settings.py       what is set once
 │   ├── creator.py        video metadata, selection, builds and results
 │   ├── cleaner.py        background Workshop availability checks and verified reserve moves
+│   ├── reserve.py        subscribed wallpapers missing from reserve, background copies and progress
 ├── theme.py              the design tokens: colour, type, space, radius, shadows, the stylesheet
 ├── animations.py         motion tokens, the easing curve, reduced motion, the shared loops
 ├── data_location.py      where the data folder is, and moving it out of the program folder
@@ -59,6 +60,7 @@ app/
 │   ├── playlist_refresh.py the rotation's playlist: found by contents, refilled, restarted
 │   ├── multipliers.py    persistent preferences and cached cycle quota snapshots
 │   ├── file_copy.py      shared verified file-copy helpers
+│   ├── reserve.py        current subscription checks, reserve identity lookup and copying
 │   ├── steam_api.py      the Steam Web API
 │   ├── steam_ugc.py      Steamworks, for subscribing
 │   ├── library.py        what is subscribed now, and what was owned once
@@ -108,7 +110,8 @@ so table painting never stats a video.
 `MainWindow` is a fixed frame: the `TitleBar`, the `Sidebar`, a `PageHeader`
 over a `QStackedWidget` of pages, and the `StatusLine`. Pages are in the order
 of the loop — `overview`, `rotator`, `tracker`, `review`, `widget`, `tray`, `cleaner`, `creator`,
-`settings` (`main_window.PAGE_ORDER`) — and Ctrl+1…9 go to each.
+`reserve`, `settings` (`main_window.PAGE_ORDER`). `PAGE_SHORTCUTS` preserves
+Ctrl+1…9 and assigns Ctrl+0 to `reserve`.
 Changing page cross-fades the content only (`animations.CrossFade`: a still
 of the page that leaves, fading over the live one that arrives, over
 `motion.base`; instant with motion off); the sidebar, title bar and status

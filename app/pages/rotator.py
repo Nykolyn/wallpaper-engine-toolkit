@@ -2469,7 +2469,8 @@ class RotatorPage(Page):
 
     def _busy(self) -> bool:
         return (self.state == "running" or self._starting
-                or (self._services is not None and self._services.jobs.is_running("cleaner")))
+                or (self._services is not None
+                    and any(self._services.jobs.is_running(k) for k in ("cleaner", "reserve"))))
 
     def _begin_check(self, then_rotate: bool) -> None:
         self._ensure_loaded()

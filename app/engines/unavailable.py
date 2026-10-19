@@ -1,15 +1,12 @@
 """Find local Workshop wallpapers Steam cannot describe; preserve one in the reserve."""
 from __future__ import annotations
 
-import json
 import os
-import shutil
-import tempfile
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
-from .file_copy import destination_info, discard_output, manifest, verify_copy
+from .file_copy import copy_to_reserve, manifest
 from .library import find_workshop_content
 from .review import we_folders
 from .steam_api import SteamClient, SteamError
@@ -94,41 +91,10 @@ def scan(*, config_path=None, workshop=None, cache_path=None, refresh=False,
 
 def move_to_reserve(folder: str, reserve: str, *, remove=delete_wallpaper) -> str:
     """Verified copy, publish without overwrite, then unsubscribe/recycle the source."""
-    if not reserve or not reserve.strip():
-        raise ValueError("Set the reserve folder in Settings first.")
-    source, root = Path(folder).resolve(), Path(reserve).resolve()
+    source = Path(folder).resolve()
     if not workshop_id(source):
         raise ValueError("This is not a Workshop wallpaper folder.")
-    if source == root or source in root.parents or root in source.parents:
-        raise ValueError("The reserve must be separate from the Workshop folder.")
-    files, _ = manifest(folder)
-    project = json.loads((source / "project.json").read_text(encoding="utf-8-sig"))
-    if not isinstance(project, dict):
-        raise ValueError("project.json is not an object.")
-    payload = project.get("file")
-    sizes = {os.path.normcase(name): size for name, size in files.items()}
-    if (not isinstance(payload, str) or not payload
-            or sizes.get(os.path.normcase(os.path.normpath(payload)), 0) <= 0):
-        raise ValueError("The wallpaper's content file is missing or empty.")
-    if destination_info(str(root))["free"] < sum(files.values()):
-        raise OSError("There is not enough free space in the reserve.")
-    root.mkdir(parents=True, exist_ok=True)
-    target = root / source.name
-    if target.exists():
-        raise FileExistsError(f"The reserve already contains {target.name}; nothing was replaced.")
-    # Outside the reserve, so a concurrent rotation cannot take a half-written wallpaper.
-    staging = Path(tempfile.mkdtemp(prefix=".toolkit-reserve-", dir=root.parent))
-    try:
-        shutil.copytree(source, staging, dirs_exist_ok=True)
-        verify_copy(str(source), str(staging), files)
-        json.loads((staging / "project.json").read_text(encoding="utf-8-sig"))
-        os.rename(staging, target)       # Windows refuses an existing destination
-    except Exception as err:
-        try:
-            discard_output(str(staging), str(root.parent))
-        except OSError as cleanup:
-            raise OSError(f"{err}; partial copy remains at {staging}: {cleanup}") from err
-        raise
+    target = copy_to_reserve(folder, reserve)
     try:
         remove(str(source))
     except Exception as err:

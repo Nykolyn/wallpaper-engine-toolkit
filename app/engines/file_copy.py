@@ -1,8 +1,11 @@
-"""Verified filesystem copying used by Cleaner."""
+"""Verified filesystem copying used by Cleaner and Reserve."""
 from __future__ import annotations
 
 import os
+import json
 import shutil
+import tempfile
+import time
 from pathlib import Path
 
 
@@ -63,3 +66,80 @@ def verify_copy(source, output, expected):
     for name, size in expected.items():
         if actual[name] != size:
             raise OSError(f"Verification failed: size differs for {name} ({actual[name]} of {size} bytes)")
+
+
+def wallpaper_project(folder, files):
+    """A readable project whose nonempty payload belongs to this folder."""
+    project = json.loads((Path(folder) / "project.json").read_text(encoding="utf-8-sig"))
+    if not isinstance(project, dict):
+        raise ValueError("project.json is not an object.")
+    if str(project.get("type", "")).strip().lower() not in ("video", "scene", "web", "application"):
+        raise ValueError("This project is not a supported wallpaper type.")
+    payload = project.get("file")
+    sizes = {os.path.normcase(name): size for name, size in files.items()}
+    if (not isinstance(payload, str) or not payload
+            or sizes.get(os.path.normcase(os.path.normpath(payload)), 0) <= 0):
+        raise ValueError("The wallpaper's content file is missing or empty.")
+    return project
+
+
+def copy_to_reserve(folder, reserve, *, on_progress=None, cancelled=lambda: False):
+    """Publish a verified copy without overwriting; leave the source alone."""
+    if not reserve or not reserve.strip():
+        raise ValueError("Set the reserve folder in Settings first.")
+    source, root = Path(folder).resolve(), Path(reserve).resolve()
+    if source == root or source in root.parents or root in source.parents:
+        raise ValueError("The reserve must be separate from the Workshop folder.")
+    files, _ = manifest(folder)
+    wallpaper_project(source, files)
+    total = sum(files.values())
+    if destination_info(str(root))["free"] < total:
+        raise OSError("There is not enough free space in the reserve.")
+    if cancelled():
+        raise InterruptedError("Copy stopped.")
+    root.mkdir(parents=True, exist_ok=True)
+    target = root / source.name
+    if target.exists():
+        raise FileExistsError(f"The reserve already contains {target.name}; nothing was replaced.")
+    # Outside the reserve, so a concurrent library scan cannot see a partial wallpaper.
+    staging = Path(tempfile.mkdtemp(prefix=".toolkit-reserve-", dir=root.parent))
+    done, last_report = 0, 0.0
+
+    def copy_file(src, dst):
+        nonlocal done, last_report
+        with open(src, "rb") as incoming, open(dst, "wb") as outgoing:
+            while True:
+                if cancelled():
+                    raise InterruptedError("Copy stopped.")
+                chunk = incoming.read(1024 * 1024)
+                if not chunk:
+                    break
+                outgoing.write(chunk)
+                done += len(chunk)
+                now = time.monotonic()
+                if on_progress and now - last_report >= .1:
+                    on_progress(done, total)
+                    last_report = now
+        shutil.copystat(src, dst)
+        return dst
+
+    try:
+        if on_progress:
+            on_progress(0, total)
+        shutil.copytree(source, staging, dirs_exist_ok=True, copy_function=copy_file)
+        verify_copy(str(source), str(staging), files)
+        wallpaper_project(staging, files)
+        if cancelled():
+            raise InterruptedError("Copy stopped.")
+        os.rename(staging, target)       # Windows refuses an existing destination
+    except Exception as err:
+        try:
+            discard_output(str(staging), str(root.parent))
+        except OSError as cleanup:
+            raise OSError(f"{err}; partial copy remains at {staging}: {cleanup}") from err
+        if cancelled():
+            raise InterruptedError("Copy stopped.") from err
+        raise
+    if on_progress:
+        on_progress(total, total)
+    return str(target)
