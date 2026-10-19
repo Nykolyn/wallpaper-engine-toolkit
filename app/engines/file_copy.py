@@ -86,10 +86,15 @@ def wallpaper_project(folder, files):
     project = json.loads((Path(folder) / "project.json").read_text(encoding="utf-8-sig"))
     if not isinstance(project, dict):
         raise ValueError("project.json is not an object.")
-    if str(project.get("type", "")).strip().lower() not in ("video", "scene", "web", "application"):
+    kind = str(project.get("type", "")).strip().lower()
+    if kind not in ("video", "scene", "web", "application"):
         raise ValueError("This project is not a supported wallpaper type.")
     payload = project.get("file")
     sizes = {os.path.normcase(name): size for name, size in files.items()}
+    # Compiled scenes name the JSON stored inside a matching package.
+    if kind == "scene" and isinstance(payload, str) and payload:
+        if os.path.normcase(os.path.normpath(payload)) not in sizes:
+            payload = str(Path(payload).with_suffix(".pkg"))
     if (not isinstance(payload, str) or not payload
             or sizes.get(os.path.normcase(os.path.normpath(payload)), 0) <= 0):
         raise ValueError("The wallpaper's content file is missing or empty.")

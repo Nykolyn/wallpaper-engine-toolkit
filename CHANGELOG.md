@@ -6,6 +6,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [4.8.3] - 2026-10-20
+
+### Fixed
+
+- Reserve scanning and verified copying now accept compiled scene wallpapers
+  whose `project.json` names a scene file stored in its matching `.pkg`, including
+  renamed and nested scene files. Cleaner uses the same validation. Empty,
+  missing, unrelated or out-of-folder payloads remain rejected.
+
 ## [4.8.2] - 2026-10-20
 
 ### Changed
@@ -1940,7 +1949,8 @@ restructured yet; the tabs keep their layout and take on the new look.
   was right for one library and wrong for every other. Nothing is tagged now
   unless you ask for it.
 
-[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v4.8.2...HEAD
+[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v4.8.3...HEAD
+[4.8.3]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v4.8.2...v4.8.3
 [4.8.2]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v4.8.1...v4.8.2
 [4.8.1]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v4.8.0...v4.8.1
 [4.8.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v4.7.1...v4.8.0
