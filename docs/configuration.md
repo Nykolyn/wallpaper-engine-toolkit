@@ -42,6 +42,7 @@ data/
 ├── activity.1.jsonl        the lines before the journal last passed 2 MB
 ├── library.json            workshop ids found across the local libraries
 ├── library_meta.json       title, type, size of each folder in the reserve and myprojects
+├── reserve_index.json      To reserve's cached Workshop IDs, separate from Rotator's worker
 ├── steam_cache.sqlite      what Steam has already been asked
 ├── selfcheck.txt           the last --selfcheck report
 ├── thumbs/                 cached preview images

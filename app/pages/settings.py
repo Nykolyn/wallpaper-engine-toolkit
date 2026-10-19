@@ -634,14 +634,15 @@ class SettingsPage(Page):
     # ---- the Rotator's folders while it runs --------------------------------------------
 
     def _rotator_busy(self) -> bool:
-        return self._services is not None and self._services.jobs.is_running("rotator")
+        return (self._services is not None
+                and any(self._services.jobs.is_running(k) for k in ("rotator", "reserve")))
 
     def _jobs_changed(self, *_args) -> None:
         busy = self._rotator_busy()
         for row in self._rotator_rows:
             row.field.setEnabled(not busy)
         if busy:
-            self.rotator_note.setText("Read-only while the Rotator is at work: it is "
+            self.rotator_note.setText("Read-only while the Rotator or reserve copy is at work: it is "
                                       "using these folders.")
             set_tone(self.rotator_note, "warn")
             self.rotator_note.show()

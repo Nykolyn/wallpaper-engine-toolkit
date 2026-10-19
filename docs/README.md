@@ -11,8 +11,9 @@ for what the first run already knows.
 The window is a fixed frame: a sidebar of pages on the left, the page's title
 and its buttons across the top, and a status line along the bottom. The
 sidebar lists the pages in the order of **the loop** — rotate, watch the
-playlist run down, review what is new — then **Tools** (Widget and Tray), **Utilities** (Cleaner and Creator), and Settings
-at the foot. **Ctrl+1 … Ctrl+9** go to each in that order.
+playlist run down, review what is new — then **Tools** (Widget and Tray), **Utilities**
+(Cleaner, Creator and To reserve), and Settings at the foot. **Ctrl+1 … Ctrl+9**
+keep their existing destinations; **Ctrl+0** opens To reserve.
 
 The sidebar is live: each page says what it is doing without being opened —
 the Rotator's progress while it runs (`41%`) or `ready · run 39` when it is
@@ -42,6 +43,7 @@ still beside the word "working".
 | [Review](review.md) | Groups the week's new wallpapers by author, and says what each has published since you last looked. | You triage new wallpapers weekly and care who made them. |
 | [Cleaner](cleaner.md) | Finds downloaded Workshop wallpapers whose Steam records are unavailable, with a count beside the menu entry. | You want to inspect them, keep them in the reserve or unsubscribe and recycle them. |
 | [Creator](creator.md) | Turns video clips into Wallpaper Engine projects, **no preview needed** — it renders one from the video. | You have a folder of clips and want them usable as wallpapers now. |
+| [To reserve](reserve.md) | Lists active, downloaded subscriptions missing from the reserve and copies all or selected wallpapers. | You want to keep copies without changing subscriptions. |
 | [Widget](widget.md) | Playlist progress and countdowns on the desktop, compact or for all monitors. | You want the count visible with the main window closed. |
 | [Tray](tray.md) | Rectangle colors and independent wallpaper/playlist progress. | You want to customize the tray icon. |
 | [Settings](settings.md) | The folders, Wallpaper Engine's settings file, counting in the background, the Steam key, and the selfcheck. | Setting up, or when a folder moves. |

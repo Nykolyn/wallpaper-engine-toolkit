@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import ctypes
 import os
+import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -41,6 +42,8 @@ from .tracker import find_we_config
 
 APP_ID = 431960
 UGC_ACCESSOR = "SteamAPI_SteamUGC_v020"
+# Initialization and shutdown affect every caller in this process, across tools.
+_CONNECTION = threading.Lock()
 
 # ISteamUGC::GetItemState, as a bitmask.
 STATE_NONE = 0
@@ -120,10 +123,13 @@ class SteamUgc:
     """
 
     def __init__(self, dll: str | Path | None = None,
-                 on_log: Callable[[str], None] | None = None):
+                 on_log: Callable[[str], None] | None = None, *,
+                 cancelled: Callable[[], bool] = lambda: False):
         self.path = find_steam_api(dll)
         self._lib = None
         self._ugc = None
+        self._owns_connection = False
+        self._cancelled = cancelled
         self._log = on_log or (lambda _message: None)
 
     # -- availability ------------------------------------------------------
@@ -152,6 +158,21 @@ class SteamUgc:
     def connect(self) -> "SteamUgc":
         if self._ugc is not None:
             return self
+        while True:
+            if self._cancelled():
+                raise InterruptedError("Steam operation stopped.")
+            if _CONNECTION.acquire(timeout=.1):
+                break
+        self._owns_connection = True
+        try:
+            if self._cancelled():
+                raise InterruptedError("Steam operation stopped.")
+            return self._connect()
+        except BaseException:
+            self.close()
+            raise
+
+    def _connect(self) -> "SteamUgc":
         if not self.available:
             raise UgcError("Wallpaper Engine's steam_api64.dll was not found")
         # Steam reads the app id from the environment when the process was not
@@ -210,6 +231,9 @@ class SteamUgc:
             except Exception:  # noqa: BLE001 — closing must not raise
                 pass
         self._lib = self._ugc = None
+        if self._owns_connection:
+            self._owns_connection = False
+            _CONNECTION.release()
 
     def __enter__(self) -> "SteamUgc":
         return self.connect()
