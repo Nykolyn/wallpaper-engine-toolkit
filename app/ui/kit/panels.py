@@ -726,11 +726,14 @@ class StepList(QWidget):
         self.set_steps(steps)
 
     def set_steps(self, steps) -> None:
+        steps = [tuple(step) for step in steps]
+        if steps == getattr(self, "_steps", None):
+            return
+        self._steps = None
         for row, *_ in self._rows:
             self._column.removeWidget(row)
             row.deleteLater()
         self._rows, self._tones = [], []
-        steps = [tuple(step) for step in steps]
         for i, step in enumerate(steps):
             title, caption = step[0], step[1] if len(step) > 1 else ""
             state = step[2] if len(step) > 2 else "pending"
@@ -756,6 +759,7 @@ class StepList(QWidget):
             self._rows.append((row, marker, name, note))
             self._tones.append(step[3] if len(step) > 3 else None)
             self._paint_tone(i)
+        self._steps = steps
 
     @staticmethod
     def _check(state: str) -> None:
@@ -787,6 +791,7 @@ class StepList(QWidget):
                  tone=None, title: str | None = None) -> None:
         """Change one step; `tone` sets the caption's ("ok", "warn"…), "" goes
         back to the state's own."""
+        self._steps = None
         _, marker, name, note = self._rows[i]
         if state is not None:
             self._check(state)

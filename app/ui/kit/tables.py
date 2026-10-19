@@ -1907,7 +1907,7 @@ class Table(QTableView):
 
     def _animates(self) -> bool:
         window = self.window()
-        return (animations.ENABLED and self.isVisible()
+        return (animations.ENABLED and self.isEnabled() and self.isVisible()
                 and not (window is not None and window.isMinimized()))
 
     def _play_visible(self) -> None:
@@ -2310,6 +2310,7 @@ class Table(QTableView):
     def changeEvent(self, event) -> None:       # noqa: N802 - Qt's name
         if event.type() == QEvent.EnabledChange:
             self._enabled = self.isEnabled()
+            self._play_visible()
         super().changeEvent(event)
 
     def paintEvent(self, event) -> None:        # noqa: N802 - Qt's name

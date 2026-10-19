@@ -25,6 +25,7 @@ class Scan:
     warning: str = ""
 
 
+@file_copy.background_io()
 def reserve_ids(reserve, *, index_path=None, on_progress=None, cancelled=lambda: False):
     if not reserve or not str(reserve).strip():
         raise ValueError("Set the reserve folder in Settings first.")
@@ -41,6 +42,7 @@ def reserve_ids(reserve, *, index_path=None, on_progress=None, cancelled=lambda:
     return index.workshop_ids(reserve) | {n for n in names if n.isdigit()}
 
 
+@file_copy.background_io()
 def scan(reserve, *, workshop=None, cache_path=None, index_path=None, ugc=None, client=None,
          on_progress=None, cancelled=lambda: False, api_key=None):
     def progress(phase, done, total):
@@ -108,6 +110,7 @@ def scan(reserve, *, workshop=None, cache_path=None, index_path=None, ugc=None, 
     return Scan(rows, len(ids), skipped, warning)
 
 
+@file_copy.background_io()
 def copy_to_reserve(folder, reserve, *, ugc=None, on_progress=None, cancelled=lambda: False,
                     kept=None):
     item = workshop_id(folder)

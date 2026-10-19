@@ -402,6 +402,12 @@ check("it plays a copy under the thumbs folder, never the preview.gif itself, wh
 check("the JPEG does not", str(still_folder) not in preview_table.players()
       and preview_table.frame_tile(str(still_folder), "row") is None)
 first = preview_table.frame_tile(str(gif_folder), "row").toImage().pixelColor(100, 100)
+preview_table.setEnabled(False)
+app.processEvents()
+check("a disabled table stops decoding animated previews", not preview_table.players())
+preview_table.setEnabled(True)
+check("re-enabling the table resumes its visible previews",
+      wait_for(lambda: preview_table.players() == [str(gif_folder)]))
 check("and the frame moves on", wait_for(
     lambda: preview_table.frame_tile(str(gif_folder), "row").toImage().pixelColor(100, 100)
     != first, 3000))

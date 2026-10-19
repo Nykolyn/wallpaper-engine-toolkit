@@ -23,6 +23,7 @@ from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication
 from app import animations, services, theme
 from app.engines import file_copy
+from app.engines import we_memory
 from app.engines import reserve as engine
 from app.engines.rotator.config import Config
 from app.engines.steam_api import ItemDetails, Profile, SteamError
@@ -32,6 +33,7 @@ from app.pages.cleaner import CleanerPage
 from app.pages.rotator import RotatorPage
 from app.pages.settings import SettingsPage
 from app.settings import Settings
+from app.ui.kit import StepList
 
 qt = QApplication(sys.argv)
 theme.apply(qt)
@@ -347,6 +349,79 @@ class ReserveTests(unittest.TestCase):
         job.finish("clean", "Done")
         self.assertFalse(RotatorPage._busy(rotator))
         page.deleteLater()
+
+    def test_progress_burst_keeps_only_the_latest_update_instead_of_queuing_every_chunk(self):
+        calls = []
+        original = ReservePage._copying_progress
+        def display(page, *values):
+            calls.append(values)
+            return original(page, *values)
+        with patch.object(ReservePage, "_copying_progress", display):
+            page = ReservePage(Settings({}), config=Config(source=str(self.reserve), destination=""))
+            row = engine.Wallpaper(str(self.source), "Garden", size=2000)
+            page._scanned(engine.Scan([row], 1))
+            def copy(folder, reserve, **options):
+                for done in range(2000):
+                    options["on_progress"](done, 2000)
+                return str(self.reserve / "1001")
+            with patch.object(engine, "copy_to_reserve", side_effect=copy):
+                self.assertTrue(page.copy_all())
+                self.assertTrue(wait_for(lambda: not page.acting))
+        self.assertLessEqual(len(calls), 3, "Worker progress flooded the GUI event queue")
+        self.assertEqual(calls[-1][-2:], (2000, 2000))
+        page.deleteLater()
+
+    def test_repeated_identical_plan_updates_do_not_recreate_widgets(self):
+        steps = [("Keep", "Originals remain", "pending"), ("Copy", "Waiting", "pending")]
+        panel = StepList(steps)
+        originals = [row[0] for row in panel._rows]
+        for _ in range(100):
+            panel.set_steps(steps)
+        self.assertEqual([row[0] for row in panel._rows], originals,
+                         "Progress updates rebuilt a hidden page's unchanged plan")
+        panel.set_step(0, caption="Changed")
+        panel.set_steps(steps)
+        self.assertEqual(panel.caption(0), "Originals remain")
+        panel.deleteLater()
+
+    def test_copy_yields_cpu_and_io_priority_and_restores_it_on_errors(self):
+        with patch.object(we_memory, "background_mode", return_value=True) as priority, \
+             patch.object(file_copy, "manifest", side_effect=OSError("unreadable")):
+            with self.assertRaisesRegex(OSError, "unreadable"):
+                file_copy.copy_to_reserve(str(self.source), str(self.reserve))
+        self.assertEqual([c.args for c in priority.call_args_list], [(True,), (False,)])
+
+    def test_copy_paces_disk_traffic_with_cancellable_waits(self):
+        (self.source / "video.mp4").write_bytes(b"x" * (2 * 1024 * 1024))
+        now = [0.0]
+        def sleep(seconds):
+            now[0] += seconds
+        with patch.object(file_copy.time, "monotonic", side_effect=lambda: now[0]), \
+             patch.object(file_copy.time, "sleep", side_effect=sleep):
+            file_copy.copy_to_reserve(str(self.source), str(self.reserve))
+        self.assertGreaterEqual(now[0], .125, "The copy can saturate the disk without yielding")
+
+    def test_nested_background_work_does_not_restore_priority_too_early(self):
+        self.assertTrue(hasattr(file_copy, "background_io"))
+        background = [False]
+        def mode(on):
+            changed = on != background[0]
+            background[0] = on
+            return changed
+        with patch.object(we_memory, "background_mode", side_effect=mode):
+            with file_copy.background_io():
+                self.assertTrue(background[0])
+                with file_copy.background_io():
+                    self.assertTrue(background[0])
+                self.assertTrue(background[0], "An inner operation restored priority while copying continues")
+            self.assertFalse(background[0])
+
+    def test_plan_validation_is_not_skipped_after_invalid_input(self):
+        panel = StepList()
+        for _ in range(2):
+            with self.assertRaises(ValueError):
+                panel.set_steps([("Copy", "", "invalid")])
+        panel.deleteLater()
 
 
 if __name__ == "__main__":

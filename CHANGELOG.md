@@ -6,6 +6,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [4.8.1] - 2026-10-20
+
+### Fixed
+
+- Long reserve copies now run at background CPU, disk and memory priority, with
+  a 16 MiB/s copy limit and cancellable waits, to reduce contention with games.
+- Reserve progress keeps only the latest update and displays it at most five
+  times a second. Unchanged step lists reuse their widgets instead of repeatedly
+  rebuilding hidden pages, and animated table previews pause during the operation.
+- Windows thread-priority calls use full-width handles and restore priority
+  correctly across nested scan/copy operations, cancellation and errors.
+
 ## [4.8.0] - 2026-10-19
 
 ### Added
@@ -1920,7 +1932,8 @@ restructured yet; the tabs keep their layout and take on the new look.
   was right for one library and wrong for every other. Nothing is tagged now
   unless you ask for it.
 
-[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v4.8.0...HEAD
+[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v4.8.1...HEAD
+[4.8.1]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v4.8.0...v4.8.1
 [4.8.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v4.7.1...v4.8.0
 [4.7.1]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v4.7.0...v4.7.1
 [4.7.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v4.6.0...v4.7.0

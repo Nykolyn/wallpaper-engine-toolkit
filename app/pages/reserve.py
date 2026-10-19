@@ -4,7 +4,7 @@ from __future__ import annotations
 import threading
 from pathlib import Path
 
-from PySide6.QtCore import QEvent, Qt, Signal
+from PySide6.QtCore import QEvent, Qt, QTimer, Signal
 from PySide6.QtWidgets import QStackedLayout, QVBoxLayout
 
 from .. import theme
@@ -60,8 +60,6 @@ class ReserveModel(TableModel):
 class ReservePage(Page):
     key, title, icon = "reserve", "To reserve", "copier"
     FIXTURES = ("found", "empty", "checking", "copying", "failed")
-    _scan_progress = Signal(str, int, int)
-    _copy_progress = Signal(str, int, int, object, object)
     _open_failed = Signal(str)
 
     def __init__(self, settings, services=None, config=None, parent=None):
@@ -75,8 +73,11 @@ class ReservePage(Page):
         self._scanned_reserve = None
         self._rows, self.selected, self.messages = [], set(), []
         self._run = None
-        self._scan_progress.connect(self._scanning_progress)
-        self._copy_progress.connect(self._copying_progress)
+        self._pending_progress = None
+        self._progress_lock = threading.Lock()
+        self._progress_timer = QTimer(self)
+        self._progress_timer.setInterval(200)
+        self._progress_timer.timeout.connect(self._flush_progress)
         self._open_failed.connect(lambda words: self._say("danger", words))
 
         column = QVBoxLayout(self)
@@ -154,6 +155,7 @@ class ReservePage(Page):
             return False
         self._started, self.scanning = True, True
         self._cancel.clear()
+        self._progress_timer.start()
         self.problem.hide()
         self.progress.set_state("indeterminate")
         self.progress.set_caption("Reading the reserve…")
@@ -162,7 +164,7 @@ class ReservePage(Page):
         cache = self.services.data_dir / "steam_cache.sqlite" if self.services else None
         self._render()
         self._offload.run(lambda: engine.scan(reserve, cache_path=cache,
-                                              on_progress=self._scan_progress.emit,
+                                              on_progress=lambda *args: self._report_progress("scan", *args),
                                               cancelled=self._cancel.is_set),
                           lambda result: self._scanned(result, reserve))
         return True
@@ -174,7 +176,23 @@ class ReservePage(Page):
             self.progress.set_value(done, total)
             self.progress.set_caption(f"{fmt.count(done)} / {fmt.count(total)}")
 
+    def _report_progress(self, kind, *values):
+        with self._progress_lock:
+            self._pending_progress = kind, values
+
+    def _flush_progress(self):
+        with self._progress_lock:
+            pending, self._pending_progress = self._pending_progress, None
+        if pending is not None:
+            kind, values = pending
+            if kind == "scan":
+                self._scanning_progress(*values)
+            else:
+                self._copying_progress(*values)
+
     def _scanned(self, result, reserve=None):
+        self._progress_timer.stop()
+        self._flush_progress()
         self.scanning = False
         if isinstance(result, InterruptedError):
             self._say("warn", "Scan stopped. Previous results are kept.")
@@ -207,6 +225,7 @@ class ReservePage(Page):
         size = sum(r.size or 0 for r in rows)
         selected_size = sum(r.size or 0 for r in rows if r.folder in self.selected)
         busy = self.scanning or self.acting
+        self.table.setEnabled(not busy)
         enabled = not busy
         can_copy = self._can_copy()
         self.destination.set_text(f"Reserve: {self.config.source or 'Choose a folder in Settings'}")
@@ -288,6 +307,7 @@ class ReservePage(Page):
             return False
         reserve = self.config.source
         self._cancel.clear()
+        self._progress_timer.start()
         self.acting = True
         self.problem.hide()
         self._run = begin(self.key, f"Copying {fmt.counted(len(items), 'wallpaper')} to reserve",
@@ -307,8 +327,8 @@ class ReservePage(Page):
                 def progress(done, size):
                     nonlocal actual
                     actual = size
-                    self._copy_progress.emit(item.title, len(results), len(items), copied + done,
-                                             total + size - item.size)
+                    self._report_progress("copy", item.title, len(results), len(items), copied + done,
+                                          total + size - item.size)
                 try:
                     result = engine.copy_to_reserve(item.folder, reserve, kept=kept,
                                                     on_progress=progress, cancelled=self._cancel.is_set)
@@ -319,7 +339,7 @@ class ReservePage(Page):
                 except Exception as err:
                     result = err
                 results.append((item, result))
-                self._copy_progress.emit(item.title, len(results), len(items), copied, total)
+                self._report_progress("copy", item.title, len(results), len(items), copied, total)
             return results, self._cancel.is_set(), copied, total
 
         self._offload.run(work, self._acted)
@@ -338,6 +358,8 @@ class ReservePage(Page):
                              f"{done}/{count} wallpapers · {fmt.size(size)} / {fmt.size(total)}")
 
     def _acted(self, outcome):
+        self._progress_timer.stop()
+        self._flush_progress()
         self.acting = False
         if isinstance(outcome, Exception):
             self._run.finish("stopped" if isinstance(outcome, InterruptedError) else "failed", str(outcome))
