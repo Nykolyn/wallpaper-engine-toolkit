@@ -6,11 +6,11 @@ Toolkit window closed. Hiding widgets leaves the tracker counting. The tray
 also offers **Show widgets / Hide widgets** and **Widget…** to open the controls.
 
 **Compact** is the default view. Its default **Rectangles** design uses two
-offset rectangles: the rear shows the percentage of the playlist viewed and the
+overlapping Liquid Glass lenses: the rear shows the percentage of the playlist viewed and the
 front shows the countdown to the next wallpaper. Both fill from left to right
 as progress elapses, while the countdown decreases.
 
-Choose **Rings** for the original circle and numeric countdown. Its outer ring
+Choose **Rings** for a circular glass lens and numeric countdown. Its outer ring
 shows time remaining until the next wallpaper; the inner ring shows the share
 of the playlist still unseen. Both empty towards completion. Design and
 compact/expanded view are separate choices.
@@ -25,6 +25,14 @@ playlist progress, and the current wallpaper's name and file size. Size refers
 to the actual wallpaper file in the playlist, not its folder. Missing file
 information is marked as unknown. Names and sizes load on a worker and are cached for
 the session; there are no previews.
+
+Both designs share the rounded **Glass Panel** in expanded mode, with a status
+dot beside each monitor and more room for the wallpaper title and size. Glass
+uses translucent dark surfaces, fine reflective edges and a soft sheen painted
+by Qt; it does not capture the desktop or depend on native Windows backdrop blur.
+The dark backing keeps text readable over bright wallpapers. New profiles use
+ice-blue and lavender accents; existing custom colours are retained. Rectangle
+fills are tinted by the glass material, with contrasting countdown text.
 
 Choose a **single widget** or **one per monitor**. The single widget follows
 the monitor selected for the tray by default; it can also be bound to a
