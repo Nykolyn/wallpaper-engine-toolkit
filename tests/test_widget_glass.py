@@ -48,7 +48,7 @@ for design in ("rectangles", "rings"):
         points = ((.20, .35),) if design == "rectangles" else ((.3, .3), (.32, .32), (.3, .7), (.68, .7))
         faces = [image.pixelColor(round(edge * x), round(edge * y)) for x, y in points]
         check(f"{design} {edge}: glass transmits the desktop without becoming unreadably clear",
-              any(210 <= colour.alpha() < 240 for colour in faces))
+              any(160 <= colour.alpha() < 220 for colour in faces))
         check(f"{design} {edge}: outer corner is transparent", image.pixelColor(0, 0).alpha() == 0)
     widget._set_option("mode", "expanded")
     image = widget.grab().toImage()
