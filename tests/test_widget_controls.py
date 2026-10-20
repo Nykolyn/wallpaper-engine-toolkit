@@ -18,7 +18,7 @@ scratch = tempfile.TemporaryDirectory(prefix="toolkit_widget_controls_")
 os.environ["WALLPAPER_TOOLKIT_DATA"] = str(Path(scratch.name) / "data")
 
 from PySide6.QtCore import QObject, Signal  # noqa: E402
-from PySide6.QtWidgets import QApplication  # noqa: E402
+from PySide6.QtWidgets import QApplication, QWidget  # noqa: E402
 from PySide6.QtTest import QTest  # noqa: E402
 
 from app import autostart, quit_request, widget_control, widget_options, widget_startup, window_instance  # noqa: E402
@@ -364,10 +364,11 @@ feed = Feed()
 editor = WidgetPage(profile_store, feed=feed)
 check("loading all widget controls never writes settings", not profile_store.save.called)
 captions = [heading.text().casefold() for heading in editor.findChildren(Overline)]
-check("settings identify the rear playlist rectangle and front wallpaper rectangle",
-      "rear rectangle · playlist progress" in captions and "front rectangle · wallpaper time" in captions
-      and editor.outer_color.accessibleName() == "Rear rectangle color"
-      and editor.inner_color.accessibleName() == "Front rectangle color")
+check("fixed glass appearance has no color or global opacity controls",
+      not {"opacity", "rear rectangle · playlist progress", "front rectangle · wallpaper time"} & set(captions)
+      and not any(child.accessibleName() in {"Widget opacity", "Rear rectangle color", "Front rectangle color"}
+                  for child in editor.findChildren(QWidget)))
+
 design = editor.design
 check("design defaults to rectangles independently from compact or expanded view",
       design.currentData() == "rectangles"
@@ -379,24 +380,19 @@ check("per-monitor layout selects a discovered monitor for customization",
       and editor.profile_selector.currentData() == "Monitor1" and not editor.target.isEnabled())
 editor.mode.setCurrentIndex(1)
 editor.size_choice.setCurrentIndex(2)
-editor.opacity.setValue(70)
 editor.layer.setCurrentIndex(2)
 editor.locked.setChecked(True)
-editor.outer_color.setText("#abcdef")
-editor.outer_color.editingFinished.emit()
 design.setCurrentIndex(design.findData("rings"))
 captions = [heading.text().casefold() for heading in editor.findChildren(Overline)]
-check("changing design preserves view and switches the color labels to the original rings",
+check("changing design preserves view and the fixed material",
       widget_options.profile(profile_store, "Monitor1").get("design") == "rings"
       and editor.mode.currentData() == "expanded"
-      and "outer ring · time remaining" in captions and "inner ring · playlist remaining" in captions
-      and editor.outer_color.accessibleName() == "Outer ring color"
-      and editor.inner_color.accessibleName() == "Inner ring color")
+      and not any("color" in caption or "opacity" in caption for caption in captions))
+
 configured = widget_options.profile(profile_store, "Monitor1")
 check("the page saves all requested appearance and placement controls to the selected monitor",
       all(configured[key] == value for key, value in
-          {"mode": "expanded", "size": 176, "opacity": 70, "layer": "top",
-           "locked": True, "outer_color": "#ABCDEF"}.items()))
+          {"mode": "expanded", "size": 176, "layer": "top", "locked": True}.items()))
 before = profile_store.save.call_count
 editor.profile_selector.setCurrentIndex(1)
 check("switching the editor profile loads the other monitor without writing it",
@@ -408,19 +404,6 @@ check("the page can hide one monitor widget while keeping global visibility and 
       widget_options.chosen_profiles(profile_store, ["Monitor1", "Monitor2"]) == ["Monitor1"]
       and profile_store.get("widget", "enabled", False))
 before = profile_store.save.call_count
-editor.inner_color.setText("#zzzzzz")
-editor.inner_color.editingFinished.emit()
-editor._sync()
-check("invalid ring colors stay visible as errors and never overwrite saved colors",
-      editor.inner_color.error() is not None and editor.inner_color.text() == "#zzzzzz"
-      and profile_store.save.call_count == before
-      and widget_options.profile(profile_store, "Monitor2")["inner_color"] == widget_options.DEFAULTS["inner_color"])
-editor.inner_color.setText("#123abc")
-editor.inner_color.editingFinished.emit()
-check("correcting a ring color clears its error and saves the normalized color",
-      editor.inner_color.error() is None
-      and widget_options.profile(profile_store, "Monitor2")["inner_color"] == "#123ABC")
-before = profile_store.save.call_count
 feed.results = feed.results + [SimpleNamespace(monitor="Monitor3")]
 feed.updated.emit()
 check("new feed monitors appear without a filesystem scan or settings write",
@@ -428,7 +411,6 @@ check("new feed monitors appear without a filesystem scan or settings write",
 editor.layout_mode.setCurrentIndex(0)
 editor.target.setCurrentIndex(editor.target.findData("Monitor2"))
 editor.mode.setCurrentIndex(1)
-editor.opacity.setValue(60)
 design.setCurrentIndex(design.findData("rings"))
 check("the expanded shared profile labels its all-monitors default accurately",
       editor.target.itemText(0) == "All monitors")
@@ -442,10 +424,10 @@ with patch.object(widget_startup, "set_enabled") as startup_change:
           and reset["monitor"] == "Monitor2" and reset["enabled"] and not startup_change.called
           and widget_options.profile(profile_store, "Monitor1")["mode"] == "expanded")
 captions = [heading.text().casefold() for heading in editor.findChildren(Overline)]
-check("reset restores rectangle design and its color labels only for the selected widget",
+check("reset restores rectangle design only for the selected widget",
       design.currentData() == "rectangles"
-      and "rear rectangle · playlist progress" in captions and "front rectangle · wallpaper time" in captions
       and widget_options.profile(profile_store, "Monitor1").get("design") == "rings")
+
 empty_store = settings()
 empty_store.set("widget", "layout", "per_monitor")
 empty_editor = WidgetPage(empty_store)

@@ -125,7 +125,7 @@ for mode, size in (("compact", 112), ("compact", 144), ("compact", 176), ("expan
         check(f"{mode} {size}: complete countdown {expected} reaches the painter", expected in drawn)
 widget._set_option("mode", "compact")
 widget._set_option("size", 144)
-for fill in ("#FFFFFF", "#000000", "#4C8DFF", "#22C3B0"):
+for fill in ("#FFFFFF", "#000000"):
     widget._set_option("inner_color", fill)
     widget.render([p], {"Monitor1": Countdown("Monitor1", 600, running=300, known=True)}, p)
     painted.clear()
@@ -145,7 +145,7 @@ for fill in ("#FFFFFF", "#000000", "#4C8DFF", "#22C3B0"):
     fill_background = white.pixelColor(60, 120)
     readable = {colour for colour in ("#000000", "#ffffff")
                 if theme.contrast(QColor(colour), fill_background) >= 4.5}
-    check(f"timer text contrasts across empty and {fill} filled halves",
+    check(f"timer keeps contrast despite obsolete {fill} custom color",
           bool(readable & foreground) and "#ffffff" in foreground)
 
 widget._set_option("inner_color", "#22C3B0")

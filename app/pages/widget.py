@@ -4,13 +4,12 @@ from __future__ import annotations
 import threading
 
 from PySide6.QtCore import QObject, Qt, QTimer, Signal
-from PySide6.QtGui import QColor
-from PySide6.QtWidgets import QColorDialog, QGridLayout, QHBoxLayout, QScrollArea, QSizePolicy, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QGridLayout, QHBoxLayout, QScrollArea, QSizePolicy, QVBoxLayout, QWidget
 
 from .. import theme, widget_control, widget_options, widget_startup
 from ..settings import Settings
 from ..engines.wallpaper_timer import monitor_map
-from ..ui.kit import CardTitle, Dropdown, GlassPanel, Overline, SecondaryButton, SpinBox, TextInput, Toggle, label
+from ..ui.kit import CardTitle, Dropdown, GlassPanel, Overline, SecondaryButton, Toggle, label
 from ..ui.kit.base import set_tone
 from .base import Page
 
@@ -99,25 +98,15 @@ class WidgetPage(Page):
         self.mode.currentIndexChanged.connect(self._set_mode)
         self.size_choice = self._dropdown("Compact size", (("Small", 112), ("Medium", 144), ("Large", 176)))
         self.size_choice.currentIndexChanged.connect(lambda _i: self._set_option("size", self.size_choice.currentData()))
-        self.opacity = SpinBox(minimum=40, maximum=100, value=100, suffix=" %")
-        self.opacity.setAccessibleName("Widget opacity")
-        self.opacity.valueChanged.connect(lambda value: self._set_option("opacity", value))
         self.target = Dropdown()
         self.target.setAccessibleName("Widget monitor")
         self.target.currentIndexChanged.connect(lambda _i: self._set_option("monitor", self.target.currentData()))
         grid.addWidget(self._field("Design", self.design), 0, 0)
         grid.addWidget(self._field("View", self.mode), 0, 1)
         grid.addWidget(self._field("Compact size", self.size_choice), 1, 0)
-        grid.addWidget(self._field("Opacity", self.opacity), 1, 1)
-        grid.addWidget(self._field("Monitor", self.target), 2, 0, 1, 2)
-        self.outer_color, outer = self._color_field("outer_color", "Rear rectangle color")
-        self.inner_color, inner = self._color_field("inner_color", "Front rectangle color")
-        self.outer_color_group = self._field("Rear rectangle · playlist progress", outer)
-        self.inner_color_group = self._field("Front rectangle · wallpaper time", inner)
-        grid.addWidget(self.outer_color_group, 3, 0, 1, 2)
-        grid.addWidget(self.inner_color_group, 4, 0, 1, 2)
+        grid.addWidget(self._field("Monitor", self.target), 1, 1)
         appearance.addLayout(grid)
-        appearance_note = label("Liquid Glass in compact view; Glass Panel in expanded view, with the wallpaper's title and file size.",
+        appearance_note = label("Liquid Glass uses a fixed pearl and lilac palette. Expanded Glass Panel adds the wallpaper title and file size.",
                                 "type.caption", "lo")
         appearance_note.setWordWrap(True)
         appearance.addWidget(appearance_note)
@@ -192,22 +181,6 @@ class WidgetPage(Page):
         column.addWidget(field)
         return holder
 
-    def _color_field(self, name: str, title: str):
-        field = TextInput(placeholder="#RRGGBB")
-        field.setAccessibleName(title)
-        field.setMaxLength(7)
-        field.editingFinished.connect(lambda: self._set_color(name, field))
-        choose = SecondaryButton("Choose…")
-        choose.setAccessibleName("Choose " + title.lower())
-        choose.clicked.connect(lambda: self._choose_color(name, field))
-        holder = QWidget()
-        row = QHBoxLayout(holder)
-        row.setContentsMargins(0, 0, 0, 0)
-        row.setSpacing(theme.SP_6)
-        row.addWidget(field, 1)
-        row.addWidget(choose)
-        return field, holder
-
     def _note(self, field, text: str, tone: str = "lo") -> None:
         field.setText(text)
         set_tone(field, tone)
@@ -264,7 +237,6 @@ class WidgetPage(Page):
         for field, name in ((self.design, "design"), (self.mode, "mode"),
                             (self.size_choice, "size"), (self.layer, "layer")):
             self._pick(field, options[name])
-        self.opacity.setValue(options["opacity"])
         follow = "All monitors" if options["mode"] == "expanded" else "Follow selected tray monitor"
         targets = ([(follow, "tray")] + [(name, name) for name in monitors]
                    if self._profile_key == "default" else [(self._profile_key, self._profile_key)])
@@ -274,20 +246,6 @@ class WidgetPage(Page):
                 self.target.add_item(title, key)
         self._pick(self.target, options["monitor"])
         self.target.setEnabled(self._profile_key == "default")
-        color_titles = ({"outer_color": ("Outer ring · time remaining", "Outer ring color"),
-                         "inner_color": ("Inner ring · playlist remaining", "Inner ring color")}
-                        if options["design"] == "rings" else
-                        {"outer_color": ("Rear rectangle · playlist progress", "Rear rectangle color"),
-                         "inner_color": ("Front rectangle · wallpaper time", "Front rectangle color")})
-        for name, (caption, title) in color_titles.items():
-            field = getattr(self, name)
-            group = getattr(self, name + "_group")
-            group.findChild(Overline).setText(caption)
-            field.setAccessibleName(title)
-            group.findChild(SecondaryButton).setAccessibleName("Choose " + title.lower())
-            if not field.hasFocus() and field.error() is None:
-                field.setText(options[name])
-                field.set_error(None)
         self._check(self.locked, options["locked"])
         self._check(self.profile_enabled, options["enabled"])
         self.layer_note.setText({"desktop": "On the desktop, behind your app windows.",
@@ -357,8 +315,6 @@ class WidgetPage(Page):
         if not self._live or self._syncing or self._stopping.is_set():
             return
         widget_options.set_layout(self.settings, self.layout_mode.currentData())
-        self.outer_color.set_error(None)
-        self.inner_color.set_error(None)
         self._sync()
 
     def _select_profile(self, _index: int) -> None:
@@ -367,36 +323,12 @@ class WidgetPage(Page):
         key = self.profile_selector.currentData()
         if key is not None:
             self._profile_key = key
-            self.outer_color.set_error(None)
-            self.inner_color.set_error(None)
             self._refresh_controls()
-
-    def _set_color(self, name: str, field: TextInput) -> None:
-        if not self._live or self._syncing or self._stopping.is_set():
-            return
-        try:
-            widget_options.set_option(self.settings, self._profile_key, name, field.text())
-        except ValueError:
-            field.set_error("Use #RRGGBB")
-            return
-        field.set_error(None)
-        field.setText(widget_options.profile(self.settings, self._profile_key)[name])
-
-    def _choose_color(self, name: str, field: TextInput) -> None:
-        if not self._live or self._stopping.is_set():
-            return
-        color = QColorDialog.getColor(QColor(widget_options.profile(self.settings, self._profile_key)[name]),
-                                      self.window(), field.accessibleName())
-        if color.isValid():
-            field.setText(color.name().upper())
-            self._set_color(name, field)
 
     def _reset_profile(self) -> None:
         if not self._live or self._stopping.is_set():
             return
         widget_options.reset_profile(self.settings, self._profile_key)
-        self.outer_color.set_error(None)
-        self.inner_color.set_error(None)
         self._sync()
 
     def _set_visible(self, on: bool) -> None:
@@ -470,9 +402,8 @@ class WidgetPage(Page):
         self.settings = Settings({"widget": {
             "enabled": shown, "layout": "per_monitor" if state == "per-monitor" else "single",
             "profiles": {"default": {"mode": "expanded" if state == "expanded" else "compact"},
-                         "Monitor2": {"mode": "expanded", "size": 176, "opacity": 80,
-                                      "layer": "normal", "locked": True,
-                                      "outer_color": "#B692FF", "inner_color": "#F0BB63"}}}})
+                         "Monitor2": {"mode": "expanded", "size": 176,
+                                      "layer": "normal", "locked": True}}}})
         self._refresh_controls()
         self.startup_toggle.setEnabled(True)
         self._note(self.visible_note, "The widget stays open when the toolkit window closes." if shown

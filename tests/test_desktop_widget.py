@@ -122,7 +122,7 @@ widget.settings_requested.connect(lambda: requested.append(True))
 menu = widget.build_menu()
 next(action for action in menu.actions() if action.text() == "Widget settings").trigger()
 check("context menu settings emits the settings request", requested == [True])
-check("context menu exposes customization", {"View", "Monitor", "Layer", "Size", "Opacity", "Ring colours",
+check("context menu exposes customization", {"View", "Design", "Monitor", "Layer", "Size",
       "Lock position", "Reset position", "Widget settings", "Hide widget"}.issubset({a.text() for a in menu.actions()}))
 layer_menu = next(action.menu() for action in menu.actions() if action.text() == "Layer")
 check("layer choices name the requested behavior", [action.text() for action in layer_menu.actions()]
@@ -151,7 +151,7 @@ check("position lock prevents native or fallback dragging", fixed._start_move(pr
 before = fixed.pos()
 fixed._nudge(10, 10)
 check("position lock also prevents keyboard movement", fixed.pos() == before)
-check("opacity and size persist per instance", fixed.windowOpacity() == .6 and fixed.options["size"] == 176
+check("fixed opacity ignores legacy settings while size stays per instance", fixed.windowOpacity() == 1 and fixed.options["size"] == 176
       and widget.options["size"] == 144)
 
 size = QSize(360, 180)
@@ -287,7 +287,7 @@ for key in ("default", "Monitor1"):
 
 widget._set_option("outer_color", "#FFAA22")
 widget._set_option("inner_color", "#BB77FF")
-check("custom ring colours persist", profile(Settings.load())["outer_color"] == "#FFAA22"
+check("legacy ring colours remain stored for compatibility", profile(Settings.load())["outer_color"] == "#FFAA22"
       and profile(Settings.load())["inner_color"] == "#BB77FF")
 fixed.close()
 hidden = []
