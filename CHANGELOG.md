@@ -6,6 +6,24 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [4.9.1] - 2026-10-20
+
+### Fixed
+
+- Liquid Glass widgets now request native Windows Acrylic blur and use a
+  transparent smoke overlay, reflective lens rims and highlights instead of
+  an almost opaque painted surface. The native region follows overlapping
+  rectangles, rings and the expanded panel. A readable painted fallback remains
+  available when native composition is unsupported or rejected.
+
+### Changed
+
+- Widget colours and material transparency now use the fixed pearl-blue and
+  lilac design palette. Removed colour and whole-window opacity controls from
+  settings and the widget menu; legacy saved values no longer alter rendering.
+  Design, view, size, monitor binding, placement and countdown behaviour remain
+  available. Text outlines and header shading preserve bright-wallpaper contrast.
+
 ## [4.9.0] - 2026-10-20
 
 ### Changed
@@ -1960,7 +1978,8 @@ restructured yet; the tabs keep their layout and take on the new look.
   was right for one library and wrong for every other. Nothing is tagged now
   unless you ask for it.
 
-[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v4.9.0...HEAD
+[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v4.9.1...HEAD
+[4.9.1]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v4.9.0...v4.9.1
 [4.9.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v4.8.3...v4.9.0
 [4.8.3]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v4.8.2...v4.8.3
 [4.8.2]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v4.8.1...v4.8.2
