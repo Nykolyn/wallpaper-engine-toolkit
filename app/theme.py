@@ -64,7 +64,7 @@ TOKENS: dict[str, str] = {
     "surface.console": "rgba(6,8,12,.72)",
     "surface.overlay": "rgba(18,22,30,.94)",    # dialog, toast
     "widget.glass": "rgba(24,30,40,.87)",       # desktop glass, readable over bright wallpapers
-    "widget.clear": "rgba(24,30,40,.16)",
+    "widget.lens": "rgba(56,60,66,.72)",        # compact lenses: lighter neutral smoke, as in the mock-ups
     "widget.outer": "#C3D2ED",
     "widget.inner": "#C5A6E8",
     "widget.edge": "rgba(255,255,255,.32)",

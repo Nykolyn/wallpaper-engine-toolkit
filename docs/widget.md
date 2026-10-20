@@ -6,9 +6,10 @@ Toolkit window closed. Hiding widgets leaves the tracker counting. The tray
 also offers **Show widgets / Hide widgets** and **Widget…** to open the controls.
 
 **Compact** is the default view. Its default **Rectangles** design uses two
-overlapping Liquid Glass lenses: the rear shows the percentage of the playlist viewed and the
-front shows the countdown to the next wallpaper. Both fill from left to right
-as progress elapses, while the countdown decreases.
+overlapping Liquid Glass lenses. The rear shows the percentage of the playlist
+viewed, and its slim vertical bar fills from the top as wallpapers are seen. The
+front shows the countdown to the next wallpaper and fills from left to right as
+the wallpaper's time elapses, while the countdown decreases.
 
 Choose **Rings** for a circular glass lens and numeric countdown. Its outer ring
 shows time remaining until the next wallpaper; the inner ring shows the share
@@ -27,19 +28,21 @@ information is marked as unknown. Names and sizes load on a worker and are cache
 the session; there are no previews.
 
 Both designs share the rounded **Glass Panel** in expanded mode, with a status
-dot beside each monitor and more room for the wallpaper title and size. On
-Windows 10 1809 and later, native Acrylic blurs the desktop behind the widget;
-Qt adds transparent smoke tint, reflective rims and lens highlights. The native
-region follows the two overlapping lenses, circle or rounded panel, so blur
-does not fill their transparent corners. If Windows rejects Acrylic, the widget
-uses a darker painted fallback. The widget does not take desktop screenshots.
+dot beside each monitor and more room for the wallpaper title and size.
+
+The glass is painted by the widget itself: translucent smoke, light rims, a
+highlight along the top and a soft shadow, with smooth edges at any display
+scaling. Only the lenses, circle or panel are drawn; everything around them is
+fully transparent and lets clicks through. Windows cannot blur behind a shape
+like two overlapping lenses, so the desktop shows through the glass unblurred;
+the smoke is dense enough to keep the widget readable over bright wallpapers.
+The widget does not take desktop screenshots.
 
 The material uses a fixed pearl-blue and lilac palette, with muted paused and
 green completed states. Colours and material transparency are fixed across all
 profiles; old saved colour and opacity values no longer affect rendering.
-Outlined text and a local header backing keep controls readable on bright
-wallpapers. The appearance of native blur also depends on Windows composition
-and transparency settings.
+Countdowns use bold proportional numerals, and soft text shadows keep labels
+legible on bright wallpapers.
 
 Choose a **single widget** or **one per monitor**. The single widget follows
 the monitor selected for the tray by default; it can also be bound to a

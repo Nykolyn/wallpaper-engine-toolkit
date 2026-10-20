@@ -6,6 +6,24 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [4.10.0] - 2026-10-20
+
+### Changed
+
+- Desktop widgets are redrawn to match the Liquid Glass mock-ups: neutral smoke
+  lenses with light rims, a top highlight and soft shadows; bold proportional
+  countdown numerals; soft text shadows instead of black outlines; and a muted
+  lilac elapsed fill. The rear Rectangles lens now shows playlist progress as a
+  slim vertical bar that fills from the top. The expanded state dot sits beside
+  its label, and keyboard focus follows the glass instead of drawing a box.
+
+### Removed
+
+- Native Windows Acrylic behind widgets. Windows blurred the whole window
+  rectangle, which showed as a dark box around the lenses, and its window mask
+  gave stepped corners. Widgets now paint their own glass with smooth edges and
+  fully transparent surroundings at every display scaling.
+
 ## [4.9.1] - 2026-10-20
 
 ### Fixed
@@ -1978,7 +1996,8 @@ restructured yet; the tabs keep their layout and take on the new look.
   was right for one library and wrong for every other. Nothing is tagged now
   unless you ask for it.
 
-[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v4.9.1...HEAD
+[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v4.10.0...HEAD
+[4.10.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v4.9.1...v4.10.0
 [4.9.1]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v4.9.0...v4.9.1
 [4.9.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v4.8.3...v4.9.0
 [4.8.3]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v4.8.2...v4.8.3

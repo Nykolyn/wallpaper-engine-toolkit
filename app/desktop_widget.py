@@ -8,22 +8,28 @@ from __future__ import annotations
 import math
 
 from PySide6.QtCore import QEvent, QPoint, QRectF, QSize, Qt, QTimer, Signal
-from PySide6.QtGui import (QActionGroup, QBrush, QColor, QFontMetricsF, QIcon, QKeySequence,
-                          QLinearGradient, QPainter, QPainterPath, QPen, QRegion, QShortcut)
+from PySide6.QtGui import (QActionGroup, QBrush, QColor, QFont, QFontMetricsF, QIcon, QKeySequence,
+                          QLinearGradient, QPainter, QPainterPath, QPen, QShortcut)
 from PySide6.QtWidgets import (QApplication, QHBoxLayout, QLabel, QMenu,
                               QScrollArea, QToolButton, QVBoxLayout, QWidget)
 
-from . import theme, tray_icon, tray_words as words
+from . import theme, tray_words as words
 from .tray_icon import FINISHED, PAUSED, RUNNING, UNKNOWN
 from .tray_menu import icon_pixmap
 from .widget_desktop import apply_layer
-from .widget_backdrop import apply_backdrop
 from .widget_options import profile, set_option
 
 WIDTH, HEADER_HEIGHT, ROW_HEIGHT = 380, 44, 104
 STATE_COLOUR = {RUNNING: "tray.fill.running", PAUSED: "tray.fill.paused",
                 FINISHED: "tray.fill.ok", UNKNOWN: "tray.fill.unknown"}
 STATE_TEXT = {RUNNING: "Tracking", PAUSED: "Paused", FINISHED: "Finished", UNKNOWN: "Unknown"}
+# Measured on the design mock-ups, in rear-lens widths: the front lens's offset
+# and size, both corner radii, and the playlist bar's x, top and bottom.
+FRONT_AT, FRONT_SIZE = (.41, .52), (1.12, .83)
+BACK_RADIUS, FRONT_RADIUS = .24, .23
+BAR = (.115, .155, .74)
+SHADOW = .045  # of a compact edge, left clear around the lenses for their shadow
+DISPLAY = ("Segoe UI Variable", "Segoe UI")
 
 
 def normalized_position(area, size: QSize, point: QPoint) -> tuple[float, float]:
@@ -56,8 +62,21 @@ def file_size(size) -> str:
         value /= 1024
 
 
+def _sans(px, weight=QFont.Normal):
+    font = QFont()
+    font.setFamilies(list(DISPLAY))
+    font.setPointSizeF(theme.point_size(px))
+    font.setWeight(weight)
+    return font
+
+
+def _numbers(px):
+    """The design's bold countdown face; Segoe UI digits are already tabular."""
+    return _sans(px, QFont.Bold)
+
+
 def _text(painter, rect, value, token, colour="text.mid", alignment=Qt.AlignVCenter, shrink=False):
-    font = theme.font(token)
+    font = theme.font(token) if isinstance(token, str) else QFont(token)
     if shrink:
         width = QFontMetricsF(font).horizontalAdvance(value)
         if width > rect.width():
@@ -66,44 +85,70 @@ def _text(painter, rect, value, token, colour="text.mid", alignment=Qt.AlignVCen
                 font.setPointSizeF(max(1, font.pointSizeF() - .5))
     painter.setFont(font)
     value = QFontMetricsF(font).elidedText(value, Qt.ElideRight, rect.width())
-    painter.setPen(QColor(0, 0, 0, 170))
-    for dx, dy in ((-1, 0), (1, 0), (0, -1), (0, 1)):
-        painter.drawText(rect.translated(dx, dy), alignment, value)
+    # A soft drop shadow rather than an outline keeps light text clean on bright desktops.
+    for dy, alpha in ((1, 95), (2, 40)):
+        painter.setPen(QColor(0, 0, 0, alpha))
+        painter.drawText(rect.translated(0, dy), alignment, value)
     painter.setPen(theme.color(colour) if isinstance(colour, str) else colour)
     painter.drawText(rect, alignment, value)
 
 
-def _glass(painter, rect, radius, native=False):
+def _rounded(rect, radius):
     path = QPainterPath()
     path.addRoundedRect(rect, radius, radius)
-    painter.fillPath(path, theme.color("widget.clear" if native else "widget.glass"))
-    sheen = QLinearGradient(rect.topLeft(), rect.bottomRight())
-    sheen.setColorAt(0, QColor(255, 255, 255, 54))
-    sheen.setColorAt(.44, QColor(255, 255, 255, 4))
-    sheen.setColorAt(1, QColor(187, 179, 219, 26))
-    painter.fillPath(path, QBrush(sheen))
-    edge = QLinearGradient(rect.topLeft(), rect.bottomRight())
-    edge.setColorAt(0, QColor(255, 255, 255, 200))
-    edge.setColorAt(.45, QColor(255, 255, 255, 24))
-    edge.setColorAt(1, theme.color("widget.edge"))
-    painter.setPen(QPen(QBrush(edge), 1.2))
-    painter.setBrush(Qt.NoBrush)
-    painter.drawPath(path)
-    inset = rect.adjusted(1.5, 1.5, -1.5, -1.5)
-    painter.setPen(QPen(QColor(255, 255, 255, 42), 1.5))
-    painter.drawRoundedRect(inset, max(0, radius - 1.5), max(0, radius - 1.5))
+    return path
+
+
+def _shadow(painter, path, depth, keep_out=None):
+    """A soft shadow outside a lens only: translucent glass must not darken itself."""
+    area = QPainterPath()
+    area.addRect(path.boundingRect().adjusted(-2 * depth, -2 * depth, 2 * depth, 2 * depth))
+    area = area.subtracted(path if keep_out is None else path.united(keep_out))
     painter.save()
-    painter.setClipPath(path)
-    gloss = QRectF(rect.left() + radius * .55, rect.top() + 4,
-                   rect.width() - radius * 1.1, max(4, min(13, rect.height() * .14)))
-    light = QLinearGradient(gloss.topLeft(), gloss.bottomLeft())
-    light.setColorAt(0, QColor(255, 255, 255, 75))
-    light.setColorAt(1, QColor(255, 255, 255, 0))
+    painter.setClipPath(area, Qt.IntersectClip)
+    painter.setBrush(Qt.NoBrush)
+    cast = path.translated(0, depth * .35)
+    # Nested strokes add up to a shadow that fades linearly over `depth`.
+    for step in range(6, 0, -1):
+        painter.setPen(QPen(QColor(0, 0, 0, 11), 2 * depth * step / 6, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
+        painter.drawPath(cast)
+    painter.restore()
+
+
+def _glass(painter, rect, radius, material="widget.lens"):
+    """Smoke glass lit from above; `_rim` goes on last, over whatever fills it."""
+    path = _rounded(rect, radius)
+    painter.fillPath(path, theme.color(material))
+    sheen = QLinearGradient(rect.topLeft(), rect.bottomLeft())
+    sheen.setColorAt(0, QColor(255, 255, 255, 30))
+    sheen.setColorAt(.5, QColor(255, 255, 255, 6))
+    sheen.setColorAt(1, QColor(255, 255, 255, 0))
+    painter.fillPath(path, QBrush(sheen))
+    return path
+
+
+def _rim(painter, rect, radius):
+    edge = QLinearGradient(rect.topLeft(), rect.bottomLeft())
+    edge.setColorAt(0, QColor(255, 255, 255, 110))
+    edge.setColorAt(.5, QColor(255, 255, 255, 76))
+    edge.setColorAt(1, QColor(255, 255, 255, 44))
+    painter.setBrush(Qt.NoBrush)
+    painter.setPen(QPen(QBrush(edge), 1))
+    painter.drawRoundedRect(rect.adjusted(.5, .5, -.5, -.5), radius - .5, radius - .5)
+    painter.setPen(QPen(QColor(255, 255, 255, 14), 2))
+    painter.drawRoundedRect(rect.adjusted(2, 2, -2, -2), max(0.0, radius - 2), max(0.0, radius - 2))
+
+
+def _gloss(painter, rect):
+    """The soft highlight along the front lens's upper edge."""
+    pill = QRectF(rect.left() + rect.width() * .15, rect.top() + rect.height() * .065,
+                  rect.width() * .72, rect.height() * .13)
+    light = QLinearGradient(pill.topLeft(), pill.bottomLeft())
+    light.setColorAt(0, QColor(255, 255, 255, 58))
+    light.setColorAt(1, QColor(255, 255, 255, 6))
     painter.setPen(Qt.NoPen)
     painter.setBrush(QBrush(light))
-    painter.drawEllipse(gloss)
-    painter.restore()
-    return path
+    painter.drawRoundedRect(pill, pill.height() / 2, pill.height() / 2)
 
 
 def _ring(painter, rect, fraction, colour, width):
@@ -115,68 +160,110 @@ def _ring(painter, rect, fraction, colour, width):
         painter.drawArc(rect, 90 * 16, -round(360 * 16 * min(1.0, fraction)))
 
 
-def _fill_edge(rect, fraction, stroke=0):
+def _ring_lens(painter, lens, fraction, playlist_fraction, outer, inner, depth):
+    """A round lens: the outer arc is time left, the inner one the playlist left."""
+    d = lens.width()
+    _shadow(painter, _rounded(lens, d / 2), depth)
+    _glass(painter, lens, d / 2)
+    painter.setBrush(Qt.NoBrush)
+    for inset, alpha in ((.035, 22), (.17, 14)):  # the bezel and the face's edge
+        painter.setPen(QPen(QColor(255, 255, 255, alpha), 1))
+        painter.drawEllipse(lens.adjusted(d * inset, d * inset, -d * inset, -d * inset))
+    _ring(painter, lens.adjusted(d * .066, d * .066, -d * .066, -d * .066), fraction, outer, max(2.5, d * .02))
+    _ring(painter, lens.adjusted(d * .133, d * .133, -d * .133, -d * .133), playlist_fraction, inner,
+          max(2.2, d * .015))
+    _rim(painter, lens, d / 2)
+
+
+def _fill_edge(rect, fraction):
     if fraction is None or fraction <= 0:
         return 0.0
     if fraction >= 1:
-        return rect.right() + stroke / 2 + 1
-    return rect.left() - stroke / 2 + (rect.width() + stroke) * fraction
+        return rect.right() + 1
+    return rect.left() + rect.width() * fraction
 
 
 def _rectangle_rects(size):
-    back = tray_icon._rect(tray_icon.BACK, size)
-    front = tray_icon._rect(tray_icon.FRONT, size)
-    back.setHeight(back.width())
+    margin = size * SHADOW
+    unit = (size - 2 * margin) / (FRONT_AT[0] + FRONT_SIZE[0])
+    top = (size - (FRONT_AT[1] + FRONT_SIZE[1]) * unit) / 2
+    back = QRectF(margin, top, unit, unit)
+    front = QRectF(margin + FRONT_AT[0] * unit, top + FRONT_AT[1] * unit,
+                   FRONT_SIZE[0] * unit, FRONT_SIZE[1] * unit)
     return back, front
 
 
-def _rectangles(painter, size, playlist, wallpaper, percent, timer, outer, inner, native=False):
+def _rectangle_paths(size):
     back, front = _rectangle_rects(size)
-    scale = tray_icon.scale(size)
-    back_path = _glass(painter, back, back.width() * .26, native)
-    # The tray clips include thick strokes; glass follows its own painted edges.
-    back_stroke = max(1.5, size / 70)
-    front_fill = front.adjusted(1.5, 1.5, -1.5, -1.5)
-    back_edge = _fill_edge(back, playlist, back_stroke)
-    front_edge = _fill_edge(front_fill, wallpaper)
+    return _rounded(back, back.width() * BACK_RADIUS), _rounded(front, back.width() * FRONT_RADIUS)
+
+
+def _bar_rect(back):
+    unit = back.width()
+    width = max(2.0, unit * .026)
+    return QRectF(back.left() + unit * BAR[0] - width / 2, back.top() + unit * BAR[1],
+                  width, unit * (BAR[2] - BAR[1]))
+
+
+def _bar(painter, back, fraction, colour):
+    """The rear lens's playlist bar, filling from the top as wallpapers are seen."""
+    bar = _bar_rect(back)
+    path = _rounded(bar, bar.width() / 2)
+    track = QLinearGradient(bar.topLeft(), bar.bottomLeft())
+    track.setColorAt(0, QColor(255, 255, 255, 110))
+    track.setColorAt(1, QColor(255, 255, 255, 20))
+    painter.fillPath(path, QBrush(track))
+    if fraction is None or fraction <= 0:
+        return
+    # A first wallpaper always shows; only a complete playlist fills the whole bar.
+    length = bar.height() if fraction >= 1 else min(max(1.0, bar.height() * fraction), bar.height() - 1)
+    fill = QLinearGradient(bar.topLeft(), bar.bottomLeft())
+    dim = QColor(colour)
+    dim.setAlpha(170)
+    fill.setColorAt(0, colour)
+    fill.setColorAt(1, dim)
     painter.save()
-    painter.setClipRect(QRectF(0, 0, back_edge, size))
-    painter.setPen(QPen(outer, back_stroke))
-    painter.drawPath(back_path)
+    painter.setClipRect(QRectF(bar.left() - 1, bar.top(), bar.width() + 2, length), Qt.IntersectClip)
+    painter.fillPath(path, QBrush(fill))
     painter.restore()
-    inset = tray_icon.BACK[5] * scale / 2
-    label = QRectF(back.left() + inset, back.top() + inset, back.width() - 2 * inset,
-                   front.top() - tray_icon.FRONT[5] * scale / 2 - back.top() - inset)
-    _text(painter, label, percent, "type.h3" if size >= 112 else "type.monoXs",
-          "text.hi", Qt.AlignCenter, True)
-    _glass(painter, front, front.height() * .30, native)
-    fill_path = QPainterPath()
-    fill_path.addRoundedRect(front_fill, front.height() * .28, front.height() * .28)
-    tint = inner.darker(155)
-    tint.setAlpha(85 if native else 170)
-    fill = QLinearGradient(front.topLeft(), front.bottomLeft())
-    top = QColor(tint)
-    top.setAlpha(35 if native else 115)
-    fill.setColorAt(0, top)
-    fill.setColorAt(1, tint)
+
+
+def _rectangles(painter, size, playlist, wallpaper, percent, timer, outer, inner):
+    back, front = _rectangle_rects(size)
+    back_path, front_path = _rectangle_paths(size)
+    unit, depth = back.width(), size * SHADOW * .85
+    back_radius, front_radius = unit * BACK_RADIUS, unit * FRONT_RADIUS
+    _shadow(painter, back_path, depth, keep_out=front_path)
+    _glass(painter, back, back_radius)
     painter.save()
-    painter.setClipRect(QRectF(0, 0, front_edge, size))
-    painter.fillPath(fill_path, QBrush(fill))
+    outside = QPainterPath()
+    outside.addRect(QRectF(0, 0, size, size))
+    painter.setClipPath(outside.subtracted(front_path), Qt.IntersectClip)
+    _rim(painter, back, back_radius)
     painter.restore()
-    inset = tray_icon.FRONT[5] * scale / 2 + 2
-    label = front.adjusted(inset, inset, -inset, -inset)
-    # Contrast against the tinted glass, including a white desktop behind it.
-    background = theme.composite(tint, theme.composite("widget.glass", QColor(Qt.white)))
-    on_fill = max((QColor(Qt.black), QColor(Qt.white)), key=lambda colour: theme.contrast(colour, background))
-    if native:
-        on_fill = QColor(Qt.white)
-    for clip, colour in ((QRectF(front_edge, 0, size - front_edge, size), QColor(Qt.white)),
-                         (QRectF(0, 0, front_edge, size), on_fill)):
+    _bar(painter, back, playlist, outer)
+    _text(painter, QRectF(back.left() + unit * .24, back.top() + unit * .17, unit * .64, unit * .24),
+          percent, _sans(max(10.0, unit * .17)), "text.hi", Qt.AlignLeft | Qt.AlignVCenter, True)
+    _shadow(painter, front_path, depth)
+    _glass(painter, front, front_radius)
+    fill_rect = front.adjusted(1, 1, -1, -1)
+    edge = _fill_edge(fill_rect, wallpaper)
+    if edge:
+        fill = QLinearGradient(front.topLeft(), front.bottomLeft())
+        top, bottom = QColor(inner), QColor(inner)
+        top.setAlpha(190)
+        bottom.setAlpha(105)
+        fill.setColorAt(0, top)
+        fill.setColorAt(1, bottom)
         painter.save()
-        painter.setClipRect(clip, Qt.IntersectClip)
-        _text(painter, label, timer, "type.metricLg" if size >= 112 else "type.ring",
-              colour, Qt.AlignCenter, True)
+        painter.setClipRect(QRectF(0, 0, edge, size), Qt.IntersectClip)
+        painter.fillPath(_rounded(fill_rect, front_radius - 1), QBrush(fill))
         painter.restore()
+    _gloss(painter, front)
+    _rim(painter, front, front_radius)
+    _text(painter, QRectF(front.left() + front.width() * .06, front.top() + front.height() * .28,
+                          front.width() * .88, front.height() * .5),
+          timer, _numbers(front.height() * .34), QColor(Qt.white), Qt.AlignCenter, True)
 
 
 class MonitorRow(QWidget):
@@ -190,7 +277,6 @@ class MonitorRow(QWidget):
         self.state, self.fraction, self.playlist_fraction = UNKNOWN, None, None
         self.timer_text, self.remaining, self.size_text = "—:—", None, "size unknown"
         self.compact = True
-        self.native_glass = False
         self.options = {}
 
     def render(self, monitor, progress, countdown, error="", *, metadata=None, options=None, compact=True):
@@ -232,50 +318,40 @@ class MonitorRow(QWidget):
             outer = inner = status_colour
         elif not rectangles and self.state == UNKNOWN:
             outer = status_colour
+        edge = min(self.width(), self.height()) if self.compact else 80
+        margin = edge * SHADOW
+        lens = QRectF(margin, margin * .6, edge - 2 * margin, edge - 2 * margin)
+        painter.save()
+        if not self.compact:
+            painter.translate(12, 10)
         if rectangles:
-            size = min(self.width(), self.height()) if self.compact else 80
-            painter.save()
-            if not self.compact:
-                painter.translate(12, 10)
             playlist = (self.progress.seen / self.progress.total
                         if self.progress is not None and self.progress.total else None)
             percent = f"{self.progress.percent}%" if playlist is not None else "—%"
             _state, wallpaper = words.icon_state(self.progress, self.countdown)
-            _rectangles(painter, size, playlist, wallpaper, percent, self.timer_text, outer, inner, self.native_glass)
-            painter.restore()
-        elif self.compact:
-            edge = min(self.width(), self.height())
-            _glass(painter, QRectF(1, 1, edge - 2, edge - 2), (edge - 2) / 2, self.native_glass)
-            stroke = max(2.5, edge / 48)
-            margin = edge * .075
-            _ring(painter, QRectF(margin, margin, edge - margin * 2, edge - margin * 2), self.fraction, outer, stroke)
-            inset = margin + edge * .07
-            _ring(painter, QRectF(inset, inset, edge - inset * 2, edge - inset * 2),
-                  self.playlist_fraction, inner, max(2.2, stroke - .3))
-            text_width = edge * .61
-            x = (edge - text_width) / 2
-            _text(painter, QRectF(x, edge * .235, text_width, edge * .13), self.monitor,
-                  "type.labelStrong", alignment=Qt.AlignCenter, shrink=True)
-            token = "type.metricLg" if edge < 130 or self.fraction is None else "type.count"
-            _text(painter, QRectF(x - 3, edge * .355, text_width + 6, edge * .235),
-                  self.timer_text, token, "text.hi", Qt.AlignCenter, True)
-            count = f"{words.count(self.remaining)} left" if self.remaining is not None else "playlist —"
-            _text(painter, QRectF(x, edge * .595, text_width, edge * .13), count,
-                  "type.monoSm", "text.body", Qt.AlignCenter, True)
+            _rectangles(painter, edge, playlist, wallpaper, percent, self.timer_text, outer, inner)
+        else:
+            d = lens.width()
+            _ring_lens(painter, lens, self.fraction, self.playlist_fraction, outer, inner, margin * .85)
+            count = f"{words.count(self.remaining)} left" if self.remaining is not None else "— left"
+            if self.compact:
+                _text(painter, QRectF(lens.left() + d * .22, lens.top() + d * .235, d * .56, d * .11),
+                      self.monitor, _sans(max(9.0, d * .085), QFont.DemiBold), "text.body", Qt.AlignCenter, True)
+                timer = QRectF(lens.left() + d * .16, lens.top() + d * .39, d * .68, d * .24)
+                count_rect = QRectF(lens.left() + d * .22, lens.top() + d * .665, d * .56, d * .11)
+            else:
+                timer = QRectF(lens.left() + d * .16, lens.top() + d * .30, d * .68, d * .26)
+                count_rect = QRectF(lens.left() + d * .2, lens.top() + d * .58, d * .6, d * .14)
+            _text(painter, timer, self.timer_text, _numbers(d * .19), QColor(Qt.white), Qt.AlignCenter, True)
+            _text(painter, count_rect, count, _sans(max(9.0, d * .072)), "text.body", Qt.AlignCenter, True)
+        painter.restore()
         if not self.compact:
-            ring = QRectF(12, 10, 80, 80)
-            if not rectangles:
-                _glass(painter, ring, 40, self.native_glass)
-                _ring(painter, ring.adjusted(6, 6, -6, -6), self.fraction, outer, 2.5)
-                _ring(painter, ring.adjusted(12, 12, -12, -12), self.playlist_fraction, inner, 2.2)
-                _text(painter, QRectF(23, 31, 58, 20), self.timer_text, "type.ring", "text.hi", Qt.AlignCenter, True)
-                count = f"{words.count(self.remaining)} left" if self.remaining is not None else "— left"
-                _text(painter, QRectF(25, 53, 54, 15), count, "type.monoXs", "text.mid", Qt.AlignCenter, True)
             start, width = 106, max(0, self.width() - 122)
             _text(painter, QRectF(start, 11, max(0, width - 76), 22), self.monitor, "type.h3", "text.hi")
+            state_width = QFontMetricsF(theme.font("type.caption")).horizontalAdvance(STATE_TEXT[self.state])
             painter.setPen(Qt.NoPen)
             painter.setBrush(inner if self.state == RUNNING else status_colour)
-            painter.drawEllipse(QRectF(self.width() - 81, 21, 4, 4))
+            painter.drawEllipse(QRectF(self.width() - 16 - state_width - 9, 21, 4, 4))
             _text(painter, QRectF(self.width() - 72, 12, 56, 20), STATE_TEXT[self.state],
                   "type.caption", "text.mid", Qt.AlignRight | Qt.AlignVCenter)
             _text(painter, QRectF(start, 38, width, 20), self.progress.playlist if self.progress else "No playlist",
@@ -292,10 +368,14 @@ class MonitorRow(QWidget):
                 divider.setColorAt(1, QColor(255, 255, 255, 0))
                 painter.fillRect(QRectF(16, 0, self.width() - 32, 1), QBrush(divider))
         if self.hasFocus():
-            painter.setPen(QPen(theme.color("border.focus"), 1))
+            # The focus ring follows the glass, so focus never draws a box on the desktop.
+            painter.setPen(QPen(theme.color("border.focus"), 1.5))
             painter.setBrush(Qt.NoBrush)
-            if self.compact and not rectangles:
-                painter.drawEllipse(QRectF(self.rect()).adjusted(1, 1, -1, -1))
+            if self.compact and rectangles:
+                back_path, front_path = _rectangle_paths(edge)
+                painter.drawPath(back_path.united(front_path))
+            elif self.compact:
+                painter.drawEllipse(lens)
             else:
                 painter.drawRoundedRect(QRectF(self.rect()).adjusted(2, 2, -2, -2), 6, 6)
 
@@ -421,7 +501,6 @@ class DesktopWidget(QWidget):
                 row.installEventFilter(self)
                 self.row_layout.addWidget(row)
         for row, name in zip(self.rows, names):
-            row.native_glass = getattr(self, "native_glass", False)
             progress = readings.get(name)
             current = getattr(progress, "current", None)
             item = (metadata or {}).get(current, {})
@@ -434,34 +513,6 @@ class DesktopWidget(QWidget):
         self.setAccessibleName(self.rows[0].accessibleName() if self.mode == "compact" else "Wallpaper playlists")
         self.setAccessibleDescription(self.rows[0].accessibleDescription())
         self.setToolTip(self.rows[0].toolTip())
-        self._update_backdrop()
-        self.update()
-
-    def _update_backdrop(self, force=False):
-        if not self.isVisible():
-            return
-        key = (int(self.winId()), self.mode, self.options["design"], self.size(), self.devicePixelRatioF())
-        if not force and key == getattr(self, "_backdrop_key", None):
-            return
-        self._backdrop_key = key
-        self.native_glass = apply_backdrop(self)
-        path = QPainterPath()
-        if self.mode == "expanded":
-            path.addRoundedRect(QRectF(self.rect()).adjusted(.5, .5, -.5, -.5), 27, 27)
-        elif self.options["design"] == "rings":
-            path.addEllipse(QRectF(self.rect()).adjusted(1, 1, -1, -1))
-        else:
-            back, front = _rectangle_rects(min(self.width(), self.height()))
-            path.addRoundedRect(back, back.width() * .26, back.width() * .26)
-            path.addRoundedRect(front, front.height() * .30, front.height() * .30)
-            path.setFillRule(Qt.WindingFill)
-        if self.native_glass:
-            self.setMask(QRegion(path.toFillPolygon().toPolygon(), Qt.WindingFill))
-        else:
-            self.clearMask()
-        for row in self.rows:
-            row.native_glass = self.native_glass
-            row.update()
         self.update()
 
     def build_menu(self):
@@ -633,12 +684,6 @@ class DesktopWidget(QWidget):
             self._restore_position()
             self.windowHandle().screenChanged.connect(lambda _screen: self._position_timer.start(150))
         QTimer.singleShot(0, lambda: apply_layer(self, self.options["layer"]) if self.isVisible() else None)
-        QTimer.singleShot(0, lambda: self._update_backdrop(force=True))
-
-    def resizeEvent(self, event):  # noqa: N802
-        super().resizeEvent(event)
-        if hasattr(self, "options"):
-            self._update_backdrop()
 
     def moveEvent(self, event):  # noqa: N802
         super().moveEvent(event)
@@ -660,12 +705,6 @@ class DesktopWidget(QWidget):
             return
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
-        native = getattr(self, "native_glass", False)
-        path = _glass(painter, QRectF(self.rect()).adjusted(.5, .5, -.5, -.5), 27, native)
-        if native:
-            # Standard header controls need a contrast backing over bright desktops.
-            shade = QLinearGradient(0, 0, 0, HEADER_HEIGHT + 8)
-            shade.setColorAt(0, QColor(15, 20, 29, 185))
-            shade.setColorAt(.8, QColor(15, 20, 29, 185))
-            shade.setColorAt(1, QColor(15, 20, 29, 0))
-            painter.fillPath(path, QBrush(shade))
+        panel = QRectF(self.rect())
+        _glass(painter, panel, 27, "widget.glass")
+        _rim(painter, panel, 27)

@@ -74,7 +74,6 @@ def run() -> tuple[bool, str]:
                         ("app.widget_options", "independent widget profiles and appearance"),
                         ("app.widget_metadata", "current wallpaper names and file sizes on a worker"),
                         ("app.widget_desktop", "desktop, normal and always-on-top widget layers"),
-                        ("app.widget_backdrop", "Windows acrylic and the portable widget fallback"),
                         ("app.widget_control", "showing the widget through the tracker"),
                         ("app.widget_startup", "the widget's Windows startup entry"),
                         ("app.app_identity", "the balloons' sender: the Start-menu shortcut")):

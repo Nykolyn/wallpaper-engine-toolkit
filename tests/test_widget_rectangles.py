@@ -71,11 +71,14 @@ for size in (112, 144, 176):
     p.seen, p.percent = 10, 50
     clock.running = 150
     widget.render([p], {"Monitor1": clock}, p)
-    check(f"{size}: rear playlist outline fills independently to fifty percent",
-          image.pixelColor(round(size * .3), round(size * .1))
-          != empty.pixelColor(round(size * .3), round(size * .1))
-          and image.pixelColor(round(size * .52), round(size * .1))
-          == empty.pixelColor(round(size * .52), round(size * .1)))
+    back, _front = drawing._rectangle_rects(size)
+    bar = drawing._bar_rect(back)
+    x = round(bar.center().x() - .5)
+    check(f"{size}: rear playlist bar fills from the top to fifty percent",
+          image.pixelColor(x, round(bar.top() + bar.height() * .25))
+          != empty.pixelColor(x, round(bar.top() + bar.height() * .25))
+          and image.pixelColor(x, round(bar.top() + bar.height() * .75))
+          == empty.pixelColor(x, round(bar.top() + bar.height() * .75)))
     check(f"{size}: front wallpaper fills a quarter from the left",
           image.pixelColor(round(size * .42), round(size * .83))
           != empty.pixelColor(round(size * .42), round(size * .83))
@@ -125,28 +128,29 @@ for mode, size in (("compact", 112), ("compact", 144), ("compact", 176), ("expan
         check(f"{mode} {size}: complete countdown {expected} reaches the painter", expected in drawn)
 widget._set_option("mode", "compact")
 widget._set_option("size", 144)
-for fill in ("#FFFFFF", "#000000"):
-    widget._set_option("inner_color", fill)
-    widget.render([p], {"Monitor1": Countdown("Monitor1", 600, running=300, known=True)}, p)
-    painted.clear()
-    with patch.object(drawing, "_text", record_text):
-        image = snapshot()
-    rects = [rect for value, rect in painted if value == "5:00"]
-    foreground = set()
-    if rects:
-        rect = rects[0].toAlignedRect()
-        foreground = {image.pixelColor(x, y).name() for x in range(rect.left(), rect.right())
-                      for y in range(rect.top(), rect.bottom())}
-    white = QImage(image.size(), QImage.Format_ARGB32_Premultiplied)
-    white.fill(Qt.white)
-    painter = QPainter(white)
-    painter.drawImage(0, 0, image)
-    painter.end()
-    fill_background = white.pixelColor(60, 120)
-    readable = {colour for colour in ("#000000", "#ffffff")
-                if theme.contrast(QColor(colour), fill_background) >= 4.5}
-    check(f"timer keeps contrast despite obsolete {fill} custom color",
-          bool(readable & foreground) and "#ffffff" in foreground)
+widget._set_option("inner_color", "#000000")
+widget.render([p], {"Monitor1": Countdown("Monitor1", 600, running=300, known=True)}, p)
+painted.clear()
+with patch.object(drawing, "_text", record_text):
+    image = snapshot()
+rects = [rect for value, rect in painted if value == "5:00"]
+foreground = set()
+if rects:
+    rect = rects[0].toAlignedRect()
+    foreground = {image.pixelColor(x, y).name() for x in range(rect.left(), rect.right())
+                  for y in range(rect.top(), rect.bottom())}
+white = QImage(image.size(), QImage.Format_ARGB32_Premultiplied)
+white.fill(Qt.white)
+painter = QPainter(white)
+painter.drawImage(0, 0, image)
+painter.end()
+_back, front = drawing._rectangle_rects(144)
+# The unfilled right of the front lens, below the timer and clear of the rim.
+lens = white.pixelColor(round(front.right() - front.width() * .12), round(front.bottom() - front.height() * .2))
+check("white timer over the lens stays readable on a white desktop",
+      "#ffffff" in foreground and theme.contrast(QColor(Qt.white), lens) >= 4.5)
+check("timer uses the design's proportional bold numerals, not the monospace face",
+      drawing._numbers(20).family() not in theme.MONO and drawing._numbers(20).weight() >= 600)
 
 widget._set_option("inner_color", "#22C3B0")
 clock.paused = True
