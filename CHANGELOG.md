@@ -13,8 +13,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Desktop widgets are redrawn to match the Liquid Glass mock-ups: neutral smoke
   lenses with light rims, a top highlight and soft shadows; bold proportional
   countdown numerals; soft text shadows instead of black outlines; and a muted
-  lilac elapsed fill. The rear Rectangles lens now shows playlist progress as a
-  slim vertical bar that fills from the top. The expanded state dot sits beside
+  lilac elapsed fill. Both Rectangles lenses fill from the left with a tint: pearl
+  for the playlist, lilac for the wallpaper. The expanded state dot sits beside
   its label, and keyboard focus follows the glass instead of drawing a box.
 
 ### Removed
