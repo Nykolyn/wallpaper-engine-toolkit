@@ -6,6 +6,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [4.10.1] - 2026-10-20
+
+### Fixed
+
+- The rear Rectangles lens fills from the left with a pearl tint as the
+  playlist is viewed, like the front lens does for the wallpaper, instead of a
+  slim vertical bar. The mock-up's thin strip was a 6 % fill.
+
 ## [4.10.0] - 2026-10-20
 
 ### Changed
@@ -1996,7 +2004,8 @@ restructured yet; the tabs keep their layout and take on the new look.
   was right for one library and wrong for every other. Nothing is tagged now
   unless you ask for it.
 
-[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v4.10.0...HEAD
+[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v4.10.1...HEAD
+[4.10.1]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v4.10.0...v4.10.1
 [4.10.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v4.9.1...v4.10.0
 [4.9.1]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v4.9.0...v4.9.1
 [4.9.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v4.8.3...v4.9.0
