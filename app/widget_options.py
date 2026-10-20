@@ -6,7 +6,7 @@ import re
 
 DEFAULTS = {
     "mode": "compact", "design": "rectangles", "size": 144, "opacity": 100, "layer": "desktop",
-    "locked": False, "outer_color": "#4C8DFF", "inner_color": "#22C3B0",
+    "locked": False, "outer_color": "#C3D2ED", "inner_color": "#C5A6E8",
     "monitor": "tray", "enabled": True,
 }
 SIZES = (112, 144, 176)

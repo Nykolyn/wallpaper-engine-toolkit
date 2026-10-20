@@ -8,7 +8,8 @@ from __future__ import annotations
 import math
 
 from PySide6.QtCore import QEvent, QPoint, QRectF, QSize, Qt, QTimer, Signal
-from PySide6.QtGui import QActionGroup, QColor, QFontMetricsF, QIcon, QKeySequence, QPainter, QPen, QShortcut
+from PySide6.QtGui import (QActionGroup, QBrush, QColor, QFontMetricsF, QIcon, QKeySequence,
+                          QLinearGradient, QPainter, QPainterPath, QPen, QShortcut)
 from PySide6.QtWidgets import (QApplication, QColorDialog, QHBoxLayout, QLabel, QMenu,
                               QScrollArea, QToolButton, QVBoxLayout, QWidget)
 
@@ -16,9 +17,9 @@ from . import theme, tray_icon, tray_words as words
 from .tray_icon import FINISHED, PAUSED, RUNNING, UNKNOWN
 from .tray_menu import icon_pixmap
 from .widget_desktop import apply_layer
-from .widget_options import profile, set_option
+from .widget_options import DEFAULTS, profile, set_option
 
-WIDTH, HEADER_HEIGHT, ROW_HEIGHT = 320, 28, 84
+WIDTH, HEADER_HEIGHT, ROW_HEIGHT = 380, 44, 104
 STATE_COLOUR = {RUNNING: "tray.fill.running", PAUSED: "tray.fill.paused",
                 FINISHED: "tray.fill.ok", UNKNOWN: "tray.fill.unknown"}
 STATE_TEXT = {RUNNING: "Tracking", PAUSED: "Paused", FINISHED: "Finished", UNKNOWN: "Unknown"}
@@ -68,35 +69,76 @@ def _text(painter, rect, value, token, colour="text.mid", alignment=Qt.AlignVCen
     painter.drawText(rect, alignment, value)
 
 
+def _glass(painter, rect, radius):
+    path = QPainterPath()
+    path.addRoundedRect(rect, radius, radius)
+    painter.fillPath(path, theme.color("widget.glass"))
+    painter.fillPath(path, QBrush(theme.gradient("surface.glass", rect)))
+    edge = QLinearGradient(rect.topLeft(), rect.bottomRight())
+    edge.setColorAt(0, QColor(255, 255, 255, 125))
+    edge.setColorAt(.45, QColor(255, 255, 255, 24))
+    edge.setColorAt(1, theme.color("widget.edge"))
+    painter.setPen(QPen(QBrush(edge), 1))
+    painter.setBrush(Qt.NoBrush)
+    painter.drawPath(path)
+    inset = rect.adjusted(1.5, 1.5, -1.5, -1.5)
+    painter.setPen(QPen(theme.color("border.hairline"), 1))
+    painter.drawRoundedRect(inset, max(0, radius - 1.5), max(0, radius - 1.5))
+    return path
+
+
 def _ring(painter, rect, fraction, colour, width):
     painter.setBrush(Qt.NoBrush)
-    painter.setPen(QPen(theme.color("tray.body"), width))
+    painter.setPen(QPen(theme.color("widget.track"), width))
     painter.drawEllipse(rect)
     if fraction is not None and fraction > 0:
         painter.setPen(QPen(colour, width, Qt.SolidLine, Qt.RoundCap))
         painter.drawArc(rect, 90 * 16, -round(360 * 16 * min(1.0, fraction)))
 
 
+def _fill_edge(rect, fraction, stroke=0):
+    if fraction is None or fraction <= 0:
+        return 0.0
+    if fraction >= 1:
+        return rect.right() + stroke / 2 + 1
+    return rect.left() - stroke / 2 + (rect.width() + stroke) * fraction
+
+
 def _rectangles(painter, size, playlist, wallpaper, percent, timer, outer, inner):
-    colours = tray_icon.palette()
     back = tray_icon._rect(tray_icon.BACK, size)
     front = tray_icon._rect(tray_icon.FRONT, size)
+    back.setHeight(back.width())
     scale = tray_icon.scale(size)
-    # Give the percentage an opaque backing even over a bright desktop wallpaper.
-    painter.setPen(Qt.NoPen)
-    painter.setBrush(colours.body)
-    painter.drawRoundedRect(back, tray_icon.BACK[4] * scale, tray_icon.BACK[4] * scale)
-    back_edge, front_edge = tray_icon.fill_edges(size, wallpaper, playlist, "front_wallpaper")
-    tray_icon._draw_mark(painter, size, colours, inner, back_edge,
-                         back_colour=outer, front_edge=front_edge)
+    back_path = _glass(painter, back, back.width() * .26)
+    # The tray clips include thick strokes; glass follows its own painted edges.
+    back_stroke = max(1.5, size / 70)
+    front_fill = front.adjusted(1.5, 1.5, -1.5, -1.5)
+    back_edge = _fill_edge(back, playlist, back_stroke)
+    front_edge = _fill_edge(front_fill, wallpaper)
+    painter.save()
+    painter.setClipRect(QRectF(0, 0, back_edge, size))
+    painter.setPen(QPen(outer, back_stroke))
+    painter.drawPath(back_path)
+    painter.restore()
     inset = tray_icon.BACK[5] * scale / 2
     label = QRectF(back.left() + inset, back.top() + inset, back.width() - 2 * inset,
                    front.top() - tray_icon.FRONT[5] * scale / 2 - back.top() - inset)
     _text(painter, label, percent, "type.h3" if size >= 112 else "type.monoXs",
           "text.hi", Qt.AlignCenter, True)
+    _glass(painter, front, front.height() * .30)
+    fill_path = QPainterPath()
+    fill_path.addRoundedRect(front_fill, front.height() * .28, front.height() * .28)
+    tint = inner.darker(155)
+    tint.setAlpha(225)
+    painter.save()
+    painter.setClipRect(QRectF(0, 0, front_edge, size))
+    painter.fillPath(fill_path, tint)
+    painter.restore()
     inset = tray_icon.FRONT[5] * scale / 2 + 2
     label = front.adjusted(inset, inset, -inset, -inset)
-    on_fill = max((QColor(Qt.black), QColor(Qt.white)), key=lambda colour: theme.contrast(colour, inner))
+    # Contrast against the tinted glass, including a white desktop behind it.
+    background = theme.composite(tint, theme.composite("widget.glass", QColor(Qt.white)))
+    on_fill = max((QColor(Qt.black), QColor(Qt.white)), key=lambda colour: theme.contrast(colour, background))
     for clip, colour in ((QRectF(front_edge, 0, size - front_edge, size), QColor(Qt.white)),
                          (QRectF(0, 0, front_edge, size), on_fill)):
         painter.save()
@@ -149,8 +191,8 @@ class MonitorRow(QWidget):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
         rectangles = self.options.get("design", "rectangles") == "rectangles"
-        outer = QColor(self.options.get("outer_color", "#4C8DFF"))
-        inner = QColor(self.options.get("inner_color", "#22C3B0"))
+        outer = QColor(self.options.get("outer_color", DEFAULTS["outer_color"]))
+        inner = QColor(self.options.get("inner_color", DEFAULTS["inner_color"]))
         status_colour = theme.color(STATE_COLOUR[self.state])
         if rectangles and self.state == FINISHED:
             outer = inner = status_colour
@@ -159,10 +201,10 @@ class MonitorRow(QWidget):
         elif not rectangles and self.state == UNKNOWN:
             outer = status_colour
         if rectangles:
-            size = min(self.width(), self.height()) if self.compact else 68
+            size = min(self.width(), self.height()) if self.compact else 80
             painter.save()
             if not self.compact:
-                painter.translate(9, 8)
+                painter.translate(12, 10)
             playlist = (self.progress.seen / self.progress.total
                         if self.progress is not None and self.progress.total else None)
             percent = f"{self.progress.percent}%" if playlist is not None else "—%"
@@ -171,11 +213,13 @@ class MonitorRow(QWidget):
             painter.restore()
         elif self.compact:
             edge = min(self.width(), self.height())
-            stroke = max(4, edge / 28)
-            _ring(painter, QRectF(5, 5, edge - 10, edge - 10), self.fraction, outer, stroke)
-            inset = 5 + stroke + 4
+            _glass(painter, QRectF(1, 1, edge - 2, edge - 2), (edge - 2) / 2)
+            stroke = max(2.5, edge / 48)
+            margin = edge * .075
+            _ring(painter, QRectF(margin, margin, edge - margin * 2, edge - margin * 2), self.fraction, outer, stroke)
+            inset = margin + edge * .07
             _ring(painter, QRectF(inset, inset, edge - inset * 2, edge - inset * 2),
-                  self.playlist_fraction, inner, max(3, stroke - 1))
+                  self.playlist_fraction, inner, max(2.2, stroke - .3))
             text_width = edge * .61
             x = (edge - text_width) / 2
             _text(painter, QRectF(x, edge * .235, text_width, edge * .13), self.monitor,
@@ -187,26 +231,34 @@ class MonitorRow(QWidget):
             _text(painter, QRectF(x, edge * .595, text_width, edge * .13), count,
                   "type.monoSm", "text.body", Qt.AlignCenter, True)
         if not self.compact:
-            ring = QRectF(9, 8, 68, 68)
+            ring = QRectF(12, 10, 80, 80)
             if not rectangles:
-                _ring(painter, ring, self.fraction, outer, 4)
-                _ring(painter, ring.adjusted(8, 8, -8, -8), self.playlist_fraction, inner, 3)
-                _text(painter, QRectF(15, 26, 56, 19), self.timer_text, "type.ring", "text.hi", Qt.AlignCenter, True)
+                _glass(painter, ring, 40)
+                _ring(painter, ring.adjusted(6, 6, -6, -6), self.fraction, outer, 2.5)
+                _ring(painter, ring.adjusted(12, 12, -12, -12), self.playlist_fraction, inner, 2.2)
+                _text(painter, QRectF(23, 31, 58, 20), self.timer_text, "type.ring", "text.hi", Qt.AlignCenter, True)
                 count = f"{words.count(self.remaining)} left" if self.remaining is not None else "— left"
-                _text(painter, QRectF(19, 45, 48, 15), count, "type.monoXs", "text.mid", Qt.AlignCenter, True)
-            start, width = 91, max(0, self.width() - 103)
-            _text(painter, QRectF(start, 7, width - 68, 20), self.monitor, "type.h3", "text.hi")
-            _text(painter, QRectF(self.width() - 79, 7, 66, 20), STATE_TEXT[self.state],
-                  "type.caption", status_colour, Qt.AlignRight | Qt.AlignVCenter)
-            _text(painter, QRectF(start, 27, width, 20), self.progress.playlist if self.progress else "No playlist",
+                _text(painter, QRectF(25, 53, 54, 15), count, "type.monoXs", "text.mid", Qt.AlignCenter, True)
+            start, width = 106, max(0, self.width() - 122)
+            _text(painter, QRectF(start, 11, max(0, width - 76), 22), self.monitor, "type.h3", "text.hi")
+            painter.setPen(Qt.NoPen)
+            painter.setBrush(inner if self.state == RUNNING else status_colour)
+            painter.drawEllipse(QRectF(self.width() - 81, 21, 4, 4))
+            _text(painter, QRectF(self.width() - 72, 12, 56, 20), STATE_TEXT[self.state],
+                  "type.caption", "text.mid", Qt.AlignRight | Qt.AlignVCenter)
+            _text(painter, QRectF(start, 38, width, 20), self.progress.playlist if self.progress else "No playlist",
                   "type.bodySm", "text.body")
             size_width = QFontMetricsF(theme.font("type.caption")).horizontalAdvance(self.size_text)
-            _text(painter, QRectF(start, 49, max(0, width - size_width - 9), 20),
-                  self.wallpaper_title, "type.bodySm", "text.lo")
-            _text(painter, QRectF(self.width() - 12 - size_width, 49, size_width, 20),
-                  self.size_text, "type.caption", "text.lo", Qt.AlignRight | Qt.AlignVCenter)
-            painter.setPen(QPen(theme.color("border.faint"), 1))
-            painter.drawLine(12, self.height() - 1, self.width() - 12, self.height() - 1)
+            _text(painter, QRectF(start, 67, max(0, width - size_width - 9), 20),
+                  self.wallpaper_title, "type.bodySm", "text.mid")
+            _text(painter, QRectF(self.width() - 16 - size_width, 67, size_width, 20),
+                  self.size_text, "type.caption", "text.mid", Qt.AlignRight | Qt.AlignVCenter)
+            if self.y() > 0:
+                divider = QLinearGradient(16, 0, self.width() - 16, 0)
+                divider.setColorAt(0, QColor(255, 255, 255, 0))
+                divider.setColorAt(.5, theme.color("border.control"))
+                divider.setColorAt(1, QColor(255, 255, 255, 0))
+                painter.fillRect(QRectF(16, 0, self.width() - 32, 1), QBrush(divider))
         if self.hasFocus():
             painter.setPen(QPen(theme.color("border.focus"), 1))
             painter.setBrush(Qt.NoBrush)
@@ -239,8 +291,8 @@ class DesktopWidget(QWidget):
         self.header.setFixedHeight(HEADER_HEIGHT)
         self.header.installEventFilter(self)
         header_layout = QHBoxLayout(self.header)
-        header_layout.setContentsMargins(11, 1, 4, 1)
-        header_layout.setSpacing(2)
+        header_layout.setContentsMargins(16, 4, 11, 2)
+        header_layout.setSpacing(4)
         title = QLabel("Playlists")
         title.setFont(theme.font("type.labelStrong"))
         title.setAttribute(Qt.WA_TransparentForMouseEvents)
@@ -288,7 +340,7 @@ class DesktopWidget(QWidget):
         button.setToolTip(description)
         button.setAccessibleName(description)
         button.setAutoRaise(True)
-        button.setFixedSize(65 if text else 25, 24)
+        button.setFixedSize(65 if text else 28, 28)
         if icon:
             button.setIcon(QIcon(icon_pixmap(icon, theme.color("text.mid"), 16, self.devicePixelRatioF())))
         button.clicked.connect(callback)
@@ -549,14 +601,8 @@ class DesktopWidget(QWidget):
         event.accept()
 
     def paintEvent(self, event):  # noqa: N802
-        if self.mode == "compact" and self.options["design"] == "rectangles":
+        if self.mode == "compact":
             return
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
-        painter.setBrush(theme.color("surface.overlay"))
-        painter.setPen(QPen(theme.color("border.control"), 1))
-        bounds = QRectF(self.rect()).adjusted(.5, .5, -.5, -.5)
-        if self.mode == "compact":
-            painter.drawEllipse(bounds)
-        else:
-            painter.drawRoundedRect(bounds, theme.R_LG, theme.R_LG)
+        _glass(painter, QRectF(self.rect()).adjusted(.5, .5, -.5, -.5), 27)

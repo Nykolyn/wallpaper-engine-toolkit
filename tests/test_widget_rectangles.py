@@ -14,7 +14,8 @@ os.environ["WALLPAPER_TOOLKIT_DATA"] = tempfile.mkdtemp(prefix="widget_rectangle
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 sys.stdout.reconfigure(errors="replace")
 
-from PySide6.QtGui import QPainter  # noqa: E402
+from PySide6.QtCore import Qt  # noqa: E402
+from PySide6.QtGui import QColor, QImage, QPainter  # noqa: E402
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
 from app import desktop_widget as drawing, theme  # noqa: E402
@@ -32,7 +33,8 @@ def check(label, condition):
     print(("PASS " if condition else "FAIL ") + label)
 
 
-settings = Settings()
+settings = Settings({"widget": {"profiles": {"default": {
+    "outer_color": "#4C8DFF", "inner_color": "#22C3B0"}}}})
 widget = DesktopWidget(settings)
 p = SimpleNamespace(monitor="Monitor1", playlist="Space", seen=10, total=20, percent=50,
                     current="X:/wallpaper.mp4", current_title="Space wallpaper")
@@ -62,15 +64,44 @@ for size in (112, 144, 176):
         {value for value, _rect in painted}))
     check(f"{size}: transparent corners follow offset rectangles", image.pixelColor(
         round(size * .85), round(size * .15)).alpha() == 0)
+    p.seen, p.percent = 0, 0
+    clock.running = 0
+    widget.render([p], {"Monitor1": clock}, p)
+    empty = snapshot()
+    p.seen, p.percent = 10, 50
+    clock.running = 150
+    widget.render([p], {"Monitor1": clock}, p)
     check(f"{size}: rear playlist outline fills independently to fifty percent",
-          image.pixelColor(round(size * .17), round(size * .10)).name() == "#4c8dff"
-          and image.pixelColor(round(size * .52), round(size * .10)).name() == "#4a5468")
+          image.pixelColor(round(size * .3), round(size * .1))
+          != empty.pixelColor(round(size * .3), round(size * .1))
+          and image.pixelColor(round(size * .52), round(size * .1))
+          == empty.pixelColor(round(size * .52), round(size * .1)))
     check(f"{size}: front wallpaper fills a quarter from the left",
-          image.pixelColor(round(size * .42), round(size * .83)).name() == "#22c3b0"
-          and image.pixelColor(round(size * .70), round(size * .83)).name() == "#2b3345")
+          image.pixelColor(round(size * .42), round(size * .83))
+          != empty.pixelColor(round(size * .42), round(size * .83))
+          and image.pixelColor(round(size * .70), round(size * .83))
+          == empty.pixelColor(round(size * .70), round(size * .83)))
     for value, rect in painted:
         if value in ("50%", "7:30"):
             check(f"{size}: {value} label stays inside its widget", widget.rect().contains(rect.toAlignedRect()))
+
+# Fixed labels isolate the progress marks: a 1% change must be visible, and
+# neither mark may look complete before reaching 100%.
+for size in (112, 144, 176):
+    for channel in ("playlist", "wallpaper"):
+        images = []
+        for fraction in (0, .01, .99, 1):
+            image = QImage(size, size, QImage.Format_ARGB32_Premultiplied)
+            image.fill(Qt.transparent)
+            painter = QPainter(image)
+            painter.setRenderHint(QPainter.Antialiasing)
+            drawing._rectangles(painter, size, fraction if channel == "playlist" else .5,
+                                fraction if channel == "wallpaper" else .5,
+                                "50%", "5:00", QColor("#4C8DFF"), QColor("#22C3B0"))
+            painter.end()
+            images.append(image)
+        check(f"{size}: first percent of {channel} progress is visible", images[0] != images[1])
+        check(f"{size}: {channel} only looks complete at 100 percent", images[2] != images[3])
 
 actual_text = QPainter.drawText
 drawn = []
@@ -106,25 +137,32 @@ for fill in ("#FFFFFF", "#000000", "#4C8DFF", "#22C3B0"):
         rect = rects[0].toAlignedRect()
         foreground = {image.pixelColor(x, y).name() for x in range(rect.left(), rect.right())
                       for y in range(rect.top(), rect.bottom())}
-    expected = "#000000" if fill != "#000000" else "#ffffff"
+    white = QImage(image.size(), QImage.Format_ARGB32_Premultiplied)
+    white.fill(Qt.white)
+    painter = QPainter(white)
+    painter.drawImage(0, 0, image)
+    painter.end()
+    fill_background = white.pixelColor(60, 120)
+    readable = {colour for colour in ("#000000", "#ffffff")
+                if theme.contrast(QColor(colour), fill_background) >= 4.5}
     check(f"timer text contrasts across empty and {fill} filled halves",
-          expected in foreground and "#ffffff" in foreground)
+          bool(readable & foreground) and "#ffffff" in foreground)
 
 widget._set_option("inner_color", "#22C3B0")
 clock.paused = True
 widget.render([p], {"Monitor1": clock}, p)
 check("paused timer keeps its elapsed fill and countdown", widget.rows[0].timer_text == "7:30"
-      and snapshot().pixelColor(60, 120).name() == "#7c879c")
+      and widget.rows[0].state == "paused" and widget.rows[0].fraction == .75)
 clock.known = False
 widget.render([p], {"Monitor1": clock}, p)
 image = snapshot()
 check("unknown timer leaves known playlist progress available", widget.rows[0].timer_text == "—:—"
-      and image.pixelColor(25, 14).name() == "#4c8dff"
-      and image.pixelColor(60, 120).name() == "#2b3345")
+      and widget.rows[0].playlist_fraction == .5 and widget.rows[0].fraction is None)
 p.seen, p.percent = 20, 100
 widget.render([p], {"Monitor1": clock}, p)
-check("finished playlist uses a full successful fill", snapshot().pixelColor(
-    100, 120).name() == "#3dd68c")
+check("finished playlist uses a full successful fill", widget.rows[0].state == "finished"
+      and widget.rows[0].remaining == 0 and snapshot().pixelColor(100, 120).green()
+      > snapshot().pixelColor(100, 120).red())
 
 menu = widget.build_menu()
 design_menu = next((a.menu() for a in menu.actions() if a.text() == "Design"), None)

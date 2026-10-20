@@ -117,7 +117,8 @@ class WidgetPage(Page):
         grid.addWidget(self.outer_color_group, 3, 0, 1, 2)
         grid.addWidget(self.inner_color_group, 4, 0, 1, 2)
         appearance.addLayout(grid)
-        appearance_note = label("Expanded adds the current wallpaper's title and file size.", "type.caption", "lo")
+        appearance_note = label("Liquid Glass in compact view; Glass Panel in expanded view, with the wallpaper's title and file size.",
+                                "type.caption", "lo")
         appearance_note.setWordWrap(True)
         appearance.addWidget(appearance_note)
         self.behavior_panel, behavior = self._panel("Placement & behavior", "Position is remembered for each widget")

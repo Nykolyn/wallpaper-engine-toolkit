@@ -102,8 +102,8 @@ check("expanded includes all monitors including missing playlists", widget.mode 
       and [row.monitor for row in widget.rows] == ["Monitor0", "Monitor1", "Monitor2"])
 check("missing playlist is clear and has no countdown", widget.rows[-1].progress is None
       and widget.rows[-1].timer_text == "—:—" and "No playlist" in widget.rows[-1].accessibleName())
-check("expanded is dense", widget.width() == 320 and widget.height() == 28 + 84 * 3
-      and all(row.height() == 84 for row in widget.rows))
+check("expanded glass panel leaves room for readable metadata", widget.width() == 380 and widget.height() == 44 + 104 * 3
+      and all(row.height() == 104 for row in widget.rows))
 check("mode button persists choice", profile(Settings.load())["mode"] == "expanded")
 widget.render([], {}, None, "Wallpaper Engine not found", monitors=("Monitor0", "Monitor1"))
 check("feed error remains accessible", "Wallpaper Engine not found" in widget.rows[0].accessibleDescription())
@@ -195,7 +195,7 @@ with patch.object(QApplication, "screens", return_value=[left, right]), \
     left.scale = 1.5
     widget._restore_position()
     check("resolution and DPI change restores inside logical available area", left.area.contains(widget.geometry())
-          and widget.width() == 320)
+          and widget.width() == 380)
 with patch.object(QApplication, "screens", return_value=[right]), \
         patch.object(QApplication, "primaryScreen", return_value=right):
     widget._restore_position()
@@ -264,7 +264,7 @@ for key in ("default", "Monitor1"):
             cycle._set_option("mode", "expanded")
             app.processEvents()
             expanded_rows = 2 if key == "default" else 1
-            check(f"{key} expanded {edge} lays out monitor rows", cycle.size() == QSize(320, 28 + 84 * expanded_rows))
+            check(f"{key} expanded {edge} lays out monitor rows", cycle.size() == QSize(380, 44 + 104 * expanded_rows))
             cycle._set_option("mode", "compact")
             check(f"{key} compact {edge} immediately drops expanded minimum width", cycle.size() == QSize(edge, edge))
             app.processEvents()

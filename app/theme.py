@@ -63,6 +63,9 @@ TOKENS: dict[str, str] = {
     "surface.well": "rgba(8,10,14,.5)",         # inputs, tracks, thumbs
     "surface.console": "rgba(6,8,12,.72)",
     "surface.overlay": "rgba(18,22,30,.94)",    # dialog, toast
+    "widget.glass": "rgba(24,30,40,.87)",       # desktop glass, readable over bright wallpapers
+    "widget.edge": "rgba(255,255,255,.32)",
+    "widget.track": "rgba(255,255,255,.10)",
     "surface.popup": "rgba(18,22,30,.97)",      # menu, dropdown, tool tip
     "surface.note": "rgba(255,255,255,.04)",    # a neutral Callout
     "surface.tile": "rgba(255,255,255,.05)",    # an EmptyState's icon tile
