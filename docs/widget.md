@@ -7,9 +7,8 @@ also offers **Show widgets / Hide widgets** and **Widget…** to open the contro
 
 **Compact** is the default view. Its default **Rectangles** design uses two
 overlapping Liquid Glass lenses. The rear shows the percentage of the playlist
-viewed, and its slim vertical bar fills from the top as wallpapers are seen. The
-front shows the countdown to the next wallpaper and fills from left to right as
-the wallpaper's time elapses, while the countdown decreases.
+viewed and the front the countdown to the next wallpaper. Both fill from left
+to right with a tint as progress elapses, while the countdown decreases.
 
 Choose **Rings** for a circular glass lens and numeric countdown. Its outer ring
 shows time remaining until the next wallpaper; the inner ring shows the share

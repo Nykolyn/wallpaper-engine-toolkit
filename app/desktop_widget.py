@@ -24,10 +24,9 @@ STATE_COLOUR = {RUNNING: "tray.fill.running", PAUSED: "tray.fill.paused",
                 FINISHED: "tray.fill.ok", UNKNOWN: "tray.fill.unknown"}
 STATE_TEXT = {RUNNING: "Tracking", PAUSED: "Paused", FINISHED: "Finished", UNKNOWN: "Unknown"}
 # Measured on the design mock-ups, in rear-lens widths: the front lens's offset
-# and size, both corner radii, and the playlist bar's x, top and bottom.
+# and size, and both corner radii.
 FRONT_AT, FRONT_SIZE = (.41, .52), (1.12, .83)
 BACK_RADIUS, FRONT_RADIUS = .24, .23
-BAR = (.115, .155, .74)
 SHADOW = .045  # of a compact edge, left clear around the lenses for their shadow
 DISPLAY = ("Segoe UI Variable", "Segoe UI")
 
@@ -198,33 +197,21 @@ def _rectangle_paths(size):
     return _rounded(back, back.width() * BACK_RADIUS), _rounded(front, back.width() * FRONT_RADIUS)
 
 
-def _bar_rect(back):
-    unit = back.width()
-    width = max(2.0, unit * .026)
-    return QRectF(back.left() + unit * BAR[0] - width / 2, back.top() + unit * BAR[1],
-                  width, unit * (BAR[2] - BAR[1]))
-
-
-def _bar(painter, back, fraction, colour):
-    """The rear lens's playlist bar, filling from the top as wallpapers are seen."""
-    bar = _bar_rect(back)
-    path = _rounded(bar, bar.width() / 2)
-    track = QLinearGradient(bar.topLeft(), bar.bottomLeft())
-    track.setColorAt(0, QColor(255, 255, 255, 110))
-    track.setColorAt(1, QColor(255, 255, 255, 20))
-    painter.fillPath(path, QBrush(track))
-    if fraction is None or fraction <= 0:
+def _fill(painter, rect, radius, fraction, colour, alphas):
+    """Tint a lens from the left up to its share of progress, clipped to its shape."""
+    fill_rect = rect.adjusted(1, 1, -1, -1)
+    edge = _fill_edge(fill_rect, fraction)
+    if not edge:
         return
-    # A first wallpaper always shows; only a complete playlist fills the whole bar.
-    length = bar.height() if fraction >= 1 else min(max(1.0, bar.height() * fraction), bar.height() - 1)
-    fill = QLinearGradient(bar.topLeft(), bar.bottomLeft())
-    dim = QColor(colour)
-    dim.setAlpha(170)
-    fill.setColorAt(0, colour)
-    fill.setColorAt(1, dim)
+    fill = QLinearGradient(rect.topLeft(), rect.bottomLeft())
+    for stop, alpha in zip((0, 1), alphas):
+        tint = QColor(colour)
+        tint.setAlpha(alpha)
+        fill.setColorAt(stop, tint)
     painter.save()
-    painter.setClipRect(QRectF(bar.left() - 1, bar.top(), bar.width() + 2, length), Qt.IntersectClip)
-    painter.fillPath(path, QBrush(fill))
+    painter.setClipRect(QRectF(rect.left() - 1, rect.top() - 1, edge - rect.left() + 1, rect.height() + 2),
+                        Qt.IntersectClip)
+    painter.fillPath(_rounded(fill_rect, radius - 1), QBrush(fill))
     painter.restore()
 
 
@@ -235,30 +222,18 @@ def _rectangles(painter, size, playlist, wallpaper, percent, timer, outer, inner
     back_radius, front_radius = unit * BACK_RADIUS, unit * FRONT_RADIUS
     _shadow(painter, back_path, depth, keep_out=front_path)
     _glass(painter, back, back_radius)
+    _fill(painter, back, back_radius, playlist, outer, (150, 80))
     painter.save()
     outside = QPainterPath()
     outside.addRect(QRectF(0, 0, size, size))
     painter.setClipPath(outside.subtracted(front_path), Qt.IntersectClip)
     _rim(painter, back, back_radius)
     painter.restore()
-    _bar(painter, back, playlist, outer)
     _text(painter, QRectF(back.left() + unit * .24, back.top() + unit * .17, unit * .64, unit * .24),
           percent, _sans(max(10.0, unit * .17)), "text.hi", Qt.AlignLeft | Qt.AlignVCenter, True)
     _shadow(painter, front_path, depth)
     _glass(painter, front, front_radius)
-    fill_rect = front.adjusted(1, 1, -1, -1)
-    edge = _fill_edge(fill_rect, wallpaper)
-    if edge:
-        fill = QLinearGradient(front.topLeft(), front.bottomLeft())
-        top, bottom = QColor(inner), QColor(inner)
-        top.setAlpha(190)
-        bottom.setAlpha(105)
-        fill.setColorAt(0, top)
-        fill.setColorAt(1, bottom)
-        painter.save()
-        painter.setClipRect(QRectF(0, 0, edge, size), Qt.IntersectClip)
-        painter.fillPath(_rounded(fill_rect, front_radius - 1), QBrush(fill))
-        painter.restore()
+    _fill(painter, front, front_radius, wallpaper, inner, (190, 105))
     _gloss(painter, front)
     _rim(painter, front, front_radius)
     _text(painter, QRectF(front.left() + front.width() * .06, front.top() + front.height() * .28,

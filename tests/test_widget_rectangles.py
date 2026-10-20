@@ -72,13 +72,13 @@ for size in (112, 144, 176):
     clock.running = 150
     widget.render([p], {"Monitor1": clock}, p)
     back, _front = drawing._rectangle_rects(size)
-    bar = drawing._bar_rect(back)
-    x = round(bar.center().x() - .5)
-    check(f"{size}: rear playlist bar fills from the top to fifty percent",
-          image.pixelColor(x, round(bar.top() + bar.height() * .25))
-          != empty.pixelColor(x, round(bar.top() + bar.height() * .25))
-          and image.pixelColor(x, round(bar.top() + bar.height() * .75))
-          == empty.pixelColor(x, round(bar.top() + bar.height() * .75)))
+    # Above the front lens and clear of the percentage: the rear fills from the left.
+    y = round(back.top() + back.height() * .45)
+    check(f"{size}: rear playlist fills its lens from the left to fifty percent",
+          image.pixelColor(round(back.left() + back.width() * .2), y)
+          != empty.pixelColor(round(back.left() + back.width() * .2), y)
+          and image.pixelColor(round(back.left() + back.width() * .8), y)
+          == empty.pixelColor(round(back.left() + back.width() * .8), y))
     check(f"{size}: front wallpaper fills a quarter from the left",
           image.pixelColor(round(size * .42), round(size * .83))
           != empty.pixelColor(round(size * .42), round(size * .83))
