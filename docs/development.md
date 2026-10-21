@@ -592,8 +592,10 @@ Run the lot:
 for %f in (tests\test_*.py) do .venv\Scripts\python.exe %f
 ```
 
-The Windows installer job runs `tools/check_installer.py` against a fresh
-account's application data. A failed backup must leave no toolkit executable
+The Windows installer job runs on `main` and manual workflow runs, using
+`tools/check_installer.py` against a fresh account's application data. PRs keep
+the full source test suite and selfcheck; they do not build the installer.
+A failed backup must leave no toolkit executable
 running, even a bootloader which has not created its mutex yet. Uninstall
 finishes only once the registration and original `unins000.exe` are both gone;
 the copied uninstaller removes that file after its first process has exited.
@@ -606,6 +608,13 @@ backup success. The manual launch remains a `postinstall` checkbox.
 The workflow uses stable Node 24 actions: checkout/setup-python/upload-artifact
 v7 and download-artifact v8. Node is the actions' own runtime; Toolkit still
 runs on Python/PySide6 and needs no Node installation.
+
+CI dependency versions are pinned in `requirements-ci.txt`, with both
+requirements files included in the pip cache key. A new PR commit cancels the
+previous check, while main and manual runs can finish independently. Job
+timeouts bound stuck runs. Installer artifacts are already compressed, so
+upload skips ZIP compression and retains them for one day, long enough for the
+release job to download them. Published release assets are retained separately.
 
 | File | Covers |
 |---|---|
