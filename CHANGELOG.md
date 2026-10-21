@@ -6,6 +6,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [4.10.2] - 2026-10-21
+
+### Changed
+
+- CI builds and checks the installer once on `main`, or on a manual workflow
+  run, while pull requests retain the full Windows source checks. Superseded
+  PR runs are cancelled, dependency versions are pinned for the pip cache,
+  and job timeouts bound stuck runs. Temporary installer artifacts expire
+  after one day; published release installers remain available.
+
 ## [4.10.1] - 2026-10-20
 
 ### Fixed
@@ -2004,7 +2014,8 @@ restructured yet; the tabs keep their layout and take on the new look.
   was right for one library and wrong for every other. Nothing is tagged now
   unless you ask for it.
 
-[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v4.10.1...HEAD
+[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v4.10.2...HEAD
+[4.10.2]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v4.10.1...v4.10.2
 [4.10.1]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v4.10.0...v4.10.1
 [4.10.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v4.9.1...v4.10.0
 [4.9.1]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v4.9.0...v4.9.1

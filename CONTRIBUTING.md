@@ -140,6 +140,15 @@ GitHub release with that CHANGELOG section as its notes. The version also shows
 in the window title, in `run_app.py --version`, at the top of
 `data/selfcheck.txt`, and on the built exe's Details tab.
 
+Pull requests run the full Windows test suite and source selfcheck. A new
+commit cancels the previous run for the same PR. The installer is built and
+checked only on `main` or a manual `tests` workflow run; packaging failures
+therefore block publication after merge rather than the merge itself. To check
+packaging before merging, run the workflow manually against the PR branch.
+CI installs the versions in `requirements-ci.txt` using the existing pip cache;
+update those pins when upgrading dependencies. Temporary installer artifacts
+expire after one day; installers attached to GitHub releases remain available.
+
 **Two pull requests open at once** will often pick the same number. The second
 to merge rebases, takes the next number, and moves its section above the
 first's.

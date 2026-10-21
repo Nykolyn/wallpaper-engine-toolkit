@@ -40,12 +40,15 @@ reach it. The installer runs the installed exe with:
 | `--autostart on` / `release` | points the logon task at the installed copy / removes it if it starts this copy | `app/autostart.py` |
 | `--report <file>` | writes what any of the above did to a file, for the installer to show | `run_app.py` |
 
-CI makes the installer on every pull request and runs
+CI makes the installer on `main` and on manual `tests` workflow runs, then runs
 `tools\check_installer.py` on a fresh Windows: install from a made-up earlier
 copy, update over a running window and tracker, uninstall, install again —
 checking the data after each. It installs things, so it refuses to run outside
 CI without `--yes-on-this-machine`, and refuses outright where a data folder
-already exists. A merge to `main` attaches the installer to the release.
+already exists. Pull requests run the full source tests without building the
+installer; run the workflow manually on a PR branch when packaging needs an
+early check. A successful merge build attaches the installer to the release.
+Its temporary Actions artifact expires after one day; the release asset stays.
 
 The update check also exercises `/UpdateFromApp=1`: setup closes running
 copies and opens the window and tracker again. An exclusively held data file
