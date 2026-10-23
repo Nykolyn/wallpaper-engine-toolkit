@@ -6,8 +6,8 @@ Run it directly — there is no test framework in this project:
 
 The first half holds tools/release.py to what it promises with changelogs made
 up for the purpose; the second checks the real app/__init__.py and CHANGELOG.md,
-so a pull request that forgets to write up its version fails here as well as
-in the workflow's own check.
+so a release that forgets to write up its version fails here as well as in
+the workflow's own check.
 """
 from __future__ import annotations
 
@@ -48,11 +48,14 @@ GOOD = HEADER + """## [Unreleased]
 print("-- the rules --")
 check("a written-up release that is higher than the last passes",
       release.problems("1.1.0", GOOD, "1.0.0") == [])
-check("the same version as before fails",
-      any("raise it" in p for p in release.problems("1.1.0", GOOD, "1.1.0")))
+PENDING = GOOD.replace("## [Unreleased]\n", "## [Unreleased]\n\n- Waiting.\n")
+check("an unreleased change written up under Unreleased passes",
+      release.problems("1.1.0", PENDING, "1.1.0") == [])
+check("an unreleased change with nothing under Unreleased fails",
+      any("Unreleased" in p for p in release.problems("1.1.0", GOOD, "1.1.0")))
 check("a lower version fails", bool(release.problems("1.1.0", GOOD, "1.2.0")))
 check("versions compare as numbers, not text (1.10.0 > 1.9.0)",
-      not any("raise it" in p for p in release.problems(
+      not any("lower" in p for p in release.problems(
           "1.10.0", GOOD.replace("1.1.0", "1.10.0"), "1.9.0")))
 check("a version that is not MAJOR.MINOR.PATCH fails",
       bool(release.problems("1.1", GOOD, None)))
@@ -67,9 +70,9 @@ check("an empty section fails",
       any("lists no changes" in p for p in release.problems(
           "1.1.0", GOOD.replace("- A thing.\n", ""), None)))
 check("entries left under Unreleased fail",
-      any("Unreleased" in p for p in release.problems(
-          "1.1.0", GOOD.replace("## [Unreleased]\n", "## [Unreleased]\n\n- Forgotten.\n"),
-          None)))
+      any("Unreleased" in p for p in release.problems("1.1.0", PENDING, None)))
+check("unless they may wait for the next release",
+      release.problems("1.1.0", PENDING, None, unreleased_ok=True) == [])
 check("a changelog from before versioning has no release to compare with",
       release.released(HEADER + "## [Unreleased]\n\n- Something.\n") is None)
 check("the newest release is the first one listed", release.released(GOOD) == "1.1.0")
@@ -94,7 +97,8 @@ print("-- this repository --")
 from app import __version__      # noqa: E402
 
 changelog = release.CHANGELOG.read_text(encoding="utf-8")
-found = release.problems(__version__, changelog, None)
+# Merged changes may wait under Unreleased for the next release.
+found = release.problems(__version__, changelog, None, unreleased_ok=True)
 for problem in found:
     print("     " + problem)
 check(f"app/__init__.py's {__version__} is written up in CHANGELOG.md", not found)
