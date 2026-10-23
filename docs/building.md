@@ -47,7 +47,7 @@ checking the data after each. It installs things, so it refuses to run outside
 CI without `--yes-on-this-machine`, and refuses outright where a data folder
 already exists. Pull requests run the full source tests without building the
 installer; run the workflow manually on a PR branch when packaging needs an
-early check. A successful merge build attaches the installer to the release.
+early check. A manual run on `main` builds it and attaches it to the release.
 Its temporary Actions artifact expires after one day; the release asset stays.
 
 The update check also exercises `/UpdateFromApp=1`: setup closes running

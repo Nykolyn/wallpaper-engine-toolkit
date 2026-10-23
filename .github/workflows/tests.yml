@@ -3,14 +3,15 @@ name: tests
 # Every change reaches main through a pull request, so this is what decides
 # whether one is mergeable. It runs on Windows because the app is Windows:
 # DPAPI, the registry, Task Scheduler and schtasks are all real here.
+# A merge runs nothing: its PR was checked already, and releases are made by
+# hand — a manual run on main builds the installer and publishes the release,
+# so several merged changes ship together. See CONTRIBUTING.md#versions.
 on:
-  push:
-    branches: [main]
   pull_request:
   workflow_dispatch:
 
-# A newer commit replaces an older PR check. Main/manual runs have their own
-# group so a new merge cannot cancel a release or discard a pending one.
+# A newer commit replaces an older PR check. Manual runs have their own group
+# so nothing cancels a release or discards a pending one.
 concurrency:
   group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -32,13 +33,18 @@ jobs:
       - name: Install dependencies
         run: python -m pip install --disable-pip-version-check -r requirements-ci.txt
 
-      - name: Check the version was raised and written up
-        # Every pull request is a release: a higher version in app/__init__.py
-        # and a dated CHANGELOG section for it. See CONTRIBUTING.md#versions.
+      - name: Check the change is written up
+        # Under [Unreleased] with the version left alone, or, for a release
+        # PR, a higher version with a dated CHANGELOG section for it.
         if: github.event_name == 'pull_request'
         run: |
           git fetch --no-tags --depth=1 origin +refs/heads/${{ github.base_ref }}:refs/remotes/origin/${{ github.base_ref }}
           python tools/release.py check --base origin/${{ github.base_ref }}
+
+      - name: Check main is ready to release
+        # Before the twenty-minute installer build, not after it.
+        if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+        run: python tools/release.py check
 
       - name: Check every module imports
         run: python run_app.py --selfcheck
@@ -74,8 +80,8 @@ jobs:
     # then used the way a person would on a fresh Windows: installed from an
     # earlier copy, updated over a running one, uninstalled, installed again,
     # with the data checked at every step (tools/check_installer.py). Build
-    # once after merge, before publication; manual runs can check a branch.
-    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    # only on a manual run: on main before publication, or to check a branch.
+    if: github.event_name == 'workflow_dispatch'
     runs-on: windows-latest
     timeout-minutes: 20
 
@@ -129,11 +135,11 @@ jobs:
           compression-level: 0
 
   release:
-    # A green main is a release: tag vX.Y.Z, publish the CHANGELOG section as
-    # its notes and attach the installer. A push that did not raise the version
-    # finds its tag already there and does nothing, so re-runs are harmless.
+    # A manual run on main is a release: tag vX.Y.Z, publish the CHANGELOG
+    # section as its notes and attach the installer. A version already released
+    # finds its tag there and does nothing, so re-runs are harmless.
     needs: [tests, installer]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:

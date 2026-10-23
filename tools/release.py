@@ -5,12 +5,14 @@ Everything else reads it from there — the window title, `--version`, the
 exe's file properties, the git tag and the GitHub release — so they cannot
 disagree.
 
-Every pull request is a release: it raises the version and gives CHANGELOG.md
-a section `## [X.Y.Z] - YYYY-MM-DD` for it. `check` is what makes that
-mandatory rather than a good intention; the tests workflow runs it on every
-pull request.
+A pull request writes its change up under `## [Unreleased]` and leaves the
+version alone. A release is a pull request of its own that raises the version
+and moves those entries into `## [X.Y.Z] - YYYY-MM-DD`; once it is merged, a
+manual run of the tests workflow on main publishes it. `check` is what makes
+that mandatory rather than a good intention; the tests workflow runs it on
+every pull request and before a release.
 
-    python tools/release.py check [--base REF]   # the PR raised the version and wrote it up
+    python tools/release.py check [--base REF]   # written up, under Unreleased or as a release
     python tools/release.py version              # print the version
     python tools/release.py notes [VERSION]      # the CHANGELOG section, for a release body
     python tools/release.py version-file OUT     # PyInstaller's Windows version resource
@@ -73,18 +75,25 @@ def notes(version: str, changelog: str | None = None) -> str:
     raise ValueError(f"CHANGELOG.md has no section for {version}")
 
 
-def problems(version: str, changelog: str, base_version: str | None = None) -> list[str]:
-    """Everything wrong with this version and its write-up; empty when it is releasable."""
+def problems(version: str, changelog: str, base_version: str | None = None,
+             unreleased_ok: bool = False) -> list[str]:
+    """Everything wrong with this version and its write-up; empty when it is fine.
+
+    With `base_version` equal to `version` the change is unreleased: it must be
+    written up under `## [Unreleased]`. Otherwise the version is a release and
+    nothing may be left there, unless `unreleased_ok`.
+    """
     found = []
     try:
         mine = parse(version)
     except ValueError as err:
         return [str(err)]
-    if base_version is not None:
+    pending = version == base_version
+    if base_version is not None and not pending:
         try:
-            if mine <= parse(base_version):
-                found.append(f"the version is still {version}; it was {base_version} before "
-                             "this change — raise it in app/__init__.py")
+            if mine < parse(base_version):
+                found.append(f"the version is {version}, lower than {base_version} before "
+                             "this change")
         except ValueError:
             pass            # the base predates versioning; any valid version will do
     listed = sections(changelog)
@@ -101,10 +110,14 @@ def problems(version: str, changelog: str, base_version: str | None = None) -> l
             found.append(f"'## [{version}]' needs its date: '## [{version}] - YYYY-MM-DD'")
         if not re.search(r"^- ", body, re.M):
             found.append(f"'## [{version}]' in CHANGELOG.md lists no changes")
-    for name, _, body in listed:
-        if name == "Unreleased" and re.search(r"^- ", body, re.M):
-            found.append("entries are still under '## [Unreleased]' — move them into "
-                         f"'## [{version}]'")
+    waiting = any(name == "Unreleased" and re.search(r"^- ", body, re.M)
+                  for name, _, body in listed)
+    if pending and not waiting:
+        found.append("nothing is written up under '## [Unreleased]' — describe the change "
+                     "there; it ships with the next release")
+    if waiting and not pending and not unreleased_ok:
+        found.append("entries are still under '## [Unreleased]' — move them into "
+                     f"'## [{version}]'")
     return found
 
 
@@ -194,10 +207,13 @@ def main(argv: list[str]) -> int:
             print(f"::error::{problem}" if "GITHUB_ACTIONS" in os.environ
                   else f"error: {problem}")
         if found:
-            print("Every pull request raises the version and writes it up; "
-                  "see CONTRIBUTING.md#versions.")
+            print("Every pull request writes its change up; a release also raises the "
+                  "version. See CONTRIBUTING.md#versions.")
             return 1
-        print(f"version {version}" + (f", up from {base}" if base else "") + ": ok")
+        if base == version:
+            print(f"version {version}, change written up under Unreleased: ok")
+        else:
+            print(f"version {version}" + (f", up from {base}" if base else "") + ": ok")
     return 0
 
 

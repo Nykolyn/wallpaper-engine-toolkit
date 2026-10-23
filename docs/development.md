@@ -611,7 +611,7 @@ runs on Python/PySide6 and needs no Node installation.
 
 CI dependency versions are pinned in `requirements-ci.txt`, with both
 requirements files included in the pip cache key. A new PR commit cancels the
-previous check, while main and manual runs can finish independently. Job
+previous check, while manual runs can finish independently. Job
 timeouts bound stuck runs. Installer artifacts are already compressed, so
 upload skips ZIP compression and retains them for one day, long enough for the
 release job to download them. Published release assets are retained separately.

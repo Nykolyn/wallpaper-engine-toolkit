@@ -93,12 +93,15 @@ running often enough to matter on a short playlist.
 3. **Update the documentation in the same pull request.** A behaviour change
    with stale docs is a half-finished change. The pages are in [`docs/`](docs/).
 
-4. **Raise the version and write it up** — see [Versions](#versions). The
-   pull request cannot go green without it.
+4. **Write the change up under `## [Unreleased]`** in CHANGELOG.md and leave
+   the version alone — see [Versions](#versions). The pull request cannot go
+   green without it.
 
 ## Versions
 
-Every pull request is a release. The version lives in one place —
+Releases are made by hand, so several merged changes ship together. A pull
+request writes its change up under `## [Unreleased]` and does not touch the
+version. The version lives in one place —
 `__version__` in [`app/__init__.py`](app/__init__.py) — and follows
 [Semantic Versioning](https://semver.org/):
 
@@ -108,8 +111,10 @@ Every pull request is a release. The version lives in one place —
 | **minor** `1.0.1 → 1.1.0` | adds something you can see or use | a new tab, a new setting, a new flag |
 | **major** `1.1.0 → 2.0.0` | breaks what was there | a setting that no longer carries over, `data/` in a shape an older build cannot read |
 
-In the same pull request, give [CHANGELOG.md](CHANGELOG.md) a section for the
-new version, newest first, under an empty `## [Unreleased]`:
+Raise it by the biggest change waiting under `[Unreleased]`. A release is a
+pull request of its own: it raises the version and moves the waiting entries
+of [CHANGELOG.md](CHANGELOG.md) into a section for the new version, newest
+first, under an empty `## [Unreleased]`:
 
 ```
 ## [Unreleased]
@@ -126,32 +131,36 @@ Added, Changed, Deprecated, Removed, Fixed, Security — and update the link
 references at the foot of the file (`[Unreleased]` compares from the new tag;
 the new version gets a line of its own).
 
-The `tests` workflow runs `tools/release.py check` on every pull request and
-fails it when the version is not higher than the last release on `main`, when
-it has no dated section, or when entries are left under `[Unreleased]`. Run
-the same check before pushing:
+The `tests` workflow runs `tools/release.py check` on every pull request. One
+that keeps the version fails when nothing is written up under `[Unreleased]`;
+one that raises it fails when the version is lower than the last release on
+`main`, when it has no dated section, or when entries are left under
+`[Unreleased]`. Run the same check before pushing:
 
 ```
 .venv\Scripts\python.exe tools\release.py check --base origin/main
 ```
 
-Once the merge is green on `main`, the workflow tags it `vX.Y.Z` and publishes a
-GitHub release with that CHANGELOG section as its notes. The version also shows
+Merging runs nothing. Once the release pull request is merged, run the
+`tests` workflow by hand on `main` (Actions → tests → Run workflow, or
+`gh workflow run tests.yml --ref main`): it checks again, builds and checks the
+installer, tags `vX.Y.Z` and publishes a GitHub release with that CHANGELOG
+section as its notes and the installer attached. Run it before merging anything
+else, or the new entries under `[Unreleased]` stop it. The version also shows
 in the window title, in `run_app.py --version`, at the top of
 `data/selfcheck.txt`, and on the built exe's Details tab.
 
 Pull requests run the full Windows test suite and source selfcheck. A new
 commit cancels the previous run for the same PR. The installer is built and
-checked only on `main` or a manual `tests` workflow run; packaging failures
-therefore block publication after merge rather than the merge itself. To check
+checked only on a manual `tests` workflow run; packaging failures therefore
+block the release rather than the merge. To check
 packaging before merging, run the workflow manually against the PR branch.
 CI installs the versions in `requirements-ci.txt` using the existing pip cache;
 update those pins when upgrading dependencies. Temporary installer artifacts
 expire after one day; installers attached to GitHub releases remain available.
 
-**Two pull requests open at once** will often pick the same number. The second
-to merge rebases, takes the next number, and moves its section above the
-first's.
+**Two pull requests open at once** both add to `[Unreleased]`; the second to
+merge rebases and keeps both sets of entries.
 
 ## What must never be committed
 

@@ -6,6 +6,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- Releases are made by hand. A pull request writes its change up under
+  `[Unreleased]` and leaves the version alone; merging runs no CI. A release
+  pull request raises the version and dates the waiting entries, then a manual
+  run of the `tests` workflow on `main` builds the installer and publishes the
+  release, so several changes ship in one and CI runs far less.
+
 ## [4.10.2] - 2026-10-21
 
 ### Changed
