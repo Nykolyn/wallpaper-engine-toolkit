@@ -1,5 +1,9 @@
 # Tray
 
+Click the icon to open the Tracker page or bring the existing window forward.
+The window runs in its own process at normal CPU, disk and memory priority,
+including while loading, even when the background tracker has low priority.
+
 Open **Tools → Tray** to customize the Toolkit tray icon. Changes are saved
 immediately and applied by the running tracker on its next tick.
 

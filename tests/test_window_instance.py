@@ -14,6 +14,7 @@ import sys
 import time
 import uuid
 from pathlib import Path
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -114,6 +115,7 @@ launched: list[tuple] = []
 
 class FakePopen:
     pid = 4242
+    _handle = 0
     refuse_breakaway = False
 
     def __init__(self, command, cwd=None, creationflags=0, close_fds=True):
@@ -144,6 +146,55 @@ wi.subprocess.Popen = real_popen
 done = wi.make_normal_priority()
 check("the window can put its own CPU priority back to normal", done["cpu"])
 check("and its disk priority", done["io"])
+
+# The CPU creation flag does not reset inherited disk or memory priority.
+# Keep a real child suspended so its own startup cannot repair either for us.
+if os.name == "nt":
+    import ctypes
+    from ctypes import wintypes
+
+    ntdll = ctypes.WinDLL("ntdll")
+    ntdll.NtQueryInformationProcess.argtypes = [
+        wintypes.HANDLE, ctypes.c_int, ctypes.c_void_p, wintypes.ULONG, ctypes.c_void_p]
+    ntdll.NtSetInformationProcess.argtypes = [
+        wintypes.HANDLE, ctypes.c_int, ctypes.c_void_p, wintypes.ULONG]
+    parent = wi._k32.GetCurrentProcess()
+
+    def priority(handle, kind):
+        value = wintypes.ULONG()
+        status = ntdll.NtQueryInformationProcess(handle, kind, ctypes.byref(value), 4, None)
+        assert status == 0, f"cannot query priority: {status:#x}"
+        return value.value
+
+    for fallback in (False, True):
+        io = wintypes.ULONG(1)
+        memory = wi._MemoryPriority(2)
+        child = None
+
+        def suspended(*args, **kwargs):
+            if kwargs["creationflags"] & wi._CREATE_BREAKAWAY_FROM_JOB:
+                if fallback:
+                    raise PermissionError(5, "job refuses breakaway")
+                kwargs["creationflags"] &= ~wi._CREATE_BREAKAWAY_FROM_JOB
+            kwargs["creationflags"] |= 0x00000004  # CREATE_SUSPENDED
+            return real_popen(*args, **kwargs)
+
+        try:
+            assert ntdll.NtSetInformationProcess(parent, 33, ctypes.byref(io), 4) == 0
+            assert wi._k32.SetProcessInformation(parent, 0, ctypes.byref(memory), 4)
+            assert (priority(parent, 33), priority(parent, 39)) == (1, 2)
+            with patch.object(wi, "window_command", return_value=[sys.executable, "--version"]), \
+                    patch.object(wi.subprocess, "Popen", side_effect=suspended):
+                child = wi.launch("Tracker")
+            check(f"before loading, the child has normal disk and memory priority (fallback={fallback})",
+                  (priority(int(child._handle), 33), priority(int(child._handle), 39)) == (2, 5))
+            check("launching the window leaves the background tracker's priorities alone",
+                  (priority(parent, 33), priority(parent, 39)) == (1, 2))
+        finally:
+            wi.make_normal_priority()
+            if child is not None:
+                child.terminate()
+                child.wait(timeout=5)
 
 # ---- The tray's side -----------------------------------------------------------
 
