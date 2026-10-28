@@ -6,6 +6,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- Windows opened from the background tray have their disk and memory priorities
+  restored immediately when their process is created. Previously they inherited
+  the tracker's low priorities until after loading Qt and settings, which could
+  delay a cold start while the disk was busy.
+
 ### Changed
 
 - Releases are made by hand. A pull request writes its change up under

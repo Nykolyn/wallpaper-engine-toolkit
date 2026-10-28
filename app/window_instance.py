@@ -248,12 +248,16 @@ def launch(tab: str = "", command: str | None = None, *, widget: bool = False) -
               else Path(__file__).resolve().parent.parent)
     flags = _NORMAL_PRIORITY_CLASS | _CREATE_BREAKAWAY_FROM_JOB
     try:
-        return subprocess.Popen(argv, cwd=cwd, creationflags=flags, close_fds=True)
+        child = subprocess.Popen(argv, cwd=cwd, creationflags=flags, close_fds=True)
     except OSError:
         # The job does not allow breaking away; a window inside it is still a
         # window of its own.
-        return subprocess.Popen(argv, cwd=cwd, creationflags=_NORMAL_PRIORITY_CLASS,
-                                close_fds=True)
+        child = subprocess.Popen(argv, cwd=cwd, creationflags=_NORMAL_PRIORITY_CLASS,
+                                 close_fds=True)
+    # The CPU creation flag leaves disk and memory at the tracker's low priorities.
+    if os.name == "nt":
+        make_normal_priority(int(child._handle))
+    return child
 
 
 # ---- Priority ----------------------------------------------------------------
