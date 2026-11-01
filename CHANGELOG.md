@@ -6,6 +6,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [4.10.3] - 2026-11-01
+
 ### Fixed
 
 - Windows opened from the background tray have their disk and memory priorities
@@ -2029,7 +2031,8 @@ restructured yet; the tabs keep their layout and take on the new look.
   was right for one library and wrong for every other. Nothing is tagged now
   unless you ask for it.
 
-[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v4.10.2...HEAD
+[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v4.10.3...HEAD
+[4.10.3]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v4.10.2...v4.10.3
 [4.10.2]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v4.10.1...v4.10.2
 [4.10.1]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v4.10.0...v4.10.1
 [4.10.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v4.9.1...v4.10.0
