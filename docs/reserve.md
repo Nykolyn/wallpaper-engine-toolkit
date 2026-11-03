@@ -4,12 +4,15 @@
 same reserve used by Rotator. Set that folder in Settings first, and keep Steam
 running so the app can verify the current account's subscriptions.
 
-Opening the page scans in the background. It looks at the Workshop library,
-independently of Wallpaper Engine's folders and playlists. Only active,
+Opening the page scans in the background. It looks at the Workshop library
+and checks both the reserve and the current wallpapers folder set in Settings
+(Rotator's destination). Only active,
 fully downloaded wallpaper projects with readable `project.json` and nonempty
-content are listed. Copies already in the reserve are excluded by Workshop ID,
-including renamed folders. A folder named after the same Workshop ID also blocks
-another copy, so nothing is overwritten.
+content are listed. Copies already in either folder are excluded by Workshop ID,
+including renamed folders. A folder named after the same Workshop ID in either
+location also blocks another copy. Both folders are checked again before copying;
+changing either setting requires a fresh scan. A configured folder that cannot be
+read stops the operation rather than allowing duplicates.
 
 Compiled scene projects may name `scene.json`, `gifscene.json` or another scene
 file stored inside the corresponding `.pkg`. The matching nonempty package is
@@ -24,7 +27,7 @@ prevent copying. The footer shows the total size and the size of the selection.
 - **Copy selected** copies checked rows; **Select all**, Ctrl+A and Space work as
   in the other tables.
 - The **+** on a row copies that wallpaper. Clicking its title opens its folder.
-- **Refresh** checks subscriptions and the reserve again.
+- **Refresh** checks subscriptions, the reserve and current wallpapers again.
 - **Stop** interrupts scanning or copying. Completed copies remain in the reserve,
   and unfinished rows remain in the list.
 

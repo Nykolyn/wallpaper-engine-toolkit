@@ -1,4 +1,4 @@
-"""Subscribed wallpapers missing from the reserve, using only fabricated libraries."""
+"""Subscriptions missing from reserve and current wallpapers, using fabricated libraries."""
 from __future__ import annotations
 
 import json
@@ -127,6 +127,45 @@ class ReserveTests(unittest.TestCase):
             result = engine.scan(str(self.reserve), **self.options)
         self.assertEqual(len(result.rows), 1)
         self.assertIn("author", result.warning.lower())
+
+    def test_scan_excludes_both_folders_and_does_not_reuse_ids_from_old_paths(self):
+        current = self.root / "current"
+        current.mkdir()
+        for item in ("1002", "1003", "1004", "1005"):
+            wallpaper(self.workshop, item)
+            self.ugc.flags[item] = 5
+        wallpaper(self.reserve, "renamed-reserve", "1002")
+        wallpaper(current, "renamed-current", "1003")
+        (current / "1004").mkdir()  # A matching folder name also prevents duplicates.
+        wallpaper(current, "unrelated", "9999")
+        result = engine.scan(str(self.reserve), current=str(current), **self.options)
+        self.assertEqual([Path(r.folder).name for r in result.rows], ["1001", "1005"])
+        self.assertEqual(result.checked, 5)
+        other = self.root / "other-current"
+        other.mkdir()
+        result = engine.scan(str(self.reserve), current=str(other), **self.options)
+        self.assertEqual([Path(r.folder).name for r in result.rows], ["1001", "1003", "1004", "1005"])
+
+    def test_copy_rechecks_current_folder_after_scan_and_preserves_originals(self):
+        current = self.root / "current"
+        current.mkdir()
+        rows = engine.scan(str(self.reserve), current=str(current), **self.options).rows
+        self.assertEqual(len(rows), 1)
+        existing = wallpaper(current, "renamed-current", "1001")
+        before = {p: p.read_bytes() for root in (self.source, existing) for p in root.iterdir()}
+        with self.assertRaisesRegex(FileExistsError, "current wallpapers"):
+            engine.copy_to_reserve(rows[0].folder, str(self.reserve), current=str(current), ugc=self.ugc)
+        self.assertEqual(list(self.reserve.iterdir()), [])
+        self.assertEqual({p: p.read_bytes() for p in before}, before)
+
+    def test_unreadable_current_folder_prevents_scan_and_copy(self):
+        missing = str(self.root / "missing-current")
+        with self.assertRaises(OSError):
+            engine.scan(str(self.reserve), current=missing, **self.options)
+        with self.assertRaises(OSError):
+            engine.copy_to_reserve(str(self.source), str(self.reserve), current=missing, ugc=self.ugc)
+        self.assertEqual(list(self.reserve.iterdir()), [])
+        self.assertTrue(self.source.exists())
 
     def test_packed_scenes_are_listed_and_copied_with_their_original_files(self):
         sources = []
@@ -375,6 +414,51 @@ class ReserveTests(unittest.TestCase):
         self.assertEqual(page.model.items(), [row])
         self.assertIn("offline", page.problem.body())
         page.deleteLater()
+
+    def test_page_rescans_when_either_folder_changes_and_rejects_stale_results(self):
+        config = Config(source=str(self.reserve), destination=str(self.root / "current"))
+        page = ReservePage(Settings({}), config=config)
+        row = engine.Wallpaper(str(self.source), "Garden", size=300)
+        with patch.object(engine, "scan", return_value=engine.Scan([row], 1)) as scan:
+            page.on_shown()
+            self.assertTrue(wait_for(lambda: not page.scanning))
+            self.assertEqual(scan.call_args.args, (config.source,))
+            self.assertEqual(scan.call_args.kwargs["current"], config.destination)
+            for name in ("destination", "source"):
+                previous = config.source, config.destination
+                setattr(config, name, str(self.root / (name + "-changed")))
+                self.assertFalse(page._can_copy())
+                self.assertFalse(page.copy_all())
+                page._scanned(engine.Scan([], 1), previous)
+                self.assertEqual(page.model.items(), [row])
+                self.assertIn("changed during the scan", page.problem.body())
+                page.on_shown()
+                self.assertTrue(wait_for(lambda: not page.scanning))
+                self.assertTrue(page._can_copy())
+            self.assertEqual(scan.call_count, 3)
+        page.deleteLater()
+
+    def test_page_rechecks_both_folders_before_batch_copy(self):
+        current = self.root / "current"
+        current.mkdir()
+        svc = services.Services(data_dir=self.root / "data")
+        services.install(svc)
+        page = ReservePage(Settings({}), svc, Config(source=str(self.reserve), destination=str(current)))
+        row = engine.Wallpaper(str(self.source), "Garden", size=300)
+        page._scanned(engine.Scan([row], 1))
+        wallpaper(current, "renamed-current", "1001")
+        try:
+            with patch.object(engine, "SteamUgc", return_value=self.ugc), \
+                 patch.object(file_copy, "copy_to_reserve") as copy:
+                self.assertTrue(page.copy_all())
+                self.assertTrue(wait_for(lambda: not page.acting))
+                copy.assert_not_called()
+            self.assertIn("current wallpapers", row.note)
+            self.assertEqual(svc.jobs.last_finished(page.key).result, "failed")
+            self.assertEqual(list(self.reserve.iterdir()), [])
+        finally:
+            page.deleteLater()
+            services.install(None)
 
     def test_reserve_copies_exclude_other_reserve_mutations_and_lock_settings(self):
         svc = services.Services(data_dir=self.root / "data")

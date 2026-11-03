@@ -6,6 +6,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- To reserve checks both the reserve and current wallpapers folder for existing
+  Workshop IDs, including renamed folders, so wallpapers already in the current
+  playlist are not copied into the reserve again.
+
 ## [4.10.3] - 2026-11-01
 
 ### Fixed

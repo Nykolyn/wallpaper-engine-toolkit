@@ -70,7 +70,7 @@ class ReservePage(Page):
         self._cancel = threading.Event()
         self.scanning = self.acting = self._started = False
         self._fixture = None
-        self._scanned_reserve = None
+        self._scanned_folders = None
         self._rows, self.selected, self.messages = [], set(), []
         self._run = None
         self._pending_progress = None
@@ -84,7 +84,7 @@ class ReservePage(Page):
         v, h = theme.BODY_PAD
         column.setContentsMargins(h, v, h, v)
         column.setSpacing(theme.PANEL_GAP)
-        column.addWidget(Callout("Keep copies of subscribed wallpapers that are missing from your reserve. "
+        column.addWidget(Callout("Keep copies of subscribed wallpapers missing from your reserve and current wallpapers. "
                                  "The Workshop originals and subscriptions are kept.", tone="neutral"))
         self.destination = Elided("", "type.monoSm", "lo")
         column.addWidget(self.destination)
@@ -104,7 +104,7 @@ class ReservePage(Page):
         body.setSpacing(0)
         toolbar = TableBar()
         self.all_rows = Checkbox("Select all", tristate=True)
-        self.all_rows.setAccessibleName("Select all wallpapers missing from the reserve")
+        self.all_rows.setAccessibleName("Select all wallpapers missing from the reserve and current wallpapers")
         self.all_rows.clicked.connect(self.select_all)
         toolbar.add(self.all_rows)
         self.copy_selected = SecondaryButton("Copy selected", icon="plus")
@@ -118,7 +118,7 @@ class ReservePage(Page):
         body.addWidget(toolbar)
         self.model = ReserveModel(self)
         self.table = Table()
-        self.table.setAccessibleName("Subscribed wallpapers missing from the reserve")
+        self.table.setAccessibleName("Subscribed wallpapers missing from the reserve and current wallpapers")
         self.table.setModel(self.model)
         self.table.clicked.connect(self._open)
         self.table.activated.connect(self._open)
@@ -147,7 +147,7 @@ class ReservePage(Page):
 
     def on_shown(self):
         if (self._fixture is None and getattr(self.window(), "_start", True)
-                and (not self._started or self._scanned_reserve != self.config.source)):
+                and (not self._started or self._scanned_folders != (self.config.source, self.config.destination))):
             self.check()
 
     def check(self, *_):
@@ -158,15 +158,15 @@ class ReservePage(Page):
         self._progress_timer.start()
         self.problem.hide()
         self.progress.set_state("indeterminate")
-        self.progress.set_caption("Reading the reserve…")
+        self.progress.set_caption("Reading the reserve and current wallpapers…")
         self.current.set_text("Checking your subscriptions")
-        reserve = self.config.source
+        reserve, current = self.config.source, self.config.destination
         cache = self.services.data_dir / "steam_cache.sqlite" if self.services else None
         self._render()
-        self._offload.run(lambda: engine.scan(reserve, cache_path=cache,
+        self._offload.run(lambda: engine.scan(reserve, current=current, cache_path=cache,
                                               on_progress=lambda *args: self._report_progress("scan", *args),
                                               cancelled=self._cancel.is_set),
-                          lambda result: self._scanned(result, reserve))
+                          lambda result: self._scanned(result, (reserve, current)))
         return True
 
     def _scanning_progress(self, phase, done, total):
@@ -190,7 +190,7 @@ class ReservePage(Page):
             else:
                 self._copying_progress(*values)
 
-    def _scanned(self, result, reserve=None):
+    def _scanned(self, result, folders=None):
         self._progress_timer.stop()
         self._flush_progress()
         self.scanning = False
@@ -199,11 +199,11 @@ class ReservePage(Page):
         elif isinstance(result, Exception):
             self.problem.set_body(f"Check failed: {result} Previous results are kept.")
             self.problem.show()
-        elif reserve is not None and reserve != self.config.source:
-            self.problem.set_body("The reserve changed during the scan. Refresh to check the new folder.")
+        elif folders is not None and folders != (self.config.source, self.config.destination):
+            self.problem.set_body("The reserve or current wallpapers folder changed during the scan. Refresh to check again.")
             self.problem.show()
         else:
-            self._scanned_reserve = self.config.source
+            self._scanned_folders = (self.config.source, self.config.destination)
             self._rows = result.rows
             self.model.set_rows(self._rows)
             self.selected.intersection_update(r.folder for r in self._rows)
@@ -242,21 +242,21 @@ class ReservePage(Page):
                              + (f" · {fmt.count(len(self.selected))} selected · {fmt.size(selected_size)}"
                                 if self.selected else ""))
         self.set_subtitle("Copying to the reserve…" if self.acting else "Checking subscriptions…"
-                          if self.scanning else f"{fmt.counted(len(rows), 'wallpaper')} missing from reserve")
+                          if self.scanning else f"{fmt.counted(len(rows), 'wallpaper')} missing from both folders")
         if not busy:
             self.set_nav_state(NavState.badge(len(rows)) if rows else NavState())
         self.current.setVisible(busy)
         self.progress.setVisible(busy)
         self.content.setCurrentWidget(self.table if rows else self.empty)
         self.empty.set_title("Checking subscriptions" if self.scanning else "Reserve is up to date"
-                             if self._scanned_reserve is not None else "Not checked yet")
+                             if self._scanned_folders is not None else "Not checked yet")
         self.empty.set_body("Steam must be running. Only fully downloaded, valid wallpapers are listed."
-                            if self._scanned_reserve is None or self.scanning else
-                            "No downloaded subscriptions are missing from this reserve.")
+                            if self._scanned_folders is None or self.scanning else
+                            "No downloaded subscriptions are missing from both folders.")
 
     def _can_copy(self):
         return (not self.scanning and not self.acting and not self._blocked()
-                and self._scanned_reserve == self.config.source)
+                and self._scanned_folders == (self.config.source, self.config.destination))
 
     def select_all(self, *_):
         if self.scanning or self.acting:
@@ -300,12 +300,12 @@ class ReservePage(Page):
 
     def _process(self, items):
         if (not items or self.scanning or self.acting or self._fixture is not None
-                or self._scanned_reserve != self.config.source):
+                or self._scanned_folders != (self.config.source, self.config.destination)):
             return False
         if self._blocked():
             self._say("warn", "Wait for the Rotator or Cleaner to finish before copying.")
             return False
-        reserve = self.config.source
+        reserve, current = self.config.source, self.config.destination
         self._cancel.clear()
         self._progress_timer.start()
         self.acting = True
@@ -313,12 +313,12 @@ class ReservePage(Page):
         self._run = begin(self.key, f"Copying {fmt.counted(len(items), 'wallpaper')} to reserve",
                           activity="reserve_copy")
         self.progress.set_state("indeterminate")
-        self.current.set_text("Checking the reserve before copying…")
+        self.current.set_text("Checking the reserve and current wallpapers before copying…")
         self.progress.set_caption("Preparing…")
         self._render()
 
         def work():
-            kept = engine.reserve_ids(reserve, cancelled=self._cancel.is_set)
+            kept = engine.reserve_ids(reserve, current=current, cancelled=self._cancel.is_set)
             results, copied, total = [], 0, sum(r.size for r in items)
             for item in items:
                 if self._cancel.is_set():
@@ -410,7 +410,7 @@ class ReservePage(Page):
             return super().load_fixture(state)
         self._fixture = state
         self.config.source = r"X:\Wallpapers\reserve"
-        self._scanned_reserve = self.config.source
+        self._scanned_folders = (self.config.source, self.config.destination)
         self.scanning, self.acting = state == "checking", state == "copying"
         self.selected = set()
         self._rows = [engine.Wallpaper(fr"X:\Steam\workshop\content\431960\90000000{i}", title,
