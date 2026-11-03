@@ -12,7 +12,9 @@ the workflow's own check.
 from __future__ import annotations
 
 import sys
+import tempfile
 from pathlib import Path
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -82,6 +84,49 @@ check("release notes are the section's body alone",
       notes == "### Added\n\n- A thing.")
 check("and the link references at the foot are not part of the last section",
       "example.net" not in release.notes("1.0.0", GOOD))
+
+print("-- manual release preparation --")
+check("a manual release can prepare pending changes", hasattr(release, "prepare"))
+if hasattr(release, "prepare"):
+    version, prepared = release.prepare("1.1.0", PENDING, "2026-11-03")
+    check("pending entries advance the patch version", version == "1.1.1")
+    check("the new version is ready for the existing release check",
+          release.problems(version, prepared) == [])
+    check("pending notes become the dated release, preserving old notes",
+          "## [1.1.1] - 2026-11-03" in prepared
+          and release.notes(version, prepared) == "- Waiting."
+          and release.notes("1.1.0", prepared) == release.notes("1.1.0", GOOD))
+    check("preparation updates comparison links",
+          "[Unreleased]: https://example.net/compare/v1.1.1...HEAD" in prepared
+          and "[1.1.1]: https://example.net/compare/v1.1.0...v1.1.1" in prepared)
+    check("retrying an unfinished release keeps the same version and notes",
+          release.prepare(version, prepared, "2026-11-04") == (version, prepared))
+    check("running without pending changes leaves the release unchanged",
+          release.prepare("1.1.0", GOOD, "2026-11-03") == ("1.1.0", GOOD))
+    try:
+        release.prepare("1.2.0", PENDING, "2026-11-03")
+        refused = False
+    except ValueError:
+        refused = True
+    check("invalid existing release metadata is refused before editing", refused)
+    try:
+        release.prepare("1.1.0", PENDING.replace("compare/v1.1.0...HEAD", "compare/v1.0.0...HEAD"), "2026-11-03")
+        refused = False
+    except ValueError:
+        refused = True
+    check("a mismatched comparison link is refused", refused)
+    with tempfile.TemporaryDirectory(prefix="release-test-") as folder:
+        init, log = Path(folder) / "__init__.py", Path(folder) / "CHANGELOG.md"
+        init.write_text('# Keep this comment.\n__version__ = "1.1.0"\n', encoding="utf-8")
+        log.write_text(PENDING, encoding="utf-8")
+        with patch.object(release, "INIT", init), patch.object(release, "CHANGELOG", log):
+            check("the prepare command updates both files", release.main(["prepare"]) == 0
+                  and release.current() == "1.1.1"
+                  and release.problems(release.current(), log.read_text(encoding="utf-8")) == [])
+            before = init.read_bytes(), log.read_bytes()
+            check("repeating the command does not rewrite prepared files",
+                  release.main(["prepare"]) == 0 and before == (init.read_bytes(), log.read_bytes()))
+            check("preparing retains the rest of the version module", "# Keep this comment." in init.read_text())
 
 resource = release.version_file("2.3.4")
 check("the exe's version resource carries the numbers",

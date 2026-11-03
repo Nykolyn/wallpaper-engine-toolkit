@@ -2,8 +2,9 @@
 
 **GitHub is the source of truth for this project.** The `main` branch is what
 the project *is*; a change that only exists on someone's disk does not exist.
-Every change — code, documentation, a one-line fix — arrives through a pull
-request.
+Every source change — code, documentation, a one-line fix — arrives through a
+pull request. The manual release workflow may commit only the version and
+changelog metadata it prepares.
 
 ## The loop
 
@@ -111,10 +112,13 @@ version. The version lives in one place —
 | **minor** `1.0.1 → 1.1.0` | adds something you can see or use | a new tab, a new setting, a new flag |
 | **major** `1.1.0 → 2.0.0` | breaks what was there | a setting that no longer carries over, `data/` in a shape an older build cannot read |
 
-Raise it by the biggest change waiting under `[Unreleased]`. A release is a
-pull request of its own: it raises the version and moves the waiting entries
-of [CHANGELOG.md](CHANGELOG.md) into a section for the new version, newest
-first, under an empty `## [Unreleased]`:
+A manual run of **Release** on `main` prepares the next **patch** release from the
+entries waiting under `[Unreleased]`. It raises the version, dates the notes,
+updates the comparison links, and commits only `app/__init__.py` and
+`CHANGELOG.md` as the release bot. All subsequent jobs use that exact commit.
+For a minor or major release, prepare the version and notes in a pull request
+first; the workflow reuses prepared metadata when `[Unreleased]` is empty.
+The resulting changelog has the new release below an empty `## [Unreleased]`:
 
 ```
 ## [Unreleased]
@@ -131,7 +135,7 @@ Added, Changed, Deprecated, Removed, Fixed, Security — and update the link
 references at the foot of the file (`[Unreleased]` compares from the new tag;
 the new version gets a line of its own).
 
-The `tests` workflow runs `tools/release.py check` on every pull request. One
+The **CI** workflow runs `tools/release.py check` on every pull request. One
 that keeps the version fails when nothing is written up under `[Unreleased]`;
 one that raises it fails when the version is lower than the last release on
 `main`, when it has no dated section, or when entries are left under
@@ -141,18 +145,22 @@ one that raises it fails when the version is lower than the last release on
 .venv\Scripts\python.exe tools\release.py check --base origin/main
 ```
 
-Merging runs nothing. Once the release pull request is merged, run the
-`tests` workflow by hand on `main` (Actions → tests → Run workflow, or
-`gh workflow run tests.yml --ref main`): it checks again, builds and checks the
-installer, tags `vX.Y.Z` and publishes a GitHub release with that CHANGELOG
-section as its notes and the installer attached. Run it before merging anything
-else, or the new entries under `[Unreleased]` stop it. The version also shows
+Merging runs nothing. Whenever you want to ship the merged changes, run the
+**Release** workflow by hand on `main` (Actions → Release → Run workflow, or
+`gh workflow run release.yml --ref main`). No separate patch-release pull request
+is needed. It prepares the release, runs the full tests, then builds and checks
+the installer before tagging `vX.Y.Z` and publishing the notes and installer.
+Manual runs on the same branch are serialized. If a run fails, start it again:
+without new pending notes it keeps the prepared version, and a version already
+published is left alone. A manual run on another branch checks the build without
+preparing metadata or publishing a release. The version also shows
 in the window title, in `run_app.py --version`, at the top of
 `data/selfcheck.txt`, and on the built exe's Details tab.
 
-Pull requests run the full Windows test suite and source selfcheck. A new
+**CI** runs the full Windows test suite and source selfcheck for pull requests.
+**Release** calls the same checks before building the installer. A new
 commit cancels the previous run for the same PR. The installer is built and
-checked only on a manual `tests` workflow run; packaging failures therefore
+checked only on a manual **Release** workflow run; packaging failures therefore
 block the release rather than the merge. To check
 packaging before merging, run the workflow manually against the PR branch.
 CI installs the versions in `requirements-ci.txt` using the existing pip cache;

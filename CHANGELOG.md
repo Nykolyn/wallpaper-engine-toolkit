@@ -8,6 +8,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- The Tracker finish-time test uses a fixed snapshot time, avoiding intermittent
+  CI and release failures when the wall clock crosses a minute during the check.
+- Workflows are named **CI** for pull-request checks and **Release** for manual
+  publication. Manual releases prepare the next patch version and dated changelog automatically,
+  reuse that version on retry, and build and publish the same prepared commit.
 - To reserve checks both the reserve and current wallpapers folder for existing
   Workshop IDs, including renamed folders, so wallpapers already in the current
   playlist are not copied into the reserve again.

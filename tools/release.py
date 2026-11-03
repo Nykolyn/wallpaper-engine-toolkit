@@ -6,13 +6,12 @@ exe's file properties, the git tag and the GitHub release — so they cannot
 disagree.
 
 A pull request writes its change up under `## [Unreleased]` and leaves the
-version alone. A release is a pull request of its own that raises the version
-and moves those entries into `## [X.Y.Z] - YYYY-MM-DD`; once it is merged, a
-manual run of the tests workflow on main publishes it. `check` is what makes
-that mandatory rather than a good intention; the tests workflow runs it on
-every pull request and before a release.
+version alone. A manual workflow run on main prepares the next patch release,
+then tests, builds and publishes that commit. With no pending entries it
+reuses the prepared version, so a failed publication can be retried.
 
     python tools/release.py check [--base REF]   # written up, under Unreleased or as a release
+    python tools/release.py prepare             # move pending notes into the next patch release
     python tools/release.py version              # print the version
     python tools/release.py notes [VERSION]      # the CHANGELOG section, for a release body
     python tools/release.py version-file OUT     # PyInstaller's Windows version resource
@@ -24,6 +23,7 @@ import os
 import re
 import subprocess
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -129,6 +129,30 @@ def released(changelog: str) -> str | None:
     return None
 
 
+def prepare(version: str, changelog: str, day: str) -> tuple[str, str]:
+    """Prepare pending entries once; retries reuse the same release metadata."""
+    found = problems(version, changelog, unreleased_ok=True)
+    if found:
+        raise ValueError("\n".join(found))
+    if not any(name == "Unreleased" and re.search(r"^- ", body, re.M)
+               for name, _, body in sections(changelog)):
+        return version, changelog
+    major, minor, patch = parse(version)
+    next_version = f"{major}.{minor}.{patch + 1}"
+    link = re.search(rf"^\[Unreleased\]: (.+)/compare/v{re.escape(version)}\.\.\.HEAD$",
+                     changelog, re.M)
+    if link is None:
+        raise ValueError("The Unreleased comparison link must match the current version.")
+    repo = link.group(1)
+    changelog = re.sub(r"^## \[Unreleased\][^\n]*\n",
+                       f"## [Unreleased]\n\n## [{next_version}] - {day}\n",
+                       changelog, count=1, flags=re.M)
+    changelog = changelog.replace(link.group(0),
+        f"[Unreleased]: {repo}/compare/v{next_version}...HEAD\n"
+        f"[{next_version}]: {repo}/compare/v{version}...v{next_version}", 1)
+    return next_version, changelog
+
+
 def base_version(ref: str) -> str | None:
     """The newest release on `ref`, by its CHANGELOG.
 
@@ -182,6 +206,7 @@ def main(argv: list[str]) -> int:
     sub = parser.add_subparsers(dest="command", required=True)
     check = sub.add_parser("check", help="fail unless the version is releasable")
     check.add_argument("--base", help="git ref the version must be higher than")
+    sub.add_parser("prepare", help="prepare pending changes as the next patch release")
     sub.add_parser("version", help="print the version")
     notes_cmd = sub.add_parser("notes", help="print a version's CHANGELOG section")
     notes_cmd.add_argument("version", nargs="?")
@@ -192,7 +217,19 @@ def main(argv: list[str]) -> int:
     # Console code pages on Windows cannot always encode the changelog's dashes.
     sys.stdout.reconfigure(encoding="utf-8")
     version = current()
-    if args.command == "version":
+    if args.command == "prepare":
+        changelog = CHANGELOG.read_text(encoding="utf-8")
+        try:
+            next_version, prepared = prepare(version, changelog, datetime.now(timezone.utc).date().isoformat())
+        except ValueError as err:
+            print(f"error: {err}")
+            return 1
+        if next_version != version:
+            INIT.write_text(VERSION_LINE.sub(f'__version__ = "{next_version}"',
+                                            INIT.read_text(encoding="utf-8"), count=1), encoding="utf-8")
+            CHANGELOG.write_text(prepared, encoding="utf-8")
+        print(f"Release {next_version} prepared; existing metadata reused when no changes are pending.")
+    elif args.command == "version":
         print(version)
     elif args.command == "notes":
         print(notes(args.version or version))

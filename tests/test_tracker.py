@@ -140,11 +140,12 @@ def snapshot(**over) -> tr.Progress:
 # Ten hours in with half the playlist shown: the other half should land ten
 # hours out, whatever the wallpaper timer says — the machine is off sometimes.
 ten_hours_ago = (NOW - timedelta(hours=10)).strftime(tr.TIME_FMT)
-projected = snapshot(started=ten_hours_ago, seen=100, total=200).finish_estimate
+# Use the snapshot's clock, at the same precision as its stored timestamp.
+projected = snapshot(started=ten_hours_ago, seen=100, total=200).finish_at(NOW.replace(microsecond=0))
 check("a finish is projected from the pace actually kept", projected is not None)
 if projected:
     check("and it matches the pace rather than the timer",
-          projected == (NOW + timedelta(hours=10)).strftime("%d %b %H:%M"))
+          projected.strftime("%d %b %H:%M") == (NOW + timedelta(hours=10)).strftime("%d %b %H:%M"))
 check("nothing is projected before anything has been seen",
       snapshot(seen=0).finish_estimate is None)
 check("nothing is projected from a handful of displays either",
