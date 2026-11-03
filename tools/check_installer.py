@@ -1,5 +1,5 @@
 """Install, update, uninstall and reinstall the built installer, checking the data
-at every step. CI runs it on a fresh Windows (.github/workflows/tests.yml):
+at every step. Release runs it on a fresh Windows (.github/workflows/release.yml):
 
     python tools\\check_installer.py [dist\\installer\\WallpaperEngineToolkit-Setup-X.Y.Z.exe]
 

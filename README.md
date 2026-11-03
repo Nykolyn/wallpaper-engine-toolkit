@@ -132,7 +132,9 @@ windows on screen, or a network — the parts that do are behind an opt-in
 
 ## Contributing
 
-Every change goes through a pull request. See **[CONTRIBUTING.md](CONTRIBUTING.md)**.
+Source changes go through a pull request and the **CI** checks. Publish merged
+changes with **Actions → Release → Run workflow** on `main`; it prepares the
+patch version and changelog automatically. See **[CONTRIBUTING.md](CONTRIBUTING.md)**.
 
 ## Licence
 
