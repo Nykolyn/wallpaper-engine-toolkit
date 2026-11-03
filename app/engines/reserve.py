@@ -1,4 +1,4 @@
-"""Copy active, downloaded Workshop subscriptions missing from the reserve."""
+"""Copy active Workshop subscriptions missing from the reserve and current wallpapers."""
 from __future__ import annotations
 
 import os
@@ -26,24 +26,30 @@ class Scan:
 
 
 @file_copy.background_io()
-def reserve_ids(reserve, *, index_path=None, on_progress=None, cancelled=lambda: False):
+def reserve_ids(reserve, *, current=None, index_path=None, on_progress=None, cancelled=lambda: False):
     if not reserve or not str(reserve).strip():
         raise ValueError("Set the reserve folder in Settings first.")
-    with os.scandir(reserve) as entries:
-        names = {e.name for e in entries if e.is_dir()}
+    roots = [reserve] + ([current] if current and str(current).strip() else [])
+    names = set()
+    for root in roots:
+        with os.scandir(root) as entries:
+            names.update(e.name for e in entries if e.is_dir())
     # A separate cache avoids concurrent saves over the Rotator's metadata index.
     index = LibraryIndex(index_path or app_data_dir() / "reserve_index.json")
     index.load()
-    report = index.refresh([reserve], progress=on_progress, cancelled=cancelled)
+    report = index.refresh(roots, progress=on_progress, cancelled=cancelled)
     if cancelled():
         raise InterruptedError("Scan stopped.")
     if report.missing or not report.complete:
-        raise OSError("The reserve could not be read completely. Try scanning again.")
-    return index.workshop_ids(reserve) | {n for n in names if n.isdigit()}
+        raise OSError("The reserve or current wallpapers could not be read completely. Try scanning again.")
+    known = {n for n in names if n.isdigit()}
+    for root in roots:
+        known.update(index.workshop_ids(root))
+    return known
 
 
 @file_copy.background_io()
-def scan(reserve, *, workshop=None, cache_path=None, index_path=None, ugc=None, client=None,
+def scan(reserve, *, current=None, workshop=None, cache_path=None, index_path=None, ugc=None, client=None,
          on_progress=None, cancelled=lambda: False, api_key=None):
     def progress(phase, done, total):
         if cancelled():
@@ -51,8 +57,8 @@ def scan(reserve, *, workshop=None, cache_path=None, index_path=None, ugc=None, 
         if on_progress:
             on_progress(phase, done, total)
 
-    kept = reserve_ids(reserve, index_path=index_path, cancelled=cancelled,
-                       on_progress=lambda _root, d, t: progress("Reading reserve", d, t))
+    kept = reserve_ids(reserve, current=current, index_path=index_path, cancelled=cancelled,
+                       on_progress=lambda _root, d, t: progress("Reading reserve and current wallpapers", d, t))
     root = find_workshop_content(workshop)
     if root is None:
         raise OSError("The Wallpaper Engine Workshop folder was not found.")
@@ -112,16 +118,16 @@ def scan(reserve, *, workshop=None, cache_path=None, index_path=None, ugc=None, 
 
 @file_copy.background_io()
 def copy_to_reserve(folder, reserve, *, ugc=None, on_progress=None, cancelled=lambda: False,
-                    kept=None):
+                    kept=None, current=None):
     item = workshop_id(folder)
     if not item:
         raise ValueError("This is not a Workshop wallpaper folder.")
     with ugc if ugc is not None else SteamUgc(cancelled=cancelled) as steam:
         if not steam.state(item).ready:
             raise ValueError("This wallpaper is no longer subscribed and fully downloaded. Scan again.")
-    known = reserve_ids(reserve, cancelled=cancelled) if kept is None else kept
+    known = reserve_ids(reserve, current=current, cancelled=cancelled) if kept is None else kept
     if item in known:
-        raise FileExistsError("This wallpaper is already in the reserve. Scan again.")
+        raise FileExistsError("This wallpaper is already in the reserve or current wallpapers. Scan again.")
     target = file_copy.copy_to_reserve(folder, reserve, on_progress=on_progress, cancelled=cancelled)
     known.add(item)
     return target
