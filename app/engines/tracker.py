@@ -68,6 +68,10 @@ def default_we_config() -> str:
 
 TIME_FMT = "%Y-%m-%d %H:%M:%S"
 
+# Why a cycle was archived when Wallpaper Engine threw its pass away. Such a pass
+# keeps what it had shown, so `pass_restore` can put it back.
+RESET_REASON = "Wallpaper Engine started the playlist over"
+
 
 def _now() -> str:
     return datetime.now().strftime(TIME_FMT)
@@ -1118,8 +1122,10 @@ class TrackerState:
             pass
         self._remember()
 
-    def archive_cycle(self, cycle: Cycle, reason: str | None = None) -> None:
-        """Retire a cycle: keep the summary, drop the bulky item/seen lists."""
+    def archive_cycle(self, cycle: Cycle, reason: str | None = None, *,
+                      keep_shown: bool = False) -> None:
+        """Retire a cycle: keep the summary, drop the bulky item/seen lists —
+        bar, with `keep_shown`, what it had shown, for restoring the pass."""
         entry = {
             "id": cycle.id,
             "monitor": cycle.monitor,
@@ -1132,6 +1138,10 @@ class TrackerState:
         }
         if reason:
             entry["reason"] = reason
+        if keep_shown:
+            items, gone = set(cycle.items), set(cycle.missing)
+            entry["shown"] = {i: when for i, when in cycle.seen.items()
+                              if i in items and i not in gone}
         self.archive.insert(0, entry)
         del self.archive[self.MAX_ARCHIVE:]
 
@@ -1491,7 +1501,7 @@ class Tracker:
                         cycle.changes += 1
                     state.archive_cycle(
                         cycle, "shown to the end; Wallpaper Engine began the next pass"
-                        if finished else "Wallpaper Engine started the playlist over")
+                        if finished else RESET_REASON, keep_shown=not finished)
                     cycle = restart_from_engine(cycle, deck, written,
                                                 engine[1] if engine else None)
                     state.cycles[view.monitor] = cycle
