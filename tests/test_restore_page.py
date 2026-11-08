@@ -66,6 +66,22 @@ page._answer = lambda dialog: asked.append(dialog) or False
 page.restore("Monitor1")
 check("Restore asks first, and a no starts nothing", len(asked) == 1 and page.worker is None)
 
+class FakeWorker:
+    waited = 0
+
+    def isRunning(self):
+        return True
+
+    def wait(self, *_args):
+        FakeWorker.waited += 1
+        return True
+
+
+page.worker = FakeWorker()
+page._shutdown()
+check("closing the window waits for a restore under way", FakeWorker.waited == 1)
+page.worker = None
+
 check("the page has no number shortcut, and the old ones stay",
       "restore" in PAGE_ORDER and "restore" not in PAGE_SHORTCUTS
       and PAGE_SHORTCUTS["reserve"] == "Ctrl+0" and PAGE_SHORTCUTS["settings"] == "Ctrl+9")

@@ -51,6 +51,9 @@ check("archive keeps no list otherwise", "shown" not in entry)
 # ---- what is restorable, and the deck it gets ----------------------------------------
 
 import app.engines.pass_restore as pr               # noqa: E402
+import app.engines.playlist_refresh as refresh_mod  # noqa: E402
+
+refresh_mod.backup_dir = lambda: TMP / "playlist-refresh"
 import app.engines.wallpaper_timer as wt            # noqa: E402
 from datetime import datetime, timedelta            # noqa: E402
 
@@ -137,6 +140,15 @@ check("refuses without a reset",
 check("refuses a pass that ran to its end",
       pr.find_restorable(reset_state(reason="shown to the end; Wallpaper Engine began the "
                                             "next pass"), "Monitor1", atimes)[0] is None)
+rebuilt = "The Rotator rebuilt this playlist; that start over was meant."
+check("refuses a start over the Rotator made",
+      pr.find_restorable(reset_state(), "Monitor1", atimes,
+                         rewritten=lambda: (END - timedelta(seconds=40)).timestamp())
+      == (None, rebuilt))
+check("but not for a rebuild that began the pass",
+      pr.find_restorable(reset_state(), "Monitor1", atimes,
+                         rewritten=lambda: (START - timedelta(seconds=5)).timestamp())[0]
+      is not None)
 check("refuses an untracked monitor",
       pr.find_restorable(reset_state(), "Monitor7", atimes)
       == (None, "Nothing is tracked on Monitor7 yet."))
@@ -201,6 +213,7 @@ def setup(**changes):
     calls.clear()
     answers.update({"close": True, "start": True, **changes})
     STATE.write_bytes(state_file())
+    tr.STATE_PATH.unlink(missing_ok=True)       # each case starts from its own state
     reset_state(shown=saved).save()
 
 
@@ -279,6 +292,52 @@ guard.mark("Monitor1", 1000.0)
 check("the guard holds a monitor for ten minutes",
       first and not guard.allowed("Monitor1", 1599.0) and guard.allowed("Monitor1", 1600.0)
       and guard.allowed("Monitor0", 1001.0))
+
+# Review: the tray's tracker loaded before the restore and saves after it.
+setup()
+stale = tr.TrackerState.load()
+pr.restore("Monitor1")
+stale.save()
+after_stale = tr.TrackerState.load()
+check("a stale save keeps the restored pass and its mark",
+      after_stale.cycles["Monitor1"].id == "270bd142"
+      and after_stale.archive[0].get("restored"))
+
+# Review: in the tray, the feed's worker and an unasked restore both save. Made
+# to meet halfway: the first writer is mid-way through its temp file when the
+# second saves.
+real_write_text = Path.write_text
+nested = {"done": False}
+
+
+def halfway(self, data, *args, **kwargs):
+    if not self.name.endswith(".tmp") or nested["done"]:
+        return real_write_text(self, data, *args, **kwargs)
+    nested["done"] = True
+    with open(self, "w", encoding="utf-8") as f:
+        f.write(data[:len(data) // 2])
+        f.flush()
+        other.save()
+        f.write(data[len(data) // 2:])
+    return len(data)
+
+
+tr.STATE_PATH.unlink(missing_ok=True)
+other = tr.TrackerState({"Monitor0": tr.Cycle(monitor="Monitor0", playlist="subscribed",
+                                              started=S, items=LIVE[:5])})
+mine = tr.TrackerState({"Monitor1": tr.Cycle(monitor="Monitor1", playlist="custom",
+                                             started=S, items=LIVE)})
+Path.write_text = halfway
+try:
+    mine.save()
+finally:
+    Path.write_text = real_write_text
+try:
+    json.loads(tr.STATE_PATH.read_text(encoding="utf-8"))
+    whole = True
+except ValueError:
+    whole = False
+check("two writers meeting halfway never leave a broken tracker.json", whole)
 
 from app.services.activity import known_kind        # noqa: E402
 

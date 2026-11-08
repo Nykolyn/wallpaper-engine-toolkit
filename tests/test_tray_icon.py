@@ -666,6 +666,36 @@ done = subprocess.run([sys.executable, "-c", code], capture_output=True, text=Tr
 check("importing the tray loads no kit, no pages and no window",
       done.returncode == 0 and done.stdout.strip() == "[]")
 
+# ---- an unasked restore -----------------------------------------------------------
+
+
+class FakeWorker:
+    def __init__(self, running=True):
+        self.running, self.waited = running, 0
+
+    def isRunning(self):
+        return self.running
+
+    def wait(self, *_args):
+        self.waited += 1
+        return True
+
+
+timers: list[int] = []
+real_timer = tray_mod.QTimer
+tray_mod.QTimer = SimpleNamespace(singleShot=lambda ms, fn: timers.append(ms))
+try:
+    busy = SimpleNamespace(_restore_worker=FakeWorker())
+    tray_mod.TrackerTray._start_restore(busy, "Monitor0")
+finally:
+    tray_mod.QTimer = real_timer
+check("a second monitor's restore waits its turn instead of being dropped",
+      timers == [30_000] and isinstance(busy._restore_worker, FakeWorker))
+busy = SimpleNamespace(_restore_worker=FakeWorker())
+tray_mod.TrackerTray._finish_restore(busy)
+check("quitting waits for a restore under way, so Wallpaper Engine is started again",
+      busy._restore_worker.waited == 1)
+
 print()
 print("PASSED %d/%d" % (sum(results), len(results)))
 sys.exit(0 if all(results) else 1)

@@ -128,6 +128,7 @@ class TrackerTray:
         self.restarts_told: set[str] = set()
         self._restore_guard = None          # pass_restore.AutoGuard, made on first use
         self._restore_worker = None
+        app.aboutToQuit.connect(self._finish_restore)
         self.countdowns: dict[str, Countdown] = {}
         self._icon_key = None
         self._clock_failed = False
@@ -332,10 +333,18 @@ class TrackerTray:
     def _start_restore(self, monitor: str) -> None:
         from .engines import pass_restore
         if self._restore_worker is not None and self._restore_worker.isRunning():
+            # Another monitor's restore is under way: this one waits its turn.
+            QTimer.singleShot(30_000, lambda m=monitor: self._start_restore(m))
             return
         worker = self._restore_worker = pass_restore.RestoreWorker(monitor)
         worker.finished_restore.connect(self._on_restored)
         worker.start()
+
+    def _finish_restore(self) -> None:
+        """Before quitting: a restore under way gets to start Wallpaper Engine again."""
+        worker = self._restore_worker
+        if worker is not None and worker.isRunning():
+            worker.wait()
 
     def _on_restored(self, result) -> None:
         from .services.activity import FILE_NAME, ActivityJournal
@@ -421,6 +430,7 @@ class TrackerTray:
 
     def _on_quit_requested(self):
         log("asked to quit (an update or an uninstall is starting)")
+        self._finish_restore()
         self.app.quit()
 
     def _on_activated(self, reason):

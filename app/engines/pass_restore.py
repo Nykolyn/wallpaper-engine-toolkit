@@ -23,7 +23,7 @@ from PySide6.QtCore import QThread, Signal
 
 from . import engine_control
 from ..settings import app_data_dir
-from .playlist_refresh import _replace
+from .playlist_refresh import _replace, last_rewrite
 from .tracker import (RESET_REASON, TIME_FMT, Cycle, TrackerState, last_access_enabled,
                       scan_atimes)
 from .wallpaper_timer import SECTION, STATE_FILE, read_state_file, write_state_file
@@ -64,7 +64,9 @@ def shown_from_atimes(items: list[str], atimes: dict[str, float],
 
 def find_restorable(state: TrackerState, monitor: str,
                     atimes: Callable[[list[str]], dict[str, float]] = scan_atimes,
-                    atime_ok: bool | None = True) -> tuple[Restorable | None, str]:
+                    atime_ok: bool | None = True,
+                    rewritten: Callable[[], float | None] = last_rewrite,
+                    ) -> tuple[Restorable | None, str]:
     """The pass Wallpaper Engine last threw away on `monitor`, if it can be put
     back — else None and why not, in words for the page."""
     current = state.cycles.get(monitor)
@@ -76,6 +78,10 @@ def find_restorable(state: TrackerState, monitor: str,
         return None, f"Wallpaper Engine has not thrown a pass away on {monitor}."
     if entry.get("restored"):
         return None, "That pass was already restored."
+    stamp = rewritten()
+    if (stamp is not None and datetime.strptime(entry["started"], TIME_FMT).timestamp()
+            <= stamp <= datetime.strptime(entry["ended"], TIME_FMT).timestamp()):
+        return None, "The Rotator rebuilt this playlist; that start over was meant."
     items, gone = set(current.items), set(current.missing)
     if "shown" in entry:
         old, source = dict(entry["shown"]), "saved"

@@ -11,7 +11,7 @@ import threading
 from dataclasses import dataclass
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtWidgets import QHBoxLayout, QScrollArea, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QApplication, QHBoxLayout, QScrollArea, QVBoxLayout, QWidget
 
 from .. import theme
 from ..engines import pass_restore
@@ -133,6 +133,15 @@ class RestorePage(Page):
         outer.setContentsMargins(0, 0, 0, 0)
         outer.addWidget(scroll)
         self._looked.connect(self._show)
+        app = QApplication.instance()
+        if app is not None:
+            app.aboutToQuit.connect(self._shutdown)
+
+    def _shutdown(self) -> None:
+        """A restore under way gets to start Wallpaper Engine again before the
+        window goes."""
+        if self.worker is not None and self.worker.isRunning():
+            self.worker.wait()
 
     # -- looking
 
