@@ -280,6 +280,10 @@ check("the guard holds a monitor for ten minutes",
       first and not guard.allowed("Monitor1", 1599.0) and guard.allowed("Monitor1", 1600.0)
       and guard.allowed("Monitor0", 1001.0))
 
+from app.services.activity import known_kind        # noqa: E402
+
+check("the journal knows restores", known_kind("restore.clean") and known_kind("restore.failed"))
+
 
 print()
 print("PASSED %d/%d" % (sum(results), len(results)))

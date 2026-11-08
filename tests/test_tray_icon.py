@@ -307,6 +307,9 @@ class Said(SimpleNamespace):
     def _say_restarted(self, p):
         self.restarted.append(p.monitor)
 
+    def _restore_unasked(self, p):
+        return p.monitor in getattr(self, "restoring", ())
+
 
 def announce(results_, said=None):
     said = said or Said(results=results_, completed=set(), restarts_told=set(),
@@ -328,6 +331,11 @@ said = announce([progress(cycle_id="z", restarted_at=now, restarted_from="81/195
 check("a playlist Wallpaper Engine started over says so", said.restarted == ["Monitor1"] and said.finished == [])
 announce(said.results, said)
 check("once", said.restarted == ["Monitor1"])
+said = Said(results=[], completed=set(), restarts_told=set(), finished=[], restarted=[],
+            restoring={"Monitor1"})
+said = announce([progress(cycle_id="z2", restarted_at=now, restarted_from="81/195",
+                          previous_id="old")], said)
+check("one being restored unasked says nothing yet", said.restarted == [] and said.finished == [])
 said = announce([progress(cycle_id="z2", restarted_at=now, restarted_from="195/195", previous_id="old2")])
 check("a pass that ran to its end before the restart is finished news, with that pass's total",
       said.finished == [("Monitor1", 195)] and said.restarted == [])
