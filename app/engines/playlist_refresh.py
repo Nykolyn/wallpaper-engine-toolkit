@@ -32,6 +32,7 @@ import json
 import os
 import random
 import shutil
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
@@ -55,6 +56,27 @@ def _noop(_e: ProgressEvent) -> None:
 def backup_dir() -> Path:
     from ..settings import app_data_dir
     return app_data_dir() / "playlist-refresh"
+
+
+# When a playlist was last rewritten here. The fresh pass that starts looks to
+# the tracker just like a pass Wallpaper Engine threw away; Restore tells the
+# two apart by this (`pass_restore.find_restorable`).
+REWRITTEN = "rewritten.txt"
+
+
+def mark_rewritten() -> None:
+    try:
+        backup_dir().mkdir(parents=True, exist_ok=True)
+        (backup_dir() / REWRITTEN).write_text(repr(time.time()), encoding="utf-8")
+    except OSError:
+        pass
+
+
+def last_rewrite() -> float | None:
+    try:
+        return float((backup_dir() / REWRITTEN).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
 
 
 # ---- Playlist items ------------------------------------------------------------
@@ -413,6 +435,7 @@ class PlaylistRefresh:
         if state is not None and restarted:
             _replace(state_path, restart_passes(state, config, restarted))
         _replace(config_path, dump_config(config))
+        mark_rewritten()
         self.rebuilt = True
         self._say(f"Playlist rewritten with {len(fresh)} wallpapers: "
                   + ", ".join(f.label for f in self.found) + ".")

@@ -68,6 +68,10 @@ def default_we_config() -> str:
 
 TIME_FMT = "%Y-%m-%d %H:%M:%S"
 
+# Why a cycle was archived when Wallpaper Engine threw its pass away. Such a pass
+# keeps what it had shown, so `pass_restore` can put it back.
+RESET_REASON = "Wallpaper Engine started the playlist over"
+
 
 def _now() -> str:
     return datetime.now().strftime(TIME_FMT)
@@ -1086,6 +1090,17 @@ class TrackerState:
 
     def save(self) -> None:
         disk = TrackerState.load()
+        # A restore (`pass_restore`) puts an archived pass back as the current
+        # cycle and marks its entry. A writer that loaded before must undo neither.
+        restored = {e.get("id"): e["restored"] for e in disk.archive if e.get("restored")}
+        for entry in self.archive:
+            if entry.get("id") in restored:
+                entry.setdefault("restored", restored[entry["id"]])
+        for key, mine in list(self.cycles.items()):
+            theirs = disk.cycles.get(key)
+            if (theirs is not None and theirs.id != mine.id and theirs.id in restored
+                    and mine.previous_id == theirs.id):
+                self.cycles[key] = theirs
         for key, mine in self.cycles.items():
             theirs = disk.cycles.get(key)
             if theirs is None or theirs.id != mine.id:
@@ -1109,17 +1124,24 @@ class TrackerState:
             "cycles": {k: c.to_dict() for k, c in self.cycles.items()},
             "archive": self.archive[:self.MAX_ARCHIVE],
         }
-        tmp = STATE_PATH.with_suffix(".tmp")
+        # A temp file of this save's own: the tray's feed and an unasked restore
+        # save from two threads, and a shared one could mix their halves.
+        tmp = STATE_PATH.with_suffix(f".{uuid.uuid4().hex[:12]}.tmp")
         try:
             tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2),
                            encoding="utf-8")
             os.replace(tmp, STATE_PATH)
         except OSError:
-            pass
+            try:
+                tmp.unlink(missing_ok=True)
+            except OSError:
+                pass
         self._remember()
 
-    def archive_cycle(self, cycle: Cycle, reason: str | None = None) -> None:
-        """Retire a cycle: keep the summary, drop the bulky item/seen lists."""
+    def archive_cycle(self, cycle: Cycle, reason: str | None = None, *,
+                      keep_shown: bool = False) -> None:
+        """Retire a cycle: keep the summary, drop the bulky item/seen lists —
+        bar, with `keep_shown`, what it had shown, for restoring the pass."""
         entry = {
             "id": cycle.id,
             "monitor": cycle.monitor,
@@ -1132,6 +1154,10 @@ class TrackerState:
         }
         if reason:
             entry["reason"] = reason
+        if keep_shown:
+            items, gone = set(cycle.items), set(cycle.missing)
+            entry["shown"] = {i: when for i, when in cycle.seen.items()
+                              if i in items and i not in gone}
         self.archive.insert(0, entry)
         del self.archive[self.MAX_ARCHIVE:]
 
@@ -1491,7 +1517,7 @@ class Tracker:
                         cycle.changes += 1
                     state.archive_cycle(
                         cycle, "shown to the end; Wallpaper Engine began the next pass"
-                        if finished else "Wallpaper Engine started the playlist over")
+                        if finished else RESET_REASON, keep_shown=not finished)
                     cycle = restart_from_engine(cycle, deck, written,
                                                 engine[1] if engine else None)
                     state.cycles[view.monitor] = cycle

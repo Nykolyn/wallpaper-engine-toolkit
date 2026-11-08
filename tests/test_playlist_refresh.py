@@ -307,6 +307,9 @@ check("and the monitor's pass starts over on the new set",
 check("both files were copied aside before they were rewritten",
       (TMP / "backups" / "config.json").is_file()
       and (TMP / "backups" / "playliststate.bin").is_file())
+import time as _time                               # noqa: E402
+check("a rewrite leaves the time it was done, for Restore to tell it from a reset",
+      pr.last_rewrite() is not None and abs(pr.last_rewrite() - _time.time()) < 60)
 check("Wallpaper Engine was closed first and started again after, as it was started",
       calls == ["running", "close", "start -language english"])
 check("the summary says what was rebuilt", any("custom" in line for line in refresh.summary))

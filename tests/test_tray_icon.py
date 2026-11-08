@@ -307,6 +307,9 @@ class Said(SimpleNamespace):
     def _say_restarted(self, p):
         self.restarted.append(p.monitor)
 
+    def _restore_unasked(self, p):
+        return p.monitor in getattr(self, "restoring", ())
+
 
 def announce(results_, said=None):
     said = said or Said(results=results_, completed=set(), restarts_told=set(),
@@ -328,6 +331,11 @@ said = announce([progress(cycle_id="z", restarted_at=now, restarted_from="81/195
 check("a playlist Wallpaper Engine started over says so", said.restarted == ["Monitor1"] and said.finished == [])
 announce(said.results, said)
 check("once", said.restarted == ["Monitor1"])
+said = Said(results=[], completed=set(), restarts_told=set(), finished=[], restarted=[],
+            restoring={"Monitor1"})
+said = announce([progress(cycle_id="z2", restarted_at=now, restarted_from="81/195",
+                          previous_id="old")], said)
+check("one being restored unasked says nothing yet", said.restarted == [] and said.finished == [])
 said = announce([progress(cycle_id="z2", restarted_at=now, restarted_from="195/195", previous_id="old2")])
 check("a pass that ran to its end before the restart is finished news, with that pass's total",
       said.finished == [("Monitor1", 195)] and said.restarted == [])
@@ -657,6 +665,36 @@ done = subprocess.run([sys.executable, "-c", code], capture_output=True, text=Tr
                       env={**os.environ, "WALLPAPER_TOOLKIT_DATA": str(TMP / "data2")})
 check("importing the tray loads no kit, no pages and no window",
       done.returncode == 0 and done.stdout.strip() == "[]")
+
+# ---- an unasked restore -----------------------------------------------------------
+
+
+class FakeWorker:
+    def __init__(self, running=True):
+        self.running, self.waited = running, 0
+
+    def isRunning(self):
+        return self.running
+
+    def wait(self, *_args):
+        self.waited += 1
+        return True
+
+
+timers: list[int] = []
+real_timer = tray_mod.QTimer
+tray_mod.QTimer = SimpleNamespace(singleShot=lambda ms, fn: timers.append(ms))
+try:
+    busy = SimpleNamespace(_restore_worker=FakeWorker())
+    tray_mod.TrackerTray._start_restore(busy, "Monitor0")
+finally:
+    tray_mod.QTimer = real_timer
+check("a second monitor's restore waits its turn instead of being dropped",
+      timers == [30_000] and isinstance(busy._restore_worker, FakeWorker))
+busy = SimpleNamespace(_restore_worker=FakeWorker())
+tray_mod.TrackerTray._finish_restore(busy)
+check("quitting waits for a restore under way, so Wallpaper Engine is started again",
+      busy._restore_worker.waited == 1)
 
 print()
 print("PASSED %d/%d" % (sum(results), len(results)))

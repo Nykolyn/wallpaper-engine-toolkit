@@ -6,6 +6,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- Restore page (Utilities): puts back a playlist pass Wallpaper Engine threw
+  away — closes it, writes the rest of the pass as that monitor's queue, starts
+  it again — by button, or automatically from the tray a minute after the reset
+  (on by default for the Rotator's monitor). The Tracker now keeps the list of
+  shown wallpapers when Wallpaper Engine starts a playlist over; older resets
+  fall back to file access times.
+
 ## [4.10.4] - 2026-11-03
 
 ### Fixed

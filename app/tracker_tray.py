@@ -69,7 +69,7 @@ RESTART_NOTICE_SECONDS = 15 * 60
 # fourteen seconds or so on a 10-minute delay, never one a second.
 
 # What a balloon was about, for what a click on it should open.
-BALLOON_FINISHED, BALLOON_RESTARTED = "finished", "restarted"
+BALLOON_FINISHED, BALLOON_RESTARTED, BALLOON_RESTORE = "finished", "restarted", "restore"
 
 
 def log(message: str) -> None:
@@ -126,6 +126,9 @@ class TrackerTray:
         self.results: list[Progress] = []
         self.completed: set[str] = set()
         self.restarts_told: set[str] = set()
+        self._restore_guard = None          # pass_restore.AutoGuard, made on first use
+        self._restore_worker = None
+        app.aboutToQuit.connect(self._finish_restore)
         self.countdowns: dict[str, Countdown] = {}
         self._icon_key = None
         self._clock_failed = False
@@ -287,7 +290,8 @@ class TrackerTray:
                         self.completed.add(p.previous_id)
                         self._say_finished(p.monitor, int(p.restarted_from.split("/")[-1]))
                     continue
-                self._say_restarted(p)
+                if not self._restore_unasked(p):
+                    self._say_restarted(p)
         for p in self.results:
             if p.total and p.seen >= p.total and p.cycle_id not in self.completed:
                 self.completed.add(p.cycle_id)
@@ -302,6 +306,54 @@ class TrackerTray:
         title, body = words.restarted_balloon(p.monitor, p.seen, p.total)
         # Back at the start: the time to the next change is not known yet.
         self._say(BALLOON_RESTARTED, title, body, tray_icon(UNKNOWN))
+
+    def _restore_unasked(self, p: Progress) -> bool:
+        """Put back the pass Wallpaper Engine just threw away on `p.monitor`, a
+        minute from now, where the Restore page's switch says to. True when it
+        is going to: the balloon then tells how that went instead."""
+        from .engines import pass_restore
+        from .engines.tracker import TrackerState
+        if self._restore_guard is None:
+            self._restore_guard = pass_restore.AutoGuard()
+        cycle = TrackerState.load().cycles.get(p.monitor)
+        if not pass_restore.auto_enabled(self.settings, p.monitor, cycle):
+            return False
+        now = time.monotonic()
+        if not self._restore_guard.allowed(p.monitor, now):
+            log(f"restore: {p.monitor} was reset again within "
+                f"{pass_restore.AUTO_WINDOW_S // 60} min of a restore — left as it is")
+            return False
+        self._restore_guard.mark(p.monitor, now)
+        log(f"restore: {p.monitor} reset at {p.restarted_from}; restoring in "
+            f"{pass_restore.AUTO_DELAY_S} s")
+        QTimer.singleShot(pass_restore.AUTO_DELAY_S * 1000,
+                          lambda m=p.monitor: self._start_restore(m))
+        return True
+
+    def _start_restore(self, monitor: str) -> None:
+        from .engines import pass_restore
+        if self._restore_worker is not None and self._restore_worker.isRunning():
+            # Another monitor's restore is under way: this one waits its turn.
+            QTimer.singleShot(30_000, lambda m=monitor: self._start_restore(m))
+            return
+        worker = self._restore_worker = pass_restore.RestoreWorker(monitor)
+        worker.finished_restore.connect(self._on_restored)
+        worker.start()
+
+    def _finish_restore(self) -> None:
+        """Before quitting: a restore under way gets to start Wallpaper Engine again."""
+        worker = self._restore_worker
+        if worker is not None and worker.isRunning():
+            worker.wait()
+
+    def _on_restored(self, result) -> None:
+        from .services.activity import FILE_NAME, ActivityJournal
+        log(f"restore: {result.message}")
+        ActivityJournal(app_data_dir() / FILE_NAME).add(
+            "tracker", "restore.clean" if result.ok else "restore.failed",
+            result.message)
+        self._say(BALLOON_RESTORE, "Pass restored" if result.ok else "Pass not restored",
+                  result.message, tray_icon(UNKNOWN))
 
     def _say(self, kind: str, title: str, body: str, icon):
         """One of the two balloons; a click on it opens the page it is about."""
@@ -378,6 +430,7 @@ class TrackerTray:
 
     def _on_quit_requested(self):
         log("asked to quit (an update or an uninstall is starting)")
+        self._finish_restore()
         self.app.quit()
 
     def _on_activated(self, reason):
@@ -391,6 +444,8 @@ class TrackerTray:
             self.open_toolkit("Rotator")
         elif self._balloon == BALLOON_RESTARTED:
             self.open_toolkit("Tracker")
+        elif self._balloon == BALLOON_RESTORE:
+            self.open_toolkit("Restore")
 
     def open_toolkit(self, page: str = "Tracker", command: str | None = None):
         """Bring up the Toolkit window, on a page (the Tracker, by default), and
