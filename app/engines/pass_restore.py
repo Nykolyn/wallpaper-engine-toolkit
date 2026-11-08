@@ -14,12 +14,19 @@ Engine again — it resumes the deck it finds.
 from __future__ import annotations
 
 import copy
+import shutil
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Callable, Iterable
 
-from .tracker import RESET_REASON, TIME_FMT, Cycle, TrackerState, scan_atimes
-from .wallpaper_timer import SECTION, read_state_file, write_state_file
+from PySide6.QtCore import QThread, Signal
+
+from . import engine_control
+from ..settings import app_data_dir
+from .playlist_refresh import _replace
+from .tracker import (RESET_REASON, TIME_FMT, Cycle, TrackerState, last_access_enabled,
+                      scan_atimes)
+from .wallpaper_timer import SECTION, STATE_FILE, read_state_file, write_state_file
 
 # A playlist is still the one the pass ran on when it keeps its name and at
 # least this share of what the pass had shown.
@@ -123,3 +130,85 @@ def rewrite_state(data: bytes, monitor: str, current: str, waiting: list[str]) -
                 record.marks = [0] * len(waiting)
                 return write_state_file(sections)
     raise ValueError(f"{monitor} is not in playliststate.bin")
+
+
+# ---- Putting it back ---------------------------------------------------------
+
+@dataclass
+class RestoreResult:
+    ok: bool
+    message: str            # one sentence, for the page, the balloon and the journal
+    seen: int = 0
+    total: int = 0
+
+
+def _on_screen(data: bytes, monitor: str) -> str | None:
+    for section in read_state_file(data):
+        if section.name == SECTION:
+            for record in section.monitors:
+                if record.name == monitor:
+                    return record.current
+    return None
+
+
+def restore(monitor: str, say: Callable[[str], None] = lambda _m: None) -> RestoreResult:
+    """Close Wallpaper Engine, put back the pass it threw away on `monitor`,
+    start it again. Wallpaper Engine is started whenever it was closed."""
+    atime_ok = last_access_enabled()
+    found, why = find_restorable(TrackerState.load(), monitor, atime_ok=atime_ok)
+    if found is None:
+        return RestoreResult(False, why)
+    engine = engine_control.running()
+    if engine is None:
+        return RestoreResult(False, "Wallpaper Engine is not running.")
+    say("Closing Wallpaper Engine...")
+    if not engine_control.close(engine):
+        return RestoreResult(False, "Wallpaper Engine did not close, so nothing was changed.")
+    backup = app_data_dir() / "pass-restore" / "playliststate.bin"
+    try:
+        path = engine.install_dir / STATE_FILE
+        data = path.read_bytes()
+        # Looked at again now that it is closed: it may have moved on meanwhile.
+        state = TrackerState.load()
+        found, why = find_restorable(state, monitor, atime_ok=atime_ok)
+        if found is None:
+            result = RestoreResult(False, why)
+        else:
+            current = _on_screen(data, monitor) or found.current.current or ""
+            found.shown.setdefault(current, datetime.now().strftime(TIME_FMT))
+            deck = plan_deck(found.current.items, found.shown, found.current.missing, current)
+            say(f"Putting back the pass on {monitor}: {len(deck)} still to come...")
+            backup.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(path, backup)
+            _replace(path, rewrite_state(data, monitor, current, deck))
+            cycle = restored_cycle(found)
+            cycle.current = current
+            state.cycles[monitor] = cycle
+            found.entry["restored"] = datetime.now().strftime(TIME_FMT)
+            state.save()
+            result = RestoreResult(True, f"Pass restored on {monitor}: "
+                                         f"{found.seen}/{found.total}.",
+                                   found.seen, found.total)
+    except Exception as e:  # noqa: BLE001 — Wallpaper Engine must come back regardless
+        result = RestoreResult(False, f"Restoring failed: {e}")
+    say("Starting Wallpaper Engine again...")
+    if not engine_control.start(engine):
+        result = RestoreResult(False, f"{result.message} Wallpaper Engine did not come back — "
+                                      f"start it by hand; the old state is in {backup}.")
+    return result
+
+
+class RestoreWorker(QThread):
+    """`restore` off the GUI thread. `finished_restore(RestoreResult)`."""
+    finished_restore = Signal(object)
+
+    def __init__(self, monitor: str):
+        super().__init__()
+        self.monitor = monitor
+
+    def run(self):
+        try:
+            result = restore(self.monitor)
+        except Exception as e:  # noqa: BLE001
+            result = RestoreResult(False, f"Unexpected error: {e}")
+        self.finished_restore.emit(result)

@@ -56,11 +56,17 @@ from datetime import datetime, timedelta            # noqa: E402
 
 S, E = "2026-11-01 01:46:10", "2026-11-08 18:34:34"
 START, END = datetime.strptime(S, tr.TIME_FMT), datetime.strptime(E, tr.TIME_FMT)
-LIVE = [f"p{i:03}" for i in range(194)]
-GONE = [f"gone{i}" for i in range(7)]
+# Real files: the tracker's own look (at the end) asks which ones exist.
+WP = TMP / "myprojects"
+WP.mkdir()
+LIVE = [(WP / f"p{i:03}.mp4").as_posix() for i in range(194)]
+for path in LIVE:
+    Path(path).write_bytes(b"")
+GONE = [(WP / f"gone{i}.mp4").as_posix() for i in range(7)]
+P168, P169 = LIVE[168], LIVE[169]
 ITEMS = LIVE[:100] + GONE + LIVE[100:]                # 201, as WE lists them
 OLD = LIVE[:168]                                      # shown before the reset
-SINCE = {"p168": "2026-11-08 18:34:33", "p169": "2026-11-08 18:45:18"}
+SINCE = {P168: "2026-11-08 18:34:33", P169: "2026-11-08 18:45:18"}
 
 
 def inside(i: int) -> float:
@@ -85,7 +91,7 @@ def reset_state(*, playlist="custom", items=None, shown=None, restored=False,
         entry["restored"] = "2026-11-08 20:00:00"
     current = tr.Cycle(monitor="Monitor1", playlist=playlist, started="2026-11-08 18:34:33",
                        id="a33bfae7", items=list(items or ITEMS), seen=dict(SINCE),
-                       changes=2, current="p169", missing=list(GONE),
+                       changes=2, current=P169, missing=list(GONE),
                        restarted_at=E, restarted_from="168/194", previous_id=previous,
                        from_rotation=True)
     return tr.TrackerState({"Monitor1": current}, [entry])
@@ -108,9 +114,9 @@ r2, _ = pr.find_restorable(reset_state(shown=saved), "Monitor1",
 check("saved list wins over access times",
       r2 is not None and r2.source == "saved" and r2.seen == 170 and not called)
 
-deck = pr.plan_deck(ITEMS, r.shown, GONE, "p169")
+deck = pr.plan_deck(ITEMS, r.shown, GONE, P169)
 check("plan keeps the current one out and drops shown and missing",
-      deck == LIVE[170:] and len(deck) == 24 and "p169" not in deck)
+      deck == LIVE[170:] and len(deck) == 24 and P169 not in deck)
 
 changed = "The playlist has changed since the reset."
 check("refuses a renamed playlist",
@@ -147,20 +153,109 @@ check("restored cycle carries the old id",
 def state_file():
     return wt.write_state_file([wt.StateSection("wallpaperconfig", [
         wt.StateMonitor("Monitor0", 84, "s0", ["s1", "s2"], 0, [0, 0]),
-        wt.StateMonitor("Monitor1", 168, "p169", list(LIVE), 0, [0] * len(LIVE)),
+        wt.StateMonitor("Monitor1", 168, P169, [i for i in ITEMS if i != P169], 0,
+                        [0] * (len(ITEMS) - 1)),
     ])])
 
 
 before = wt.read_state_file(state_file())[0].monitors
-after = wt.read_state_file(pr.rewrite_state(state_file(), "Monitor1", "p169", deck))[0].monitors
+after = wt.read_state_file(pr.rewrite_state(state_file(), "Monitor1", P169, deck))[0].monitors
 check("rewrite touches only that monitor",
-      after[0] == before[0] and after[1].current == "p169" and after[1].waiting == deck
+      after[0] == before[0] and after[1].current == P169 and after[1].waiting == deck
       and after[1].marks == [0] * 24 and after[1].instance == 168)
 try:
     pr.rewrite_state(state_file(), "Monitor9", "x", [])
     check("rewrite refuses an unknown monitor", False)
 except ValueError:
     check("rewrite refuses an unknown monitor", True)
+
+
+# ---- running a restore ------------------------------------------------------------
+
+import json                                         # noqa: E402
+import app.engines.engine_control as ec             # noqa: E402
+
+INSTALL = TMP / "wallpaper_engine"
+(INSTALL / "bin").mkdir(parents=True)
+STATE = INSTALL / "bin" / "playliststate.bin"
+CFG = INSTALL / "config.json"
+DATA = TMP / "data"
+pr.app_data_dir = lambda: DATA
+calls: dict[str, int] = {}
+answers = {"close": True, "start": True}
+
+
+def fake(name):
+    def call(*_args, **_kwargs):
+        calls[name] = calls.get(name, 0) + 1
+        return answers[name]
+    return call
+
+
+ec.running = lambda: ec.Engine(pid=1, exe=str(INSTALL / "wallpaper64.exe"))
+ec.close = fake("close")
+ec.start = fake("start")
+
+
+def setup(**changes):
+    calls.clear()
+    answers.update({"close": True, "start": True, **changes})
+    STATE.write_bytes(state_file())
+    reset_state(shown=saved).save()
+
+
+setup()
+result = pr.restore("Monitor1")
+on_disk = wt.read_state_file(STATE.read_bytes())[0].monitors
+loaded = tr.TrackerState.load()
+check("a restore rewrites the deck and gives the tracker its pass back",
+      result.ok and result.seen == 170 and result.total == 194
+      and result.message == "Pass restored on Monitor1: 170/194."
+      and on_disk[1].waiting == LIVE[170:] and on_disk[0].waiting == ["s1", "s2"]
+      and loaded.cycles["Monitor1"].id == "270bd142"
+      and loaded.archive[0].get("restored")
+      and (DATA / "pass-restore" / "playliststate.bin").is_file()
+      and calls == {"close": 1, "start": 1})
+
+setup(close=False)
+bytes_before, json_before = STATE.read_bytes(), tr.STATE_PATH.read_text(encoding="utf-8")
+result = pr.restore("Monitor1")
+check("WE that does not close changes nothing",
+      not result.ok and result.message == "Wallpaper Engine did not close, so nothing was changed."
+      and STATE.read_bytes() == bytes_before
+      and tr.STATE_PATH.read_text(encoding="utf-8") == json_before and "start" not in calls)
+
+setup()
+json_before = tr.STATE_PATH.read_text(encoding="utf-8")
+real_rewrite = pr.rewrite_state
+pr.rewrite_state = lambda *a: (_ for _ in ()).throw(ValueError("broken"))
+result = pr.restore("Monitor1")
+pr.rewrite_state = real_rewrite
+check("WE is started even when the rewrite fails",
+      not result.ok and calls.get("start") == 1
+      and tr.STATE_PATH.read_text(encoding="utf-8") == json_before)
+
+setup(start=False)
+result = pr.restore("Monitor1")
+check("a failed start names the backup", not result.ok and "pass-restore" in result.message)
+
+setup()
+refused = pr.restore("Monitor7")
+check("a refusal never touches Wallpaper Engine",
+      not refused.ok and refused.message == "Nothing is tracked on Monitor7 yet." and not calls)
+
+# Review focus: whatever the tray's tracker does next, it follows the deck.
+setup()
+pr.restore("Monitor1")
+CFG.write_text(json.dumps({"?installdirectory": "x", "steamuser": {"general": {
+    "wallpaperconfig": {"selectedwallpapers": {"Monitor1": {"file": P169, "playlist": {
+        "items": ITEMS, "name": "custom",
+        "settings": {"delay": 10, "order": "random", "mode": "timer"}}}}}}}}),
+    encoding="utf-8")
+looks = {p.monitor: p for p in tr.Tracker(str(CFG)).poll()}
+check("the tracker follows the restored deck",
+      "Monitor1" in looks and looks["Monitor1"].seen == 170
+      and looks["Monitor1"].total == 194 and looks["Monitor1"].cycle_id == "270bd142")
 
 
 print()
