@@ -80,7 +80,7 @@ they are. Size: a 168-item list is ~15 KB; `MAX_ARCHIVE` is 40.
   `PlaylistRefresh`, never leaving WE closed: start is attempted even when the
   rewrite failed.
 - Refuses, with a reason the page shows, when: no restorable pass; the playlist
-  changed; WE is not running and no state file can be read; nothing would be
+  changed; WE is not running; nothing would be
   left to show (the pass was already complete).
 
 ### 3. Page **Restore** (`app/pages/restore.py`, new)
@@ -94,7 +94,8 @@ monitor:
 - **Restore** button (disabled with a reason when not restorable), running the
   restore off the GUI thread through the jobs service;
 - **Restore automatically** `Toggle`, saved in `suite.json` under
-  `restore.auto.<MonitorN>`; defaults Monitor1 on, others off.
+  `restore` / `auto.<MonitorN>`; default on for a monitor whose playlist came
+  out of a rotation, off otherwise (here: Monitor1 on, Monitor0 off).
 
 ### 4. Automatic restore (`app/tracker_tray.py`)
 
@@ -103,8 +104,8 @@ Where the tray already announces a restart (`_announce_completions` →
 
 - if the switch for that monitor is on, wait 60 s (WE allocates heavily for its
   first ~30 s), then run the restore on a background thread;
-- balloon + activity entry `playlist.restored` ("Pass restored on Monitor1 at
-  170/194") or `playlist.restore_failed` with the reason;
+- balloon + activity entry `restore.clean` ("Pass restored on Monitor1:
+  170/194.") or `restore.failed` with the reason;
 - **loop guard:** a pass restored automatically is not restored automatically
   again within 10 minutes; a second reset in that window only gets the usual
   "started over" balloon and the button.
