@@ -258,6 +258,29 @@ check("the tracker follows the restored deck",
       and looks["Monitor1"].total == 194 and looks["Monitor1"].cycle_id == "270bd142")
 
 
+# ---- the automatic switch and its loop guard ---------------------------------------
+
+import app.settings as app_settings                 # noqa: E402
+
+app_settings.SETTINGS_PATH = TMP / "suite.json"
+prefs = app_settings.Settings()
+rotation = tr.Cycle(monitor="Monitor1", playlist="custom", started=S, from_rotation=True)
+plain = tr.Cycle(monitor="Monitor0", playlist="subscribed", started=S)
+check("auto is on by default for the rotation's playlist",
+      pr.auto_enabled(prefs, "Monitor1", rotation) and not pr.auto_enabled(prefs, "Monitor0", plain)
+      and not pr.auto_enabled(prefs, "Monitor2", None))
+pr.set_auto(prefs, "Monitor1", False)
+check("an explicit off beats the rotation default",
+      not pr.auto_enabled(app_settings.Settings.load(), "Monitor1", rotation))
+
+guard = pr.AutoGuard()
+first = guard.allowed("Monitor1", 1000.0)
+guard.mark("Monitor1", 1000.0)
+check("the guard holds a monitor for ten minutes",
+      first and not guard.allowed("Monitor1", 1599.0) and guard.allowed("Monitor1", 1600.0)
+      and guard.allowed("Monitor0", 1001.0))
+
+
 print()
 print("PASSED %d/%d" % (sum(results), len(results)))
 sys.exit(0 if all(results) else 1)

@@ -132,6 +132,44 @@ def rewrite_state(data: bytes, monitor: str, current: str, waiting: list[str]) -
     raise ValueError(f"{monitor} is not in playliststate.bin")
 
 
+# ---- Doing it unasked ----------------------------------------------------------
+
+# After a reset is seen, the wait before restoring: Wallpaper Engine allocates
+# heavily for its first ~30 s. And how long a monitor restored unasked is left
+# alone after, so a monitor that keeps dropping out cannot start a loop.
+AUTO_DELAY_S = 60
+AUTO_WINDOW_S = 600
+
+
+def auto_enabled(settings, monitor: str, cycle: Cycle | None) -> bool:
+    """Whether a reset on `monitor` is restored unasked: as switched on the
+    Restore page, else for the rotation's playlist only."""
+    chosen = settings.get("restore", f"auto.{monitor}", None)
+    if chosen is not None:
+        return bool(chosen)
+    return bool(cycle is not None and cycle.from_rotation)
+
+
+def set_auto(settings, monitor: str, on: bool) -> None:
+    settings.set("restore", f"auto.{monitor}", bool(on))
+    settings.save()
+
+
+class AutoGuard:
+    """Once per `window` seconds per monitor, at most."""
+
+    def __init__(self, window: float = AUTO_WINDOW_S):
+        self.window = window
+        self._last: dict[str, float] = {}
+
+    def allowed(self, monitor: str, now: float) -> bool:
+        last = self._last.get(monitor)
+        return last is None or now - last >= self.window
+
+    def mark(self, monitor: str, now: float) -> None:
+        self._last[monitor] = now
+
+
 # ---- Putting it back ---------------------------------------------------------
 
 @dataclass
