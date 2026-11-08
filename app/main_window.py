@@ -40,9 +40,12 @@ from .ui.kit import format as fmt
 from .window_frame import NativeFrame
 
 # The pages, in the order of the loop; Ctrl+1 is the first.
-PAGE_ORDER = ("overview", "rotator", "tracker", "review", "widget", "tray", "cleaner", "creator", "reserve", "settings")
+PAGE_ORDER = ("overview", "rotator", "tracker", "review", "widget", "tray", "cleaner", "creator",
+              "reserve", "restore", "settings")
+# Ctrl+1 … Ctrl+9 and Ctrl+0 were all taken before Restore came: it has none.
 PAGE_SHORTCUTS = {key: f"Ctrl+{number}" for number, key in
-                  enumerate((key for key in PAGE_ORDER if key != "reserve"), start=1)}
+                  enumerate((key for key in PAGE_ORDER if key not in ("reserve", "restore")),
+                            start=1)}
 PAGE_SHORTCUTS["reserve"] = "Ctrl+0"
 DEFAULT_PAGE = "overview"
 # The sidebar's groups: which pages open each.

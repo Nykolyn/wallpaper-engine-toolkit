@@ -46,6 +46,7 @@ def build_pages(window) -> list[Page]:
     from ..engines.multipliers import MultiplierStore
     from .cleaner import CleanerPage
     from .reserve import ReservePage
+    from .restore import RestorePage
     from .creator import CreatorPage
     from .overview import OverviewPage
     from .review import ReviewPage
@@ -102,4 +103,4 @@ def build_pages(window) -> list[Page]:
     on_steam_found(settings_page, steam_found)
     return [OverviewPage(services, feed, settings=settings), rotator_page, tracker_page,
             review_page, WidgetPage(settings, feed=feed), TrayPage(settings), cleaner, creator_page,
-            ReservePage(settings, services, config), settings_page]
+            ReservePage(settings, services, config), RestorePage(settings), settings_page]
