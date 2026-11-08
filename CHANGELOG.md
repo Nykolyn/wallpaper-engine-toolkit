@@ -6,6 +6,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [4.11.0] - 2026-11-08
+
 ### Added
 
 - Restore page (Utilities): puts back a playlist pass Wallpaper Engine threw
@@ -2053,7 +2055,8 @@ restructured yet; the tabs keep their layout and take on the new look.
   was right for one library and wrong for every other. Nothing is tagged now
   unless you ask for it.
 
-[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v4.10.4...HEAD
+[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v4.11.0...HEAD
+[4.11.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v4.10.4...v4.11.0
 [4.10.4]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v4.10.3...v4.10.4
 [4.10.3]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v4.10.2...v4.10.3
 [4.10.2]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v4.10.1...v4.10.2
