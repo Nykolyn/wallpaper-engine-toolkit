@@ -14,7 +14,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from PySide6.QtCore import QObject, Signal
 from PySide6.QtWidgets import QApplication, QSystemTrayIcon
-from app import tracker_tray
+from app import tracker_tray, widget_startup
 from app.engines.wallpaper_timer import Countdown
 from app.settings import Settings
 
@@ -60,6 +60,9 @@ class Shell(QObject):
 
     def show(self):
         pass
+
+    def isVisible(self):
+        return True
 
 
 class Listener(QObject):
@@ -225,3 +228,51 @@ with patch.object(tracker_tray, "_claim_single_instance", return_value=True), \
     watch.stop.assert_called_once()
 
 print("PASS a quit received while the widget is being built survives until event-loop entry")
+
+# The widget's Run entry can lose its request while the logon task is still starting.
+with patch.object(tracker_tray, "_claim_single_instance", return_value=False), \
+        patch.object(tracker_tray, "QApplication", return_value=app), \
+        patch.object(tracker_tray.window_instance, "send", return_value=False), \
+        patch.object(tracker_tray, "log"):
+    assert tracker_tray.run_tray(show_widget=True) == 1
+
+tray_class = tracker_tray.TrackerTray
+for enabled, startup, explicit, expected in (
+        (True, True, False, True),
+        (True, False, False, False),
+        (True, PermissionError("startup registry unavailable"), False, False),
+        (False, True, False, False),
+        (False, False, False, False),
+        (False, False, True, True)):
+    Settings({"widget": {"enabled": enabled}}).save()
+    started = []
+
+    def build_startup(*args, **kwargs):
+        tray = tray_class(*args, **kwargs)
+        tray.clock_timer.stop()
+        started.append(tray)
+        return tray
+
+    with patch.object(tracker_tray, "_claim_single_instance", return_value=True), \
+            patch.object(tracker_tray, "QApplication", return_value=app), \
+            patch.object(app, "exec", return_value=0), \
+            patch.object(tracker_tray, "QuitListener", return_value=Listener()), \
+            patch.object(tracker_tray, "HangWatch"), \
+            patch.object(tracker_tray, "_wait_for_tray", return_value=True), \
+            patch.object(tracker_tray, "TrackerFeed", Feed), \
+            patch.object(tracker_tray, "WallpaperTimer", return_value=clock), \
+            patch.object(tracker_tray, "QSystemTrayIcon", Shell), \
+            patch.object(tracker_tray, "TrackerTray", side_effect=build_startup), \
+            patch.object(widget_startup, "enabled", side_effect=[startup]):
+        assert tracker_tray.run_tray(show_widget=explicit) == 0
+        tray = started[0]
+        visible = bool(tray.widget and tray.widget.isVisible())
+        assert visible == expected, (enabled, startup, explicit, expected, visible)
+        assert Settings.load().get("widget", "enabled", False) == (enabled or explicit)
+        if expected:
+            tray._set_widget_visible(False)
+            tray._tick_clock()
+            assert not tray.widget.isVisible(), "hiding after startup must stay hidden"
+            tray.widget.close()
+
+print("PASS tracker restores startup widgets after a lost handoff, honours both switches and keeps manual hide")

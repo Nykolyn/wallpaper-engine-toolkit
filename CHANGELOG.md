@@ -6,6 +6,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- Widgets reliably restore at Windows logon when both **Start with Windows** and
+  **Show widgets** are enabled, even if their startup request times out while
+  the background tracker is still starting.
+
 ## [4.11.0] - 2026-11-08
 
 ### Added

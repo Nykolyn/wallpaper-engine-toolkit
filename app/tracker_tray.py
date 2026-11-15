@@ -546,6 +546,14 @@ def run_tray(*, show_widget: bool = False) -> int:
             log("another tracker already has the tray — exiting")
             return 0
 
+        # The widget's Run entry can time out before this tracker starts listening.
+        if not show_widget and Settings.load().get("widget", "enabled", False):
+            from . import widget_startup
+            try:
+                show_widget = widget_startup.enabled()
+            except OSError as err:
+                log(f"could not check widget startup: {err}")
+
         app = QApplication(sys.argv)
         app.setApplicationName("Wallpaper Tracker")
         theme.apply(app, styled=False)
