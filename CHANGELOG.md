@@ -6,6 +6,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [4.11.1] - 2026-11-15
+
 ### Fixed
 
 - Widgets reliably restore at Windows logon when both **Start with Windows** and
@@ -2061,7 +2063,8 @@ restructured yet; the tabs keep their layout and take on the new look.
   was right for one library and wrong for every other. Nothing is tagged now
   unless you ask for it.
 
-[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v4.11.0...HEAD
+[Unreleased]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v4.11.1...HEAD
+[4.11.1]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v4.11.0...v4.11.1
 [4.11.0]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v4.10.4...v4.11.0
 [4.10.4]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v4.10.3...v4.10.4
 [4.10.3]: https://github.com/Nykolyn/wallpaper-engine-toolkit/compare/v4.10.2...v4.10.3
