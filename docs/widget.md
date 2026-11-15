@@ -67,7 +67,9 @@ reachable, and removing its screen returns it to an available one.
 
 **Start with Windows** is independent of the tracker's existing startup
 switch. It registers a per-user Run entry for `--widget-startup`, which
-shows widgets only while **Show widgets** is enabled. Opening Toolkit also
+shows widgets only while **Show widgets** is enabled. When both switches are on,
+the tracker also restores widgets itself, so simultaneous logon launches cannot
+lose the widget if its separate startup request times out. Opening Toolkit also
 restores enabled widgets. Hiding a per-monitor widget affects only that monitor;
 hiding the single widget turns off global visibility.
 
