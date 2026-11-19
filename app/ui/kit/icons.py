@@ -55,6 +55,8 @@ _BODIES: dict[str, str] = {
     "clipboard": '<rect x="3.5" y="3" width="9" height="11.5" rx="1"></rect><rect x="6" y="1.5" width="4" height="3" rx=".6"></rect>',  # Paste path
     "tag": '<path d="M2 2h5.6l6.4 6.4-5.6 5.6-6.4-6.4z"></path><circle cx="5" cy="5" r="1" fill="currentColor" stroke="none"></circle>',  # Add tags
     "video": '<rect x="1.5" y="3.5" width="9.5" height="9"></rect><polygon points="11,6.5 14.5,4.5 14.5,11.5 11,9.5"></polygon>',  # Creator rows
+    "next": '<polygon points="3,2.5 11,8 3,13.5"></polygon><line x1="13" y1="3" x2="13" y2="13"></line>',  # the player's Next
+    "pick": '<rect x="1.5" y="2.5" width="13" height="9"></rect><line x1="5.5" y1="14" x2="10.5" y2="14"></line><polygon points="6.5,4.8 10.2,7 6.5,9.2" fill="currentColor" stroke="none"></polygon>',  # a row put on screen
     "folderPlus": '<path d="M1.5 4.2h4.2l1.3 1.6h7.5v7.7h-13z"></path><line x1="8" y1="8" x2="8" y2="12"></line><line x1="6" y1="10" x2="10" y2="10"></line>',  # Creator empty state
     "sortUp": '<polyline points="4.4,9.4 8,5.6 11.6,9.4"></polyline>',       # sorted table header
     "chevU": '<polyline points="3.6,10 8,5.8 12.4,10"></polyline>',          # SpinBox up arrow

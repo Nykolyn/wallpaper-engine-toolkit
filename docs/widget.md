@@ -59,6 +59,11 @@ The window layer defaults to **On desktop**, behind ordinary application
 windows. **Normal** behaves like a normal window; **Always on top** stays above
 ordinary windows. These choices are independent for each widget.
 
+**Expanded** rows carry two round buttons: ⏸ pauses every monitor (then ▶
+plays them again) and ⏭ skips to the next wallpaper on that row's monitor.
+**Compact** keeps them out of the way: they are the first two items of the
+right-click menu. See [Player controls](tracker.md#player-controls).
+
 Right-click a widget for its controls, or open the same menu with the Menu key
 or Shift+F10. Double-click switches compact/expanded mode. Drag an unlocked
 widget to move it, or use Alt+arrow keys. Positions are stored relative to a screen's available area;

@@ -134,6 +134,42 @@ check("expanded uses supplied current wallpaper title and file size", widget.row
 check("missing file metadata stays explicit", widget.rows[0].size_text == "size unknown")
 check("file size formats zero and binary units without guessing", file_size(0) == "0 B"
       and file_size(1024) == "1 KB" and file_size(1536) == "1.5 KB" and file_size(None) == "size unknown")
+
+# the player: Pause/Play and Next on each expanded row, and in the menu
+asked = []
+widget.player_requested.connect(lambda action, monitor: asked.append((action, monitor)))
+row1 = widget.rows[1]
+check("an expanded row shows Pause (every monitor) and Next (its own monitor)",
+      row1.pause_button.isVisibleTo(row1) and row1.next_button.isVisibleTo(row1)
+      and row1.pause_button.accessibleName() == "Pause all monitors"
+      and row1.next_button.accessibleName() == "Next wallpaper on Monitor1")
+row1.next_button.click()
+row1.pause_button.click()
+check("their clicks ask for next on that monitor, and a pause",
+      asked == [("next", "Monitor1"), ("pause", "Monitor1")])
+widget.paused = True
+widget.render([p0, p1], {"Monitor1": clock1}, p1, metadata=metadata)
+check("paused from the Toolkit, the button offers Play",
+      widget.rows[1].pause_button.accessibleName() == "Play all monitors")
+widget.rows[1].pause_button.click()
+check("and asks for play", asked[-1] == ("play", "Monitor1"))
+player_menu = widget.build_menu()
+texts = [a.text() if not a.isSeparator() else "-" for a in player_menu.actions()][:3]
+check("the menu starts with the player", texts == ["Play all monitors", "Next wallpaper", "-"])
+player_menu.actions()[1].trigger()
+check("its Next is for the first row's monitor", asked[-1] == ("next", widget.rows[0].monitor))
+widget.running = False
+widget.render([p0, p1], {"Monitor1": clock1}, p1, metadata=metadata)
+off_menu = widget.build_menu()
+check("Wallpaper Engine not running: the row buttons and the menu items are off",
+      not widget.rows[1].pause_button.isEnabled() and not widget.rows[1].next_button.isEnabled()
+      and not off_menu.actions()[0].isEnabled() and not off_menu.actions()[1].isEnabled())
+widget.running = True
+widget.paused = False
+widget._toggle_mode()
+check("compact rows have no player buttons (the menu has them)",
+      not widget.rows[0].pause_button.isVisibleTo(widget.rows[0]))
+widget._toggle_mode()
 fixed = DesktopWidget(settings, profile_key="Monitor0")
 fixed.render([p0, p1], {"Monitor0": clock0}, p1)
 fixed._toggle_mode()

@@ -241,12 +241,24 @@ def _rectangles(painter, size, playlist, wallpaper, percent, timer, outer, inner
           timer, _numbers(front.height() * .34), QColor(Qt.white), Qt.AlignCenter, True)
 
 
+PLAYER_BUTTON, PLAYER_GAP, PLAYER_TOP = 26, 6, 35     # an expanded row's Pause and Next
+_PLAYER_STYLE = ("QToolButton { border-radius: 13px; background: rgba(255,255,255,.08);"
+                 " border: 1px solid rgba(255,255,255,.32); }"
+                 " QToolButton:hover { background: rgba(255,255,255,.16); }")
+
+
 class MonitorRow(QWidget):
     """A dual countdown: remaining wallpaper time and remaining playlist items."""
+
+    player_clicked = Signal(str, str)       # "pause" | "play" | "next", this row's monitor
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setFocusPolicy(Qt.StrongFocus)
+        self.paused, self.running = False, True
+        self.pause_button = self._player_button(
+            lambda: self.player_clicked.emit("play" if self.paused else "pause", self.monitor))
+        self.next_button = self._player_button(lambda: self.player_clicked.emit("next", self.monitor))
         self.progress = self.countdown = None
         self.monitor = self.wallpaper_title = ""
         self.state, self.fraction, self.playlist_fraction = UNKNOWN, None, None
@@ -254,8 +266,40 @@ class MonitorRow(QWidget):
         self.compact = True
         self.options = {}
 
-    def render(self, monitor, progress, countdown, error="", *, metadata=None, options=None, compact=True):
+    def _player_button(self, callback):
+        button = QToolButton(self)
+        button.setFixedSize(PLAYER_BUTTON, PLAYER_BUTTON)
+        button.setStyleSheet(_PLAYER_STYLE)
+        button.clicked.connect(callback)
+        button.hide()
+        return button
+
+    def _render_player(self):
+        dpr = self.devicePixelRatioF()
+        colour = theme.color("text.hi")
+        words_ = "Play all monitors" if self.paused else "Pause all monitors"
+        for button, icon, name in ((self.pause_button, "play" if self.paused else "pause", words_),
+                                   (self.next_button, "next", f"Next wallpaper on {self.monitor}")):
+            button.setIcon(QIcon(icon_pixmap(icon, colour, 13, dpr)))
+            button.setToolTip(name)
+            button.setAccessibleName(name)
+            button.setVisible(not self.compact)
+            button.setEnabled(self.running)
+        self._place_player()
+
+    def _place_player(self):
+        right = self.width() - 16
+        self.next_button.move(right - PLAYER_BUTTON, PLAYER_TOP)
+        self.pause_button.move(right - 2 * PLAYER_BUTTON - PLAYER_GAP, PLAYER_TOP)
+
+    def resizeEvent(self, event):  # noqa: N802
+        super().resizeEvent(event)
+        self._place_player()
+
+    def render(self, monitor, progress, countdown, error="", *, metadata=None, options=None, compact=True,
+               paused=False, running=True):
         self.monitor, self.progress, self.countdown = monitor, progress, countdown
+        self.paused, self.running = paused, running
         self.options, self.compact = options or {}, compact
         self.state, _fill = words.icon_state(progress, countdown)
         self.fraction = countdown.fraction if countdown is not None and progress is not None else None
@@ -278,6 +322,7 @@ class MonitorRow(QWidget):
                         f"{self.wallpaper_title} · {self.size_text}\n{diagram}\n"
                         "Right-click for options · double-click to change view")
         self.setFixedHeight(self.options.get("size", 144) if compact else ROW_HEIGHT)
+        self._render_player()
         self.update()
 
     def paintEvent(self, event):  # noqa: N802
@@ -329,7 +374,9 @@ class MonitorRow(QWidget):
             painter.drawEllipse(QRectF(self.width() - 16 - state_width - 9, 21, 4, 4))
             _text(painter, QRectF(self.width() - 72, 12, 56, 20), STATE_TEXT[self.state],
                   "type.caption", "text.mid", Qt.AlignRight | Qt.AlignVCenter)
-            _text(painter, QRectF(start, 38, width, 20), self.progress.playlist if self.progress else "No playlist",
+            player = 2 * PLAYER_BUTTON + PLAYER_GAP + 9
+            _text(painter, QRectF(start, 38, max(0, width - player), 20),
+                  self.progress.playlist if self.progress else "No playlist",
                   "type.bodySm", "text.body")
             size_width = QFontMetricsF(theme.font("type.caption")).horizontalAdvance(self.size_text)
             _text(painter, QRectF(start, 67, max(0, width - size_width - 9), 20),
@@ -358,12 +405,15 @@ class MonitorRow(QWidget):
 class DesktopWidget(QWidget):
     settings_requested = Signal()
     visibility_changed = Signal(bool)
+    player_requested = Signal(str, str)     # "pause" | "play" | "next", the monitor
 
     def __init__(self, settings, parent=None, *, profile_key="default", screen=None):
         super().__init__(parent, Qt.Tool | Qt.FramelessWindowHint)
         self.settings, self.profile_key, self.initial_screen = settings, profile_key, screen
         self.mode, self.options = "compact", {}
         self.rows = []
+        self.paused = False                 # a pause sent from the Toolkit; the tray sets it
+        self.running = True                 # Wallpaper Engine is; the tray sets it
         self._readings = ([], {}, None, "", (), {})
         self._layout_key = None
         self._placing, self._restored, self._offset = True, False, None
@@ -474,13 +524,15 @@ class DesktopWidget(QWidget):
             self.rows = [MonitorRow(self.content) for _ in names]
             for row in self.rows:
                 row.installEventFilter(self)
+                row.player_clicked.connect(self.player_requested.emit)
                 self.row_layout.addWidget(row)
         for row, name in zip(self.rows, names):
             progress = readings.get(name)
             current = getattr(progress, "current", None)
             item = (metadata or {}).get(current, {})
             row.render(name, progress, countdowns.get(name), error, metadata=item,
-                       options=self.options, compact=self.mode == "compact")
+                       options=self.options, compact=self.mode == "compact", paused=self.paused,
+                       running=self.running)
         layout_key = (self.mode, self.options["size"], len(names))
         if layout_key != self._layout_key:
             self._fit_window()
@@ -505,6 +557,13 @@ class DesktopWidget(QWidget):
                 action.triggered.connect(lambda _checked=False, k=key, v=value: self._set_option(k, v))
                 group.addAction(action)
 
+        monitor = self.rows[0].monitor if self.rows else ""
+        pause = menu.addAction("Play all monitors" if self.paused else "Pause all monitors",
+                               lambda: self.player_requested.emit("play" if self.paused else "pause", monitor))
+        skip = menu.addAction("Next wallpaper", lambda: self.player_requested.emit("next", monitor))
+        for action in (pause, skip):
+            action.setEnabled(self.running)
+        menu.addSeparator()
         choices("View", "mode", (("Compact", "compact"), ("Expanded", "expanded")))
         choices("Design", "design", (("Rectangles", "rectangles"), ("Rings", "rings")))
         monitors = dict.fromkeys((*self._readings[4], *(p.monitor for p in self._readings[0])))

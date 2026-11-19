@@ -73,6 +73,7 @@ class Listener(QObject):
 class Widget(QObject):
     settings_requested = Signal()
     visibility_changed = Signal(bool)
+    player_requested = Signal(str, str)
 
     def __init__(self, settings, *, profile_key="default", screen=None):
         super().__init__()

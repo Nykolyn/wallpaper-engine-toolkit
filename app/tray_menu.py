@@ -6,6 +6,9 @@ words ("tracking · 4 of 201 shown", which the icon does not say), then
 
     Open Toolkit                  Enter
     ───────────────────────────────────
+    Pause all monitors / Play all monitors
+    Next wallpaper             Monitor1
+    ───────────────────────────────────
     Rotate now…                  run 39
     Review                   12 waiting
     ───────────────────────────────────
@@ -14,8 +17,9 @@ words ("tracking · 4 of 201 shown", which the icon does not say), then
     Settings
     Quit
 
-Only "Rotate now…" leads to anything being changed, and the window still asks
-before it does (see `MainWindow.handle_command`). The words are `tray_words`'s;
+Pause and Next act at once, on Wallpaper Engine (`engines/player`); "Rotate
+now…" is the only row that changes files, and the window still asks before it
+does (see `MainWindow.handle_command`). The words are `tray_words`'s;
 this module is the shape.
 
 **A QMenu that paints itself.** A native or QSS-styled menu cannot put a mono
@@ -48,6 +52,7 @@ from .tray_icon import mark_pixmap
 
 OPEN, ROTATE, REVIEW, SETTINGS, QUIT = "open", "rotate", "review", "settings", "quit"
 WIDGET, WIDGET_VISIBLE = "widget", "widget_visible"
+PAUSE, NEXT = "pause", "next"     # the player: every monitor's pause, the tray monitor's next
 HEADER = "header"           # the data of the header's action: it is not a row
 
 
@@ -77,12 +82,17 @@ class MenuModel:
 
 
 def build_model(state: str, fraction: float | None, number: int | None, line: str, *,
-                run_hint: str = "", review_hint: str = "", widget_visible: bool = False) -> MenuModel:
+                run_hint: str = "", review_hint: str = "", widget_visible: bool = False,
+                paused: bool = False, monitor: str = "", running: bool = True) -> MenuModel:
     """The menu for one state of the icon. The rows are the same in every state;
-    what changes is the header (its icon and its line) and the two hints."""
+    what changes is the header (its icon and its line), the hints, and Pause
+    turning into Play after a pause sent from the Toolkit."""
     return MenuModel(
         state, fraction, number, DISPLAY_NAME, line,
         ((Row(OPEN, f"Open {DISPLAY_NAME}", "Enter", "review"),),
+         (Row(PAUSE, "Play all monitors" if paused else "Pause all monitors",
+              "" if running else "not running", "play" if paused else "pause"),
+          Row(NEXT, "Next wallpaper", monitor if running else "not running", "next")),
          (Row(ROTATE, "Rotate now…", run_hint, "rotator"),
           Row(REVIEW, "Review", review_hint, "review")),
          (Row(WIDGET_VISIBLE, "Hide widgets" if widget_visible else "Show widgets", "", "settings"),
@@ -102,6 +112,9 @@ ICON_BODIES: dict[str, str] = {
     "review": '<rect x="1.5" y="2.5" width="13" height="11"></rect><line x1="1.5" y1="6" x2="14.5" y2="6"></line>',
     "settings": '<circle cx="8" cy="8" r="6"></circle><circle cx="8" cy="8" r="2"></circle>',
     "close": '<line x1="3.5" y1="3.5" x2="12.5" y2="12.5"></line><line x1="12.5" y1="3.5" x2="3.5" y2="12.5"></line>',
+    "play": '<polygon points="4,2.5 13,8 4,13.5"></polygon>',
+    "pause": '<line x1="5.5" y1="3" x2="5.5" y2="13"></line><line x1="10.5" y1="3" x2="10.5" y2="13"></line>',
+    "next": '<polygon points="3,2.5 11,8 3,13.5"></polygon><line x1="13" y1="3" x2="13" y2="13"></line>',
 }
 
 _pixmaps: dict[tuple, QPixmap] = {}

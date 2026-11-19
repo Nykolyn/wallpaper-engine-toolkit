@@ -410,12 +410,14 @@ check("a file that does not read is not guessed at", tw.review_waiting() is None
 print("-- the menu --")
 HINTS = dict(run_hint=tw.run_hint(39), review_hint=tw.review_hint(12))
 model = tm.build_model(ti.RUNNING, 0.62, 62, "tracking · 4 of 201 shown", **HINTS)
-check("seven rows in three groups, including widget controls",
-      model.keys() == ["open", "rotate", "review", "widget_visible", "widget", "settings", "quit"]
-      and [len(g) for g in model.groups] == [1, 2, 4])
+check("nine rows in four groups: the player second, then widget controls",
+      model.keys() == ["open", "pause", "next", "rotate", "review", "widget_visible", "widget",
+                       "settings", "quit"]
+      and [len(g) for g in model.groups] == [1, 2, 2, 4])
 check("the design's labels and hints",
       [(r.label, r.hint) for r in model.rows()]
-      == [("Open Toolkit", "Enter"), ("Rotate now…", "run 39"), ("Review", "12 waiting"),
+      == [("Open Toolkit", "Enter"), ("Pause all monitors", ""), ("Next wallpaper", ""),
+          ("Rotate now…", "run 39"), ("Review", "12 waiting"),
           ("Show widgets", ""), ("Widget…", ""), ("Settings", ""), ("Quit", "")])
 check("the header is the display name and the icon's words",
       (model.title, model.line) == ("Toolkit", "tracking · 4 of 201 shown"))
@@ -423,18 +425,27 @@ for state_, fraction_, number_, line_ in (
         (ti.RUNNING, 0.5, 2, "tracking · 4 of 201 shown"), (ti.PAUSED, 0.5, 2, "paused · 4 of 201 shown"),
         (ti.UNKNOWN, None, None, "no playlist found"), (ti.FINISHED, 1.0, 100, "finished · all 201 shown")):
     m = tm.build_model(state_, fraction_, number_, line_, **HINTS)
-    check(f"{state_}: the same seven rows; the header carries the state",
+    check(f"{state_}: the same nine rows; the header carries the state",
           m.keys() == model.keys() and m.state == state_ and m.line == line_)
 check("with no history or scan read, the hints are bare",
-      [r.hint for r in tm.build_model(ti.RUNNING, 0.5, 2, "x").rows()] == ["Enter", "", "", "", "", "", ""])
+      [r.hint for r in tm.build_model(ti.RUNNING, 0.5, 2, "x").rows()]
+      == ["Enter", "", "", "", "", "", "", "", ""])
+check("paused from the Toolkit, the row offers Play",
+      tm.build_model(ti.PAUSED, 0.5, 2, "x", paused=True).rows()[1].label == "Play all monitors"
+      and tm.build_model(ti.PAUSED, 0.5, 2, "x", paused=True).rows()[1].icon == "play")
+check("Wallpaper Engine not running: the player rows say so",
+      [r.hint for r in tm.build_model(ti.UNKNOWN, None, None, "x", running=False).rows()[1:3]]
+      == ["not running", "not running"])
+check("Next names the tray's monitor",
+      tm.build_model(ti.RUNNING, 0.5, 2, "x", monitor="Monitor1").rows()[2].hint == "Monitor1")
 check("widget visibility action follows the live session",
-      tm.build_model(ti.RUNNING, 0.5, 2, "x", widget_visible=True).rows()[3].label == "Hide widgets")
+      tm.build_model(ti.RUNNING, 0.5, 2, "x", widget_visible=True).rows()[5].label == "Hide widgets")
 
 menu = tm.TrayMenu()
 menu.set_model(model)
 check("the menu is that, with a divider after the header and between the groups",
       menu.texts() == ["Toolkit  ·  tracking · 4 of 201 shown", "-", "Open Toolkit  ·  Enter", "-",
-                       "Rotate now…  ·  run 39", "Review  ·  12 waiting", "-", "Show widgets", "Widget…", "Settings", "Quit"])
+                       "Pause all monitors", "Next wallpaper", "-", "Rotate now…  ·  run 39", "Review  ·  12 waiting", "-", "Show widgets", "Widget…", "Settings", "Quit"])
 chosen: list[str] = []
 menu.chosen.connect(chosen.append)
 by_data = {a.data(): a for a in menu.actions() if a.data()}
@@ -444,14 +455,14 @@ by_data["header"].trigger()
 check("a row says which it was; the header is no row", chosen == ["rotate", "quit"]
       and not by_data["header"].isEnabled())
 menu.set_model(tm.build_model(ti.PAUSED, 0.5, 2, "paused · 4 of 201 shown"))
-check("filling it again replaces the rows", menu.texts().count("-") == 3 and len(menu.actions()) == 11
+check("filling it again replaces the rows", menu.texts().count("-") == 4 and len(menu.actions()) == 14
       and menu.texts()[0].endswith("paused · 4 of 201 shown"))
 menu.set_model(model)
 menu.popup(QPoint(60, 60))
 app.processEvents()
 app.processEvents()
-want_height = (2 * theme.TRAY_MENU_PAD + theme.TRAY_HEADER_HEIGHT + 3 * theme.TRAY_DIVIDER_HEIGHT
-               + 7 * theme.TRAY_ROW_HEIGHT)
+want_height = (2 * theme.TRAY_MENU_PAD + theme.TRAY_HEADER_HEIGHT + 4 * theme.TRAY_DIVIDER_HEIGHT
+               + 9 * theme.TRAY_ROW_HEIGHT)
 grab = menu.grab().toImage()
 check("the popup is 268 px wide and as tall as its rows",
       (menu.width(), menu.height()) == (theme.TRAY_MENU_WIDTH, want_height))
@@ -462,9 +473,9 @@ check("Open Toolkit starts highlighted, for Enter", menu.activeAction() is not N
 menu.hide()
 from app.ui.kit import icons as kit_icons                                  # noqa: E402
 
-check("the four drawings the menu embeds are the kit's, word for word",
+check("the drawings the menu embeds are the kit's, word for word",
       all(tm.ICON_BODIES[n] == kit_icons._BODIES[n] for n in tm.ICON_BODIES)
-      and set(tm.ICON_BODIES) == {r.icon for r in model.rows()})
+      and set(tm.ICON_BODIES) == {r.icon for r in model.rows()} | {"play"})
 check("on the same frame", tm._SVG.split("{}")[0] == kit_icons._HEAD)
 shot = tm.icon_pixmap("close", theme.color("text.mid"), 16, 1.0).toImage()
 check("an icon renders in its colour", solid(shot.convertToFormat(QImage.Format_ARGB32)) > 10)
@@ -495,6 +506,7 @@ class FakeFeed(QObject):
 class FakeClock:
     def __init__(self):
         self.now: dict = {}
+        self.engine = (4, 5.0)          # (pid, start), as WallpaperTimer.engine
         self.log = None
 
     def tick(self):
@@ -611,6 +623,7 @@ check("pausing draws the grey fill", len(shell.icons) == drawn + 1
 tray._rebuild_menu()
 check("the menu is built when it opens, with the numbers read then",
       tray.menu.texts() == ["Toolkit  ·  paused · 4 of 201 shown", "-", "Open Toolkit  ·  Enter", "-",
+                            "Pause all monitors", "Next wallpaper  ·  Monitor1", "-",
                             "Rotate now…  ·  run 39", "Review  ·  12 waiting", "-", "Show widgets", "Widget…", "Settings", "Quit"])
 check("the tray builds no menu until it is asked to",
       tray_mod.TrackerTray._rebuild_menu.__code__.co_names.count("autostart") == 0)
@@ -621,6 +634,48 @@ window_instance.ask_to_show = lambda tab, wait=0, command=None: opened.append((t
 tray.menu.chosen.emit("rotate")
 check("choosing Rotate now… asks the window for the Rotator's question",
       opened == [("Rotator", "rotate:confirm")])
+
+
+class PlayerRecorder:
+    """Stands in for app.engines.player in the tray: records, sends nothing."""
+
+    def __init__(self):
+        self.calls = []
+
+    def in_background(self, work, done=None):
+        result = work()
+        if done is not None:
+            done(result)
+
+    def pause(self):
+        self.calls.append(("pause",))
+
+    def play(self):
+        self.calls.append(("play",))
+
+    def next_wallpaper(self, monitor):
+        self.calls.append(("next", monitor))
+        return "Wallpaper Engine is not running."
+
+    def is_paused(self, pid):
+        return False
+
+
+real_player, tray_mod.player = tray_mod.player, PlayerRecorder()
+clock.engine = (4, 5.0)
+tray.menu.chosen.emit("pause")
+tray.menu.chosen.emit("next")
+check("Pause and Next go to Wallpaper Engine, Next for the tray's monitor",
+      tray_mod.player.calls == [("pause",), ("next", "Monitor1")])
+clock.engine = None
+said = len(shell.messages)
+tray.menu.chosen.emit("next")
+check("Wallpaper Engine not running: nothing is sent, a balloon says so",
+      len(tray_mod.player.calls) == 2 and len(shell.messages) == said + 1
+      and shell.messages[-1][0] == "Wallpaper Engine is not running")
+del shell.messages[said:]
+clock.engine = (4, 5.0)
+tray_mod.player = real_player
 
 lead.seen = 201
 tray.feed.results = [lead]

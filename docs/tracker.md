@@ -129,8 +129,30 @@ need it — see [cycles](#cycles).
 - **Refresh now** looks at Wallpaper Engine at once and reads the list again;
   the table's ↻ reads the titles, the authors and the sizes again.
 
+### Player controls
+
+Under the leading monitor's wallpaper sit **Pause** and **Next**, as on a
+music player:
+
+- **Pause** pauses every monitor and turns into **Play**. Wallpaper Engine has
+  no pause for one monitor only, so this is always all of them. The countdowns
+  stand still while it is paused.
+- **Next** skips to the next wallpaper of that monitor's playlist. The pass
+  carries on and counts it as shown, as when its timer runs out.
+
+The other monitors' cards have both in their ⋯ menu. They are off while
+Wallpaper Engine is not running. The [tray](tray.md) and the
+[widget](widget.md) offer the same.
+
 ### A row's actions
 
+**Put on screen** (the first button, a monitor with ▶) shows that wallpaper on
+the monitor whose playlist the table shows, now, as clicking it in Wallpaper
+Engine does. It asks first. The monitor keeps its playlist: its timer starts
+again from this wallpaper, and the wallpaper stays in the queue, so it can come
+round again in this pass. It is off on the row already on screen, on a row
+renamed [protected] here (its playlist entry names the old folder), and while
+Wallpaper Engine is not running.
 
 **Mark [protected]** is for a folder that sits directly in the Rotator's
 myprojects (the folder set on the [Settings](settings.md) page): it renames

@@ -174,9 +174,10 @@ def run(args, **kwargs) -> subprocess.CompletedProcess:
     """
     if kwargs.pop("capture_output", False):
         kwargs["stdout"] = kwargs["stderr"] = subprocess.PIPE
+    timeout = kwargs.pop("timeout", None)
     with popen(args, **kwargs) as child:
         try:
-            out, err = child.communicate()
+            out, err = child.communicate(timeout=timeout)
         except BaseException:
             child.kill()
             raise

@@ -827,6 +827,9 @@ class WallpaperTimer:
         self._search_misses = 0
         self._search_cost = (0.0, 0.0)                # megabytes read, seconds taken
         self.log: Callable[[str], None] = lambda _message: None
+        # A pause sent from the Toolkit (engines/player), asked of the engine's pid:
+        # Wallpaper Engine's own pause rules know nothing of it.
+        self.held: Callable[[int], bool] | None = None
 
     @property
     def engine(self) -> tuple[int, float] | None:
@@ -1073,6 +1076,7 @@ class WallpaperTimer:
         screens = (self.measure_screens(self.rects, self._is_engine)
                    if engine and estimated else {})
 
+        held = bool(engine) and self.held is not None and self.held(engine[0])
         out: dict[str, Countdown] = {}
         for monitor, settings in self.settings.items():
             clock = self.clocks.setdefault(monitor, MonitorClock(monitor))
@@ -1092,7 +1096,7 @@ class WallpaperTimer:
                 out[monitor] = Countdown(monitor=monitor, delay=settings.delay, running=value,
                                          known=True, paused=paused, active=active, exact=True)
                 continue
-            paused = (not settings.update_on_pause) and is_paused(self.rules, screen)
+            paused = (not settings.update_on_pause) and (held or is_paused(self.rules, screen))
             clock.advance(elapsed, paused)
             out[monitor] = Countdown(
                 monitor=monitor, delay=settings.delay, running=clock.running,
