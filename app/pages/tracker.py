@@ -25,8 +25,9 @@ Where the numbers come from:
   database (`engines/wallpaper_meta`), read off the GUI thread too, and kept.
 
 The Multiplier select changes the quota for future selections; Remaining
-counts the unused selections in this quota cycle. Each row ends with two
-glyph buttons. **Mark [protected]** renames a folder that sits directly
+counts the unused selections in this quota cycle. Each row ends with three
+glyph buttons. **Put on screen** shows the row on the table's monitor now
+(`engines/player`), after asking; the monitor keeps its playlist. **Mark [protected]** renames a folder that sits directly
 in the Rotator's myprojects to `[protected] <name>`, after asking, on a thread
 of its own (the library is on a hard disk); the Rotator then leaves it there.
 Wallpaper Engine's playlist is not touched: its entry keeps the old name and
@@ -65,12 +66,13 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Callable
 
-from PySide6.QtCore import QObject, Qt, QTimer, Signal
+from PySide6.QtCore import QFileSystemWatcher, QObject, Qt, QTimer, Signal
 from PySide6.QtWidgets import (
     QAbstractItemView, QHBoxLayout, QMenu, QStackedLayout, QStackedWidget, QVBoxLayout, QWidget,
 )
 
 from .. import external, theme
+from ..engines import player
 from ..engines.rotator.core import PROTECTED_PREFIX, is_protected
 from ..engines.tracker import (
     ANCHOR_ENGINE, ANCHOR_FILE_TIMES, ANCHOR_NONE, ANCHOR_ROTATION, MIN_SAMPLE, TIME_FMT, Cycle,
@@ -495,6 +497,22 @@ def action_cell(row: PlaylistRow, state: str, renaming: bool = False,
     return ButtonsCell((second, delete))
 
 
+PICK = "pick"                           # a row's first button: put it on screen now
+
+
+def pick_button(row: PlaylistRow, monitor: str, running: bool = True) -> CellButton:
+    """Pick: put the row on `monitor` now, as a click in Wallpaper Engine does.
+    Off for the row already on screen, for a row renamed [protected] here (its
+    playlist entry names the old folder) and while Wallpaper Engine is not running."""
+    if row.on_screen:
+        return CellButton(PICK, "pick", "Already on screen", enabled=False)
+    if row.stale:
+        return CellButton(PICK, "pick", "Its playlist entry points at the old name", enabled=False)
+    if not running:
+        return CellButton(PICK, "pick", "Wallpaper Engine is not running", enabled=False)
+    return CellButton(PICK, "pick", f"Put on {monitor} now…")
+
+
 class ProtectError(Exception):
     """Why a folder could not be marked [protected], in words for a toast."""
 
@@ -583,6 +601,8 @@ class PlaylistModel(TableModel):
         self.quota = None
         self.quota_ready = False
         self.multiplier_pending: set[str] = set()
+        self.monitor = ""                   # whose playlist this is: where Pick puts a row
+        self.running = True                 # Wallpaper Engine is, as the page last found
 
     def set_playlist(self, rows: list[PlaylistRow], in_order: bool, now: datetime) -> None:
         self.now, self.in_order = now, in_order
@@ -601,8 +621,9 @@ class PlaylistModel(TableModel):
                         sub=STALE_NOTE if row.stale else "", sub_tone="warn")
         if column == ACTIONS:
             key = folder_key(row.folder)
-            return action_cell(row, self.protect_state(row), key in self.renaming,
+            rest = action_cell(row, self.protect_state(row), key in self.renaming,
                                key in self.deleting)
+            return ButtonsCell((pick_button(row, self.monitor, self.running), *rest.buttons))
         if column == TYPE:
             return row.kind
         if column == SIZE:
@@ -906,6 +927,8 @@ class Countdowns(QObject):
         self._timer = None
         self.values: dict = {}
         self.engine: bool | None = None         # Wallpaper Engine running, as last found
+        self.pid: int | None = None             # … and its process
+        self.held = False                       # paused from the Toolkit (engines/player)
         self.failed = False
         self._qt = QTimer(self)
         self._qt.setInterval(_TICK_MS)
@@ -921,6 +944,8 @@ class Countdowns(QObject):
             self._timer = self._make(self._feed)
         except Exception:               # noqa: BLE001 — the count must go on without it
             self._timer, self.failed = None, True
+        if self._timer is not None:
+            self._timer.held = lambda _pid: self.held
         self.tick()
         if self._timer is not None:
             self._qt.start()
@@ -933,7 +958,8 @@ class Countdowns(QObject):
             return
         try:
             self.values = dict(self._timer.tick())
-            self.engine = getattr(self._timer, "engine", None) is not None
+            found = getattr(self._timer, "engine", None)
+            self.engine, self.pid = found is not None, (found[0] if found else None)
         except Exception:               # noqa: BLE001 — it reads other processes' windows
             self._timer, self.failed = None, True
             self.values, self.engine = {}, None
@@ -1064,6 +1090,8 @@ class TrackerPage(Page):
         self._renamed: dict[str, str] = {}      # folder_key(old) → new folder, this session
         self._deleted: set[str] = set()         # folder_key()s sent to the Recycle Bin here
         self.messages: list[tuple[str, str]] = []   # (tone, words) of each toast, for tests
+        self._player = player                   # engines/player; tests put a recorder here
+        self._paused = False                    # a pause sent from the Toolkit, as last read
 
         self.reader = ListReader(meta or MetaCache(), load, self, measure=measure)
         self.reader.rows_read.connect(self._rows_read)
@@ -1117,6 +1145,7 @@ class TrackerPage(Page):
         self.lead_card = MonitorCard(detail=True)
         self._lead_menu = QMenu(self)
         self.lead_card.set_menu(self._lead_menu)
+        self.lead_card.set_controls(self._build_player())
         self._side.addWidget(self.lead_card)
         self.summary_cards: list[MonitorCard] = []
         self._summary_menus: list[QMenu] = []
@@ -1194,6 +1223,105 @@ class TrackerPage(Page):
         column.addWidget(self.footer)
         return card
 
+    def _build_player(self) -> QWidget:
+        """Pause/Play and Next under the lead card's wallpaper. Pause is every
+        monitor's (Wallpaper Engine has no other); Next is the card's monitor."""
+        row = QWidget()
+        line = QHBoxLayout(row)
+        line.setContentsMargins(0, 0, 0, 0)
+        line.setSpacing(theme.SP_8)
+        self.pause_button = SecondaryButton("Pause", icon="pause", size="sm")
+        self.pause_button.clicked.connect(self.toggle_pause)
+        self.next_button = SecondaryButton("Next", icon="next", size="sm")
+        self.next_button.clicked.connect(
+            lambda: self._lead is not None and self.next_wallpaper(self._lead.monitor))
+        line.addWidget(self.pause_button)
+        line.addWidget(self.next_button)
+        line.addStretch(1)
+        line.addWidget(label("pause: all monitors", "type.monoXs", "lo"))
+        # Another process (the tray, a widget) may pause too: read the flag
+        # again whenever the data folder changes, off the window's thread.
+        from ..data_location import data_dir
+        self._flag_watch = QFileSystemWatcher([str(data_dir())], self)
+        self._flag_watch.directoryChanged.connect(lambda _path: self._read_flag())
+        return row
+
+    def _read_flag(self) -> None:
+        if self._fixture is not None:
+            return
+        pid = self.countdowns.pid
+        self._offload.run(lambda: self._player.is_paused(pid), self._flag_read)
+
+    def _flag_read(self, paused) -> None:
+        if isinstance(paused, bool) and paused != self._paused:
+            self._paused = paused
+            self._render_player()
+
+    def _render_player(self) -> None:
+        running = bool(self._engine())
+        self.countdowns.held = self._paused
+        self.pause_button.setText("Play" if self._paused else "Pause")
+        self.pause_button.set_icon("play" if self._paused else "pause")
+        self.pause_button.setToolTip("Play all monitors" if self._paused else "Pause all monitors")
+        monitor = self._lead.monitor if self._lead is not None else ""
+        self.next_button.setToolTip(f"Next wallpaper on {monitor}")
+        for button in (self.pause_button, self.next_button):
+            button.setEnabled(running and self._lead is not None)
+        listed = self._list_monitor or self.table_monitor() or ""
+        if (self.model.monitor, self.model.running) != (listed, running):
+            self.model.monitor, self.model.running = listed, running
+            self._repaint()
+
+    def player_texts(self) -> dict:
+        """What the lead card's player says, for tests."""
+        return {"pause": self.pause_button.text(), "next": self.next_button.text(),
+                "enabled": self.pause_button.isEnabled()}
+
+    def toggle_pause(self) -> bool:
+        """Pause every monitor, or play them again. False when it cannot be sent."""
+        if not self._engine():
+            return False
+        paused = self._paused
+        send = self._player.play if paused else self._player.pause
+        self._offload.run(send, lambda error: self._player_done(error, paused=not paused))
+        return True
+
+    def next_wallpaper(self, monitor: str) -> bool:
+        """The next wallpaper of `monitor`'s playlist; the pass counts it as shown."""
+        if not self._engine() or not monitor:
+            return False
+        self._offload.run(lambda: self._player.next_wallpaper(monitor), self._player_done)
+        return True
+
+    def pick(self, row: PlaylistRow) -> bool:
+        """Pick: ask, then put the row on the table's monitor now."""
+        monitor = self._list_monitor or self.table_monitor()
+        if self._fixture is not None or not monitor                 or not pick_button(row, monitor, bool(self._engine())).enabled:
+            return False
+        name = row.title or os.path.basename(os.path.dirname(os.path.normpath(row.item)))
+        dialog = ConfirmDialog(
+            f"Put {name} on {monitor}?",
+            "It goes on screen now, as when you click a wallpaper in Wallpaper Engine.",
+            self._dialog_parent(), confirm_text="Put on screen",
+            note=("warn", f"{monitor}'s playlist timer starts again from this wallpaper. "
+                          f"It stays in the queue, so it can come round again in this pass."))
+        if not self._answer(dialog):
+            return False
+        item = row.item
+        self._offload.run(lambda: self._player.pick(monitor, item), self._player_done)
+        return True
+
+    def _player_done(self, error, paused: bool | None = None) -> None:
+        """A command went (None), or why not: a toast."""
+        if isinstance(error, Exception):
+            error = f"{error}."
+        if error:
+            self._say("danger", error)
+            return
+        if paused is not None:
+            self._paused = paused
+            self._render_player()
+
     def _saved_view(self) -> str:
         view = self._settings.get("tracker", "view", VIEWS[0]) if self._settings is not None else None
         return view if view in VIEWS else VIEWS[0]
@@ -1257,6 +1385,7 @@ class TrackerPage(Page):
         if self.countdowns.running():
             self.countdowns.stop()
             self.countdowns.start()
+            self._read_flag()
 
     def _snapshot_refreshed(self, keys) -> None:
         if LAST_RUN in keys:
@@ -1280,6 +1409,7 @@ class TrackerPage(Page):
             self._settings.reload_if_changed()
         self._follow_destination()
         self.countdowns.start()
+        self._read_flag()
         self._tick()
         if self._list_dirty:
             self._list_timer.start()
@@ -1361,6 +1491,7 @@ class TrackerPage(Page):
             self.lead_card.set_view(view, now)
             self._views[lead.monitor] = view
         self._fill_menu(self._lead_menu, lead.monitor, True)
+        self._render_player()
         others = self._others()
         while len(self.summary_cards) > len(others):
             card = self.summary_cards.pop()
@@ -1406,11 +1537,20 @@ class TrackerPage(Page):
     def _fill_menu(self, menu: QMenu, monitor: str, leading: bool) -> None:
         """A card's menu: its playlist in the table, the tray icon, a new cycle."""
         listed = monitor == self.table_monitor()
-        key = (monitor, leading, listed, len(self._results))
+        running = bool(self._engine())
+        key = (monitor, leading, listed, len(self._results), self._paused, running)
         if menu.property("for") == repr(key):
             return
         menu.setProperty("for", repr(key))
         menu.clear()
+        if not leading:
+            # the lead card has these as buttons
+            pause = menu.addAction("Play all monitors" if self._paused else "Pause all monitors",
+                                   self.toggle_pause)
+            skip = menu.addAction("Next wallpaper", lambda m=monitor: self.next_wallpaper(m))
+            for action in (pause, skip):
+                action.setEnabled(running)
+            menu.addSeparator()
         if len(self._results) > 1:
             table = menu.addAction("Show its playlist below")
             table.setCheckable(True)
@@ -1634,7 +1774,9 @@ class TrackerPage(Page):
         item = self.model.item_at(row)
         if item is None:
             return
-        if key == PROTECT:
+        if key == PICK:
+            self.pick(item)
+        elif key == PROTECT:
             self.protect(item)
         elif key == DELETE:
             self.delete(item)

@@ -290,6 +290,15 @@ check("two minutes behind a maximized window do not count",
       abs(timer.countdowns["Monitor1"].remaining - before) < 1e-6)
 check("and the countdown says it is paused", timer.countdowns["Monitor1"].paused)
 
+screens["Monitor1"] = wt.ScreenState()
+held_for = []
+timer.held = lambda pid: (held_for.append(pid), True)[1]
+run(30)
+check("a pause sent from the Toolkit (held) stops the estimate too",
+      abs(timer.countdowns["Monitor1"].remaining - before) < 1e-6
+      and timer.countdowns["Monitor1"].paused and held_for[-1] == 4242)
+timer.held = None
+
 screens["Monitor0"] = wt.ScreenState(focused=True)
 screens["Monitor1"] = wt.ScreenState()
 run(60)

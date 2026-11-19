@@ -760,9 +760,73 @@ check("the lead card's menu: its list is below, it is on the tray icon, a new cy
       page.menu_actions("Monitor1") == [("Show its playlist below", True, False),
                                         ("Show on the tray icon", True, False),
                                         ("New cycle…", False, True)])
-check("the second's offers its list and the tray icon",
-      page.menu_actions("Monitor2")[:2] == [("Show its playlist below", False, True),
+check("the second's offers Pause, Next, then its list and the tray icon",
+      page.menu_actions("Monitor2")[:4] == [("Pause all monitors", False, True),
+                                            ("Next wallpaper", False, True),
+                                            ("Show its playlist below", False, True),
                                             ("Show on the tray icon", False, True)])
+
+print("-- the player: Pause/Play and Next on the lead card, Next on the others --")
+
+
+class PlayerRecorder:
+    """Stands in for app.engines.player: records each command, sends nothing."""
+
+    def __init__(self):
+        self.calls, self.paused = [], False
+
+    def pause(self):
+        self.calls.append(("pause",))
+        self.paused = True
+
+    def play(self):
+        self.calls.append(("play",))
+        self.paused = False
+
+    def next_wallpaper(self, monitor):
+        self.calls.append(("next", monitor))
+
+    def pick(self, monitor, item):
+        self.calls.append(("pick", monitor, item))
+
+    def is_paused(self, pid):
+        return self.paused
+
+
+played = PlayerRecorder()
+page._player = played
+check("the lead card offers Pause and Next while Wallpaper Engine runs",
+      page.player_texts() == {"pause": "Pause", "next": "Next", "enabled": True})
+check("Pause pauses every monitor, on a worker", page.toggle_pause()
+      and wait_for(lambda: played.calls == [("pause",)]))
+check("then the button says Play", wait_for(lambda: page.player_texts()["pause"] == "Play"))
+check("and Play plays them again", page.toggle_pause()
+      and wait_for(lambda: played.calls[-1] == ("play",))
+      and wait_for(lambda: page.player_texts()["pause"] == "Pause"))
+check("Next skips the lead card's monitor", page.next_wallpaper("Monitor1")
+      and wait_for(lambda: played.calls[-1] == ("next", "Monitor1")))
+page._lead_menu.actions()  # built
+summary_menu = page._summary_menus[0]
+next(a for a in summary_menu.actions() if a.text() == "Next wallpaper").trigger()
+check("a summary card's Next skips that card's monitor",
+      wait_for(lambda: played.calls[-1] == ("next", "Monitor2")))
+picked_row = page.model.item_at(page.model.group_rows()[1] + 1)
+page._answer = lambda dialog: False
+check("Pick asks first; answered no, nothing is sent",
+      not page.pick(picked_row) and played.calls[-1] == ("next", "Monitor2"))
+page._answer = lambda dialog: True
+check("answered yes, that row goes on the table's monitor",
+      page.pick(picked_row)
+      and wait_for(lambda: played.calls[-1] == ("pick", "Monitor1", picked_row.item)))
+del page._answer
+page.countdowns.engine = False
+page._render_cards()
+check("Wallpaper Engine not running: the lead card's player is off",
+      page.player_texts()["enabled"] is False)
+check("and the other cards' Pause and Next are off too",
+      [enabled for _text, _checked, enabled in page.menu_actions("Monitor2")[:2]] == [False, False])
+page.countdowns.engine = True
+page._render_cards()
 loaded.clear()
 page.show_list("Monitor2")
 check("its list is read, and the footer says whose",
@@ -923,7 +987,7 @@ check("a state it does not have is refused", raises(lambda: fixture_page.load_fi
 print("-- a row's actions: which rows offer what --")
 from app.engines.rotator.config import Config, History, RunRecord              # noqa: E402
 from app.pages.tracker import (                             # noqa: E402
-    ACTIONS, DELETE, MARKED, OFFER, PROTECT, MULTIPLIER, REMAINING, STALE_NOTE, PlaylistRow, action_cell,
+    ACTIONS, DELETE, MARKED, OFFER, PICK, PROTECT, MULTIPLIER, REMAINING, STALE_NOTE, PlaylistRow, action_cell,
     protect_state, protected_name,
 )
 
@@ -992,13 +1056,29 @@ check("the table's last column holds them, with no title and no sorting",
       and not actions_model.columns[ACTIONS].sortable)
 check("each row as its folder says: offered, Workshop, protected, marked here",
       [keys(actions_model.cell(r, ACTIONS)) for r in actions_rows]
-      == [[PROTECT, DELETE], [None, DELETE], [MARKED, DELETE],
-          [MARKED, DELETE]])
+      == [[PICK, PROTECT, DELETE], [PICK, None, DELETE], [PICK, MARKED, DELETE],
+          [PICK, MARKED, DELETE]])
 check("the row marked here says so under its title, in warn",
       actions_model.cell(stale_row, 1).sub == STALE_NOTE
       and actions_model.cell(stale_row, 1).sub_tone == "warn"
       and actions_model.cell(actions_rows[0], 1).sub == ""
       and STALE_NOTE.startswith("playlist entry broken until the next rotation"))
+
+print("-- Pick: a row put on screen now --")
+from app.pages.tracker import pick_button                     # noqa: E402
+queued = pick_button(PlaylistRow("x", "queue", 1, folder=in_dest("w1")), "Monitor1")
+check("a queued row offers Pick, naming the monitor",
+      queued.key == PICK and queued.icon == "pick" and queued.enabled
+      and queued.tip == "Put on Monitor1 now…")
+check("the row on screen: off, and says why",
+      not pick_button(PlaylistRow("x", "shown", 1, on_screen=True), "Monitor1").enabled
+      and pick_button(PlaylistRow("x", "shown", 1, on_screen=True), "Monitor1").tip
+      == "Already on screen")
+check("a row renamed [protected] here: off, its entry points at the old name",
+      not pick_button(stale_row, "Monitor1").enabled
+      and pick_button(stale_row, "Monitor1").tip == "Its playlist entry points at the old name")
+check("Wallpaper Engine not running: off",
+      not pick_button(PlaylistRow("x", "queue", 1), "Monitor1", running=False).enabled)
 
 
 print("-- Mark [protected]: asked first, renamed off the window's thread, said --")
@@ -1084,7 +1164,7 @@ for owner, name in GUARDED:
     guard(owner, name)
 try:
     started = mark_page.protect(keep)
-    renaming_now = not mark_page.model.cell(keep, ACTIONS).buttons[0].enabled
+    renaming_now = not mark_page.model.cell(keep, ACTIONS).buttons[1].enabled
     finished = wait_for(lambda: not mark_page._offload.busy())
 finally:
     unguard()
@@ -1098,8 +1178,8 @@ check("the folder is renamed, and nothing else",
 keep = next(r for r in mark_page.model.items() if r.item == MARK_ITEMS[0])
 check("the row follows: its new folder, the warn lock, the note under its title",
       Path(keep.folder) == MYP / "[protected] w_keep" and keep.stale
-      and keys(mark_page.model.cell(keep, ACTIONS)) == [MARKED, DELETE]
-      and mark_page.model.cell(keep, ACTIONS).buttons[0].tone == "warn"
+      and keys(mark_page.model.cell(keep, ACTIONS)) == [PICK, MARKED, DELETE]
+      and mark_page.model.cell(keep, ACTIONS).buttons[1].tone == "warn"
       and mark_page.model.cell(keep, 1).sub == STALE_NOTE
       and mark_page.model.thumb_source(keep) == keep.folder)
 check("and a toast says what changed, and that the playlist entry stops working",
@@ -1130,7 +1210,7 @@ check("the name already taken: a danger toast in plain words, nothing changed",
                                     "was changed."
       and (MYP / "w_taken").is_dir() and (MYP / "[protected] w_taken").is_dir()
       and not mark_row("w_taken").stale
-      and mark_page.model.cell(mark_row("w_taken"), ACTIONS).buttons[0].enabled)
+      and mark_page.model.cell(mark_row("w_taken"), ACTIONS).buttons[1].enabled)
 tone, words = failed_mark("w_gone")
 check("a folder no longer there: said so", tone == "danger"
       and words == "Could not mark w_gone [protected]: it is not in myprojects any more. "
@@ -1186,10 +1266,10 @@ fixture_page.load_fixture("marked")
 fixture_rows = {r.number: r for r in fixture_page.model.items()}
 check("wallpaper 2 was marked here: its row says so",
       fixture_rows[2].stale and Path(fixture_rows[2].folder).name == "[protected] wallpaper_0002"
-      and fixture_page.model.cell(fixture_rows[2], ACTIONS).buttons[0].tone == "warn")
+      and fixture_page.model.cell(fixture_rows[2], ACTIONS).buttons[1].tone == "warn")
 check("3 was protected already, 5 is a Workshop one, 4 is offered Mark",
       [keys(fixture_page.model.cell(fixture_rows[n], ACTIONS)) for n in (3, 5, 4)]
-      == [[MARKED, DELETE], [None, DELETE], [PROTECT, DELETE]])
+      == [[PICK, MARKED, DELETE], [PICK, None, DELETE], [PICK, PROTECT, DELETE]])
 
 
 # ---- Multipliers, through the window's shared store and page wiring --------------------------

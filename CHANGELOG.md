@@ -6,6 +6,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **Player controls** for Wallpaper Engine. The Tracker's leading monitor card
+  has **Pause** (every monitor; Wallpaper Engine has no per-monitor pause) and
+  **Next** (that monitor), the other cards have both in their ⋯ menu, the tray
+  menu has **Pause all monitors** and **Next wallpaper**, and the widget has
+  them on each expanded row and in its right-click menu.
+- **Put on screen** on every row of the Tracker's playlist: shows that wallpaper
+  now on the table's monitor, as a click in Wallpaper Engine does. The monitor
+  keeps its playlist and its pass.
+
 ## [4.11.1] - 2026-11-15
 
 ### Fixed

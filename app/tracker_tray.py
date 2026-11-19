@@ -43,7 +43,9 @@ from .settings import Settings
 from .tracker_feed import TRAY_MUTEX, TrackerFeed, heartbeat_setting
 from .tray_icon import FINISHED, UNKNOWN, SIZES, fill_edges, step, tray_icon
 from . import tray_options
-from .tray_menu import OPEN, QUIT, REVIEW, ROTATE, SETTINGS, WIDGET, WIDGET_VISIBLE, TrayMenu, build_model
+from .engines import player
+from .tray_menu import (NEXT, OPEN, PAUSE, QUIT, REVIEW, ROTATE, SETTINGS, WIDGET, WIDGET_VISIBLE,
+                        TrayMenu, build_model)
 from .widget_options import chosen_profiles, set_option
 
 
@@ -70,6 +72,7 @@ RESTART_NOTICE_SECONDS = 15 * 60
 
 # What a balloon was about, for what a click on it should open.
 BALLOON_FINISHED, BALLOON_RESTARTED, BALLOON_RESTORE = "finished", "restarted", "restore"
+BALLOON_PLAYER = "player"           # Pause or Next with Wallpaper Engine not running
 
 
 def log(message: str) -> None:
@@ -252,6 +255,8 @@ class TrackerTray:
             if key not in keys:
                 widget.hide()
         primary = self._primary()
+        paused = player.is_paused(self._engine_pid())
+        running = self._engine_pid() is not None
         for key in keys:
             if key not in self.widgets:
                 from .desktop_widget import DesktopWidget
@@ -259,8 +264,10 @@ class TrackerTray:
                 widget = DesktopWidget(self.settings, profile_key=key, screen=screen)
                 widget.settings_requested.connect(lambda: self.open_toolkit("Widget"))
                 widget.visibility_changed.connect(lambda on, key=key: self._profile_visibility(key, on))
+                widget.player_requested.connect(self._player)
                 self.widgets[key] = widget
             widget = self.widgets[key]
+            widget.paused, widget.running = paused, running
             widget.sync_settings()
             widget.render(self.results, self.countdowns, primary, self.feed.error or "", monitors,
                           self._metadata.data if self._metadata else None)
@@ -407,11 +414,38 @@ class TrackerTray:
             state, fraction, number, line,
             run_hint=words.run_hint(words.next_run_number()),
             review_hint=words.review_hint(words.review_waiting()),
-            widget_visible=self._widgets_active))
+            widget_visible=self._widgets_active,
+            paused=player.is_paused(self._engine_pid()),
+            monitor=primary.monitor if primary is not None else "",
+            running=self._engine_pid() is not None))
 
     # -------------------------------------------------------------- actions
+    def _engine_pid(self) -> int | None:
+        engine = getattr(self.clock, "engine", None)
+        return engine[0] if engine else None
+
+    def _player(self, action: str, monitor: str = "") -> None:
+        """Pause, play or next, off the GUI thread; a failure goes to the log."""
+        if self._engine_pid() is None:
+            self._say(BALLOON_PLAYER, "Wallpaper Engine is not running",
+                      "Start Wallpaper Engine, then try again.", tray_icon(UNKNOWN))
+            return
+        if action == NEXT:
+            if not monitor:
+                log("player: no monitor to skip on")
+                return
+            work = lambda: player.next_wallpaper(monitor)          # noqa: E731
+        elif action == PAUSE:
+            work = player.play if player.is_paused(self._engine_pid()) else player.pause
+        else:
+            work = player.play
+        player.in_background(work, lambda error: error and log(f"player: {error}"))
+
     def _on_chosen(self, key: str):
-        if key == OPEN:
+        if key in (PAUSE, NEXT):
+            primary = self._primary()
+            self._player(key, primary.monitor if primary is not None else "")
+        elif key == OPEN:
             self.open_toolkit()
         elif key == ROTATE:
             # Only the question: the Rotator page checks the folders and asks

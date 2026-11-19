@@ -603,6 +603,7 @@ class MonitorCard(GlassPanel):
         words.addLayout(who)
         column.addLayout(words)
         self._facts = _Facts()
+        self._column = column
         column.addWidget(self._facts)
         column.addWidget(self._note)
 
@@ -662,6 +663,11 @@ class MonitorCard(GlassPanel):
         self.setAccessibleName(view.name)
         self.setAccessibleDescription(f"{view.title_text()}, {view.count_text()}"
                                       + (", the whole playlist shown" if done else ""))
+
+    def set_controls(self, widget: QWidget) -> None:
+        """A row of controls between the wallpaper and the facts (the Tracker's
+        Pause and Next). Detail cards only."""
+        self._column.insertWidget(self._column.indexOf(self._facts), widget)
 
     def set_menu(self, menu) -> None:
         """The overflow button, with this menu; None takes it away."""
