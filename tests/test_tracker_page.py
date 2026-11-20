@@ -811,12 +811,10 @@ next(a for a in summary_menu.actions() if a.text() == "Next wallpaper").trigger(
 check("a summary card's Next skips that card's monitor",
       wait_for(lambda: played.calls[-1] == ("next", "Monitor2")))
 picked_row = page.model.item_at(page.model.group_rows()[1] + 1)
-page._answer = lambda dialog: False
-check("Pick asks first; answered no, nothing is sent",
-      not page.pick(picked_row) and played.calls[-1] == ("next", "Monitor2"))
-page._answer = lambda dialog: True
-check("answered yes, that row goes on the table's monitor",
-      page.pick(picked_row)
+asked_pick = []
+page._answer = lambda dialog: asked_pick.append(dialog) or False
+check("Pick asks nothing: one click puts the row on the table's monitor",
+      page.pick(picked_row) and not asked_pick
       and wait_for(lambda: played.calls[-1] == ("pick", "Monitor1", picked_row.item)))
 del page._answer
 page.countdowns.engine = False
@@ -1069,7 +1067,7 @@ from app.pages.tracker import pick_button                     # noqa: E402
 queued = pick_button(PlaylistRow("x", "queue", 1, folder=in_dest("w1")), "Monitor1")
 check("a queued row offers Pick, naming the monitor",
       queued.key == PICK and queued.icon == "pick" and queued.enabled
-      and queued.tip == "Put on Monitor1 now…")
+      and queued.tip == "Put on Monitor1 now")
 check("the row on screen: off, and says why",
       not pick_button(PlaylistRow("x", "shown", 1, on_screen=True), "Monitor1").enabled
       and pick_button(PlaylistRow("x", "shown", 1, on_screen=True), "Monitor1").tip

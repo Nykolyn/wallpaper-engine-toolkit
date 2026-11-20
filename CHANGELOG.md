@@ -6,6 +6,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- **Put on screen** on a Tracker row acts on the click: the wallpaper changes at once,
+  with no confirmation.
+
 ## [4.11.2] - 2026-11-19
 
 ### Added

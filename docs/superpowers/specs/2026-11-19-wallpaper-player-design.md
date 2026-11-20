@@ -55,9 +55,8 @@ the tracker shows the old "on screen" until the next change. No auto-restore
 guard is needed.
 
 My calls (correctable):
-- Pick **asks first**, like the row's Protect and Delete do, naming the
-  consequence: "The monitor leaves the playlist; its pass stops counting."
-  With a "Don't ask again" box, stored in `suite.json` under `player`.
+- Pick acts on the click, with no confirmation (the user's call, 2026-11-20,
+  after seeing that the monitor keeps its playlist).
 - Pick must **not trigger auto-restore**. The builder checks what the tracker
   records when a monitor has no playlist and, if it reads as an engine reset,
   marks Toolkit-made picks the way `playlist-refresh/rewritten.txt` marks

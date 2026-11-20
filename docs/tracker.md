@@ -148,7 +148,7 @@ Wallpaper Engine is not running. The [tray](tray.md) and the
 
 **Put on screen** (the first button, a monitor with ▶) shows that wallpaper on
 the monitor whose playlist the table shows, now, as clicking it in Wallpaper
-Engine does. It asks first. The monitor keeps its playlist: its timer starts
+Engine does, without asking. The monitor keeps its playlist: its timer starts
 again from this wallpaper, and the wallpaper stays in the queue, so it can come
 round again in this pass. It is off on the row already on screen, on a row
 renamed [protected] here (its playlist entry names the old folder), and while
