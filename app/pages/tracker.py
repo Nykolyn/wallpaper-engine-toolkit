@@ -26,8 +26,8 @@ Where the numbers come from:
 
 The Multiplier select changes the quota for future selections; Remaining
 counts the unused selections in this quota cycle. Each row ends with three
-glyph buttons. **Put on screen** shows the row on the table's monitor now
-(`engines/player`), after asking; the monitor keeps its playlist. **Mark [protected]** renames a folder that sits directly
+glyph buttons. **Put on screen** shows the row on the table's monitor at once
+(`engines/player`); the monitor keeps its playlist. **Mark [protected]** renames a folder that sits directly
 in the Rotator's myprojects to `[protected] <name>`, after asking, on a thread
 of its own (the library is on a hard disk); the Rotator then leaves it there.
 Wallpaper Engine's playlist is not touched: its entry keeps the old name and
@@ -510,7 +510,7 @@ def pick_button(row: PlaylistRow, monitor: str, running: bool = True) -> CellBut
         return CellButton(PICK, "pick", "Its playlist entry points at the old name", enabled=False)
     if not running:
         return CellButton(PICK, "pick", "Wallpaper Engine is not running", enabled=False)
-    return CellButton(PICK, "pick", f"Put on {monitor} now…")
+    return CellButton(PICK, "pick", f"Put on {monitor} now")
 
 
 class ProtectError(Exception):
@@ -1294,18 +1294,10 @@ class TrackerPage(Page):
         return True
 
     def pick(self, row: PlaylistRow) -> bool:
-        """Pick: ask, then put the row on the table's monitor now."""
+        """Pick: put the row on the table's monitor now, as a click in Wallpaper
+        Engine does — no question first."""
         monitor = self._list_monitor or self.table_monitor()
         if self._fixture is not None or not monitor                 or not pick_button(row, monitor, bool(self._engine())).enabled:
-            return False
-        name = row.title or os.path.basename(os.path.dirname(os.path.normpath(row.item)))
-        dialog = ConfirmDialog(
-            f"Put {name} on {monitor}?",
-            "It goes on screen now, as when you click a wallpaper in Wallpaper Engine.",
-            self._dialog_parent(), confirm_text="Put on screen",
-            note=("warn", f"{monitor}'s playlist timer starts again from this wallpaper. "
-                          f"It stays in the queue, so it can come round again in this pass."))
-        if not self._answer(dialog):
             return False
         item = row.item
         self._offload.run(lambda: self._player.pick(monitor, item), self._player_done)
