@@ -1,0 +1,8 @@
+{
+  "useMarkdownLinks": true,
+  "newLinkFormat": "relative",
+  "alwaysUpdateLinks": true,
+  "attachmentFolderPath": "images",
+  "newFileLocation": "folder",
+  "newFileFolderPath": "decisions"
+}

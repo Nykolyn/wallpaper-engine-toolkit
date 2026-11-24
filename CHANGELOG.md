@@ -8,6 +8,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **The documentation is an Obsidian vault**: open `docs/` in Obsidian. A new
+  `docs/decisions/` folder records every decision that shapes the project and
+  why, and `CLAUDE.md` makes the vault the source of truth that each change
+  keeps up to date.
+
+### Changed
+
 - **Put on screen** on a Tracker row acts on the click: the wallpaper changes at once,
   with no confirmation.
 

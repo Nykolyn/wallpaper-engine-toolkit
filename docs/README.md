@@ -61,6 +61,12 @@ still beside the word "working".
 | [Building](building.md) | Producing a standalone `.exe`, and the installer. |
 | [Development](development.md) | Architecture, the frame and its pages, the test suite, and the look and feel: tokens, type, icons, motion, the kit preview, snapshots. |
 | [Troubleshooting](troubleshooting.md) | What each failure looks like and which file answers it. |
+| [Decisions](decisions/README.md) | Every decision that shapes the project, with the reason — the source of truth when code and docs disagree. |
+
+This folder is an [Obsidian](https://obsidian.md) vault: open `docs/` as a
+vault to browse the pages and decisions with backlinks and graph view. It is
+the project's source of truth for what the Toolkit does and why; a change to
+either is written here in the same pull request.
 
 ## What this does not do
 

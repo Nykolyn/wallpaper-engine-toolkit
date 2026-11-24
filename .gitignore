@@ -23,6 +23,9 @@ env/
 .ruff_cache/
 
 # ---- Editors and OS --------------------------------------------------------
+# docs/ is an Obsidian vault; only its shared settings are committed.
+/docs/.obsidian/*
+!/docs/.obsidian/app.json
 .vscode/
 .idea/
 *.swp
