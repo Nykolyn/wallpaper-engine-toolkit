@@ -92,7 +92,10 @@ running often enough to matter on a short playlist.
    ```
 
 3. **Update the documentation in the same pull request.** A behaviour change
-   with stale docs is a half-finished change. The pages are in [`docs/`](docs/).
+   with stale docs is a half-finished change. The pages are in [`docs/`](docs/),
+   which is also an Obsidian vault and the source of truth for requirements.
+   A change that settles a choice adds or updates a note in
+   [`docs/decisions/`](docs/decisions/README.md).
 
 4. **Write the change up under `## [Unreleased]`** in CHANGELOG.md and leave
    the version alone — see [Versions](#versions). The pull request cannot go
