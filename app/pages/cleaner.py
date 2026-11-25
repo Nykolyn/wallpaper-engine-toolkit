@@ -498,7 +498,7 @@ class CleanerPage(Page):
         if state == "outside":
             self.tabs.set_current_index(1)
             self._folders = {"all": ["9000000003", "9000000004"], "new": ["9000000004"]}
-            self._rows = [engine.Wallpaper(r"X:\Workshop\431960\9000000003", "Paper lanterns", "Ilya",
+            self._rows = [engine.Wallpaper(r"X:\Workshop\431960\9000000003", "Paper lanterns", "Mira",
                                            "video", 31200000, datetime(2026, 11, 24, 9, 12)),
                           engine.Wallpaper(r"X:\Workshop\431960\9000000004", "Rain on glass", "", "scene",
                                            8400000, datetime(2026, 11, 24, 9, 14))]

@@ -168,6 +168,7 @@ each through its own code, and they stay two files.
 | Widget view | [Widget](widget.md) | `suite.json` (`widget.mode`) | compact |
 | Widget position | drag the [Widget](widget.md) header | `suite.json` (`widget.position`: screen name, relative x/y) | near the primary screen's top right |
 | Review source | [Review settings](review.md#what-gets-reviewed) | `suite.json` (`review.scope`) | the `new` folder |
+| Cleaner's Outside playlists folder | [Cleaner](cleaner.md#outside-playlists) | `suite.json` (`cleaner.outside_folder`; empty = All wallpapers) | Review's source folder |
 | Subscribe by | [Review settings](review.md#how-a-click-subscribes) | `suite.json` (`review.subscribe`: `steam` or `page`) | Steam directly |
 | Second copy of the authors backups | [Review settings](authors-database.md#a-second-copy-somewhere-else) | `suite.json` (`review.backup_mirror`) | none |
 | The author list's order | [Review](review.md) | `suite.json` (`review.sort`, `review.descending`) | known authors first |
