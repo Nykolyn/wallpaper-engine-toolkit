@@ -458,7 +458,7 @@ renamed to `activity.1.jsonl`. An append measured 0.15 ms (p95 0.23 ms), and
 The kinds: a piece of work ends as `<activity>.<outcome>` (`ACTIVITIES`:
 `run`, `check`, `cleanup`, `duplicates_delete`, `duplicates_return` for the
 Rotator, plus `retry` and `rebuild`; `scan`, `count`, `database`
-for Review; `build` for Creator; `reserve_move` and `unavailable_delete`
+for Review; `build` for Creator; `reserve_move`, `unavailable_delete` and `outside_delete`
 for Cleaner). Legacy `copy` and `migration` kinds remain readable; no page starts them. `EVENTS`
 are the rest: `run.started`, `duplicates.set_aside`, and the Tracker's
 `playlist.advanced` (the leading monitor only), `playlist.finished` and

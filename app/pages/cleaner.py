@@ -9,18 +9,35 @@ from PySide6.QtCore import QEvent, Qt, Signal
 from PySide6.QtWidgets import QStackedLayout, QVBoxLayout
 
 from .. import theme
+from ..engines import outside_playlists as outside
 from ..engines import unavailable as engine
+from ..engines.review import DEFAULT_SCOPE
 from ..engines.rotator.config import Config
 from ..engines.wallpaper_delete import delete_wallpaper
 from ..services import begin
 from ..ui.kit import (
     ButtonsCell, Callout, Cell, CellButton, Checkbox, CheckCell, Column, ConfirmDialog, Dropdown, EmptyState,
-    GlassPanel, NavState, SecondaryButton, Table, TableBar, TableFooter, TableModel, TagsCell, format as fmt,
+    GlassPanel, NavState, SecondaryButton, SegmentedControl, Table, TableBar, TableFooter, TableModel, TagsCell, format as fmt,
 )
 from . import on_steam_found
 from .base import Page
 from .folder_actions import delete_dialog, delete_tip, deleted_words, open_in_explorer
 from .tracker import _Offload
+
+
+INTRO = {
+    "unavailable": "These Workshop items are still on disk, but Steam cannot describe them. "
+                   "Open a row to inspect its folder, or keep it in your reserve.",
+    "outside": "Subscribed wallpapers in this folder that are in no Wallpaper Engine playlist. "
+               "Playlists are read again just before unsubscribing.",
+}
+
+
+FOOTER = {
+    "unavailable": "DATE is the folder's creation time · + moves to the Rotator's reserve",
+    "outside": "DATE is the folder's creation time · Trash unsubscribes and recycles",
+}
+KEPT = object()    # a worker's result for a wallpaper found in a playlist at delete time
 
 
 class WallpaperModel(TableModel):
@@ -52,8 +69,10 @@ class WallpaperModel(TableModel):
         if column == 6:
             return row.age or fmt.DASH
         enabled = not self.page.scanning and not self.page.acting
-        return ButtonsCell((CellButton("delete", "trash", delete_tip(row.folder), enabled),
-                            CellButton("reserve", "plus", "Move to reserve…", enabled)))
+        trash = CellButton("delete", "trash", delete_tip(row.folder), enabled)
+        if self.page.mode == "outside":
+            return ButtonsCell((trash,))
+        return ButtonsCell((trash, CellButton("reserve", "plus", "Move to reserve…", enabled)))
 
     def sort_key(self, row, column):
         if column == 4:
@@ -74,7 +93,7 @@ class WallpaperModel(TableModel):
 
 class CleanerPage(Page):
     key, title, icon = "cleaner", "Cleaner", "cleaner"
-    FIXTURES = ("found", "empty", "checking", "failed")
+    FIXTURES = ("found", "empty", "checking", "failed", "outside")
     _progress = Signal(int, int)
     _open_failed = Signal(str)
     _action_progress = Signal(object, int, int)
@@ -91,6 +110,9 @@ class CleanerPage(Page):
         self.selected = set()
         self._folders = {}
         self._checked = None
+        # The tab not shown keeps its rows, folders, check and chosen folder here.
+        self.mode = "unavailable"
+        self._parked = {"outside": {"rows": [], "folders": {}, "checked": None, "source": None}}
         self._last_open = ("", 0.0)
         self.messages = []
         self._progress.connect(self._scan_progress)
@@ -101,9 +123,8 @@ class CleanerPage(Page):
         v, h = theme.BODY_PAD
         column.setContentsMargins(h, v, h, v)
         column.setSpacing(theme.PANEL_GAP)
-        column.addWidget(Callout("These Workshop items are still on disk, but Steam cannot describe "
-                                 "them. Open a row to inspect its folder, or keep it in your reserve.",
-                                 tone="neutral"))
+        self.intro = Callout(INTRO["unavailable"], tone="neutral")
+        column.addWidget(self.intro)
         self.problem = Callout(tone="warn")
         self.problem.hide()
         column.addWidget(self.problem)
@@ -112,6 +133,10 @@ class CleanerPage(Page):
         body.setContentsMargins(0, 0, 0, 0)
         body.setSpacing(0)
         toolbar = TableBar()
+        self.tabs = SegmentedControl(("Unavailable", "Outside playlists"))
+        self.tabs.setAccessibleName("Unavailable wallpapers, or subscribed wallpapers in no playlist")
+        self.tabs.changed.connect(self._switch)
+        toolbar.add(self.tabs)
         self.all_rows = Checkbox("Select all", tristate=True)
         self.all_rows.setAccessibleName("Select all visible wallpapers")
         self.all_rows.clicked.connect(self.select_all)
@@ -119,7 +144,7 @@ class CleanerPage(Page):
         self.source = Dropdown(prefix="Folder")
         self.source.setAccessibleName("Filter unavailable wallpapers by Wallpaper Engine folder")
         self.source.add_item("All wallpapers", "")
-        self.source.currentIndexChanged.connect(self._filter)
+        self.source.currentIndexChanged.connect(self._source_chosen)
         toolbar.add(self.source)
         self.delete_selected = SecondaryButton("Delete selected", icon="trash")
         self.delete_selected.clicked.connect(lambda: self._selected_action("delete"))
@@ -147,7 +172,6 @@ class CleanerPage(Page):
         self.content.addWidget(self.table)
         self.content.addWidget(self.empty)
         self.footer = TableFooter()
-        self.footer.set_note("DATE is the folder's creation time · + moves to the Rotator's reserve")
         body.addWidget(self.footer)
         column.addWidget(card, 1)
         self._render()
@@ -166,10 +190,54 @@ class CleanerPage(Page):
         self._render()
         config_path = self.settings.get("tracker", "we_config", None)
         cache = self.services.data_dir / "steam_cache.sqlite" if self.services is not None else None
+        if self.mode == "outside":
+            self._offload.run(lambda: outside.scan(config_path=config_path, cache_path=cache),
+                              self._scanned)
+            return True
         self._offload.run(lambda: engine.scan(config_path=config_path, cache_path=cache,
                                               refresh=refresh, on_progress=self._report_progress),
                           self._scanned)
         return True
+
+    def _switch(self, index):
+        """Park the shown tab's state, bring the other's back; its first showing scans."""
+        mode = ("unavailable", "outside")[index]
+        if mode == self.mode:
+            return
+        self._parked[self.mode] = {"rows": self._rows, "folders": self._folders,
+                                   "checked": self._checked, "source": self.source.currentData()}
+        state = self._parked.pop(mode)
+        self.mode = mode
+        self._rows, self._folders, self._checked = state["rows"], state["folders"], state["checked"]
+        self.selected.clear()
+        self.problem.hide()
+        self.intro.set_body(INTRO[mode])
+        self.reserve_selected.setVisible(mode == "unavailable")
+        self._fill_sources(state["source"])
+        self._filter()
+        if mode == "outside" and self._checked is None and self._fixture is None:
+            self.check()
+
+    def _fill_sources(self, selected):
+        """The dropdown for the shown tab. Outside playlists starts at the remembered
+        folder, else Review's (see outside_playlists.default_folder)."""
+        if self.mode == "outside":
+            selected = outside.default_folder(
+                self.settings.get("cleaner", "outside_folder", None),
+                str(self.settings.get("review", "scope", DEFAULT_SCOPE) or DEFAULT_SCOPE),
+                self._folders)
+        self.source.blockSignals(True)
+        self.source.clear()
+        self.source.add_item("All wallpapers", "")
+        for name in sorted(self._folders, key=str.casefold):
+            self.source.add_item(name, name)
+        self.source.setCurrentIndex(max(0, self.source.findData(selected)))
+        self.source.blockSignals(False)
+
+    def _source_chosen(self, *_):
+        if self.mode == "outside":
+            self.settings.set("cleaner", "outside_folder", self.source.currentData() or "")
+        self._filter()
 
     def _report_progress(self, done, total):
         try:
@@ -188,17 +256,10 @@ class CleanerPage(Page):
                                   + ("The previous results are still shown." if self._checked is not None else ""))
             self.problem.show()
         else:
-            self._rows, self._folders, self._checked = result.rows, result.folders, result.checked
-            selected = self.source.currentData()
-            self.source.blockSignals(True)
-            self.source.clear()
-            self.source.add_item("All wallpapers", "")
-            for name in sorted(self._folders, key=str.casefold):
-                self.source.add_item(name, name)
-            index = self.source.findData(selected)
-            self.source.setCurrentIndex(max(0, index))
-            self.source.blockSignals(False)
-            if result.warning:
+            self._rows, self._folders = result.rows, result.folders
+            self._checked = len(result.rows) if self.mode == "outside" else result.checked
+            self._fill_sources(self.source.currentData())
+            if getattr(result, "warning", ""):
                 self.problem.set_body(result.warning)
                 self.problem.show()
         self._filter()
@@ -214,6 +275,7 @@ class CleanerPage(Page):
         total, shown = len(self._rows), self.model.rowCount()
         self.refresh.setEnabled(not self.scanning and not self.acting and self._fixture is None)
         enabled = not self.scanning and not self.acting
+        self.tabs.setEnabled(enabled)
         self.source.setEnabled(enabled)
         self.all_rows.setEnabled(enabled and shown > 0)
         self.all_rows.blockSignals(True)
@@ -223,16 +285,33 @@ class CleanerPage(Page):
         self.delete_selected.setEnabled(enabled and bool(self.selected))
         self.reserve_selected.setEnabled(enabled and bool(self.selected))
         self.table.viewport().update()
-        self.set_nav_state(NavState.badge(total) if total else NavState()
-                           if self._checked is not None else
-                           NavState.status("checking" if self.scanning else "waiting"))
-        self.set_subtitle("Checking your Workshop library…" if self.scanning else
-                          f"{fmt.counted(total, 'wallpaper')} to process"
-                          + (f" · {fmt.count(self._checked)} checked" if self._checked is not None else ""))
-        self.footer.set_text(f"{fmt.count(shown)} shown · {fmt.count(total)} to process"
+        # The sidebar counts unavailable wallpapers only, whichever tab is shown.
+        if self.mode == "unavailable":
+            badge, checked, busy = total, self._checked, self.scanning
+        else:
+            parked = self._parked["unavailable"]
+            badge, checked, busy = len(parked["rows"]), parked["checked"], False
+        self.set_nav_state(NavState.badge(badge) if badge else NavState()
+                           if checked is not None else
+                           NavState.status("checking" if busy else "waiting"))
+        if self.mode == "outside":
+            self.set_subtitle("Reading your playlists…" if self.scanning else
+                              f"{fmt.counted(total, 'wallpaper')} in no playlist")
+        else:
+            self.set_subtitle("Checking your Workshop library…" if self.scanning else
+                              f"{fmt.counted(total, 'wallpaper')} to process"
+                              + (f" · {fmt.count(self._checked)} checked" if self._checked is not None else ""))
+        self.footer.set_note(FOOTER[self.mode])
+        self.footer.set_text(f"{fmt.count(shown)} shown · {fmt.count(total)} "
+                             + ("in no playlist" if self.mode == "outside" else "to process")
                              + (f" · {fmt.count(len(self.selected))} selected" if self.selected else ""))
         self.content.setCurrentWidget(self.table if shown else self.empty)
-        if self.scanning:
+        if self.mode == "outside":
+            self.empty.set_title("Reading your playlists" if self.scanning else
+                                 "Not read yet" if self._checked is None else
+                                 "Every wallpaper here is in a playlist")
+            self.empty.set_body("Subscribed wallpapers in no Wallpaper Engine playlist are listed here.")
+        elif self.scanning:
             self.empty.set_title("Checking the Workshop library")
             self.empty.set_body("You can keep using the app while this check runs.")
         elif self._checked is None:
@@ -299,13 +378,16 @@ class CleanerPage(Page):
     def _process(self, items, key):
         if not items or key not in ("delete", "reserve") or self._fixture is not None:
             return False
+        if key == "reserve" and self.mode == "outside":
+            return False
         if self.scanning or self.acting:
             return False
         if self._rotating():
             self._say("warn", "Wait for the rotation or reserve copy to finish before processing wallpapers.")
             return False
         reserve = self.config.source
-        name = f"“{items[0].title}”" if len(items) == 1 else fmt.counted(len(items), "selected wallpaper")
+        config_path = self.settings.get("tracker", "we_config", None)
+        name =f"“{items[0].title}”" if len(items) == 1 else fmt.counted(len(items), "selected wallpaper")
         folders = [item.folder for item in items]
         if key == "reserve":
             if not reserve or not reserve.strip():
@@ -316,6 +398,16 @@ class CleanerPage(Page):
                                    "unsubscribe, and the Workshop folder goes to the Recycle Bin.",
                                    self.window(), lines=[f"To: {reserve}"] + folders,
                                    icon="plus", confirm_text="Move to reserve", safe_default=True)
+        elif self.mode == "outside":
+            saved = outside.saved_at(config_path)
+            when = (f"Wallpaper Engine last saved its playlists at {saved:%Y-%m-%d %H:%M}"
+                    if saved else "Wallpaper Engine has not saved its playlists yet")
+            title = (f"Unsubscribe from {name} and delete it?" if len(items) == 1
+                     else f"Unsubscribe from {name} and delete them?")
+            dialog = ConfirmDialog(title, "Playlists are read again first: anything now in one is "
+                                   "kept. Steam is then asked to unsubscribe, and each folder goes "
+                                   "to the Recycle Bin.", self.window(), lines=[when] + folders,
+                                   destructive=True, icon="trash", confirm_text="Unsubscribe and delete")
         elif len(items) == 1:
             dialog = delete_dialog(items[0].title, items[0].folder, self.window())
         else:
@@ -331,11 +423,20 @@ class CleanerPage(Page):
         if key == "reserve":
             run = begin(self.key, f"Moving {name} to the reserve", activity="reserve_move")
         else:
-            run = begin(self.key, f"Deleting {name}", activity="unavailable_delete")
+            run = (begin(self.key, f"Deleting {name}", activity="outside_delete")
+                   if self.mode == "outside" else
+                   begin(self.key, f"Deleting {name}", activity="unavailable_delete"))
         run.update(done=0, total=len(items))
+        mode = self.mode
         def work():
+            # An unreadable config.json raises here and fails the batch before any delete.
+            kept = outside.playlisted_ids(config_path) if mode == "outside" else set()
             results = []
             for item in items:
+                if Path(item.folder).name in kept:
+                    results.append((item, KEPT))
+                    self._action_progress.emit(run, len(results), len(items))
+                    continue
                 try:
                     result = (engine.move_to_reserve(item.folder, reserve) if key == "reserve"
                               else delete_wallpaper(item.folder))
@@ -354,21 +455,26 @@ class CleanerPage(Page):
         self.acting = False
         if isinstance(results, Exception):
             results = [(item, results) for item in items]
-        succeeded = set()
+        succeeded, kept = set(), set()
         for item, result in results:
-            if isinstance(result, Exception):
+            if result is KEPT:
+                kept.add(item.folder)
+                tone, words = "ok", f"“{item.title}” is now in a playlist; it was kept."
+            elif isinstance(result, Exception):
                 tone, words = "danger", f"Could not process “{item.title}”: {result}"
             else:
                 succeeded.add(item.folder)
                 tone, words = ("ok", f"“{item.title}” is kept in the reserve: {result}") if key == "reserve" \
                     else deleted_words(item.title, result)
             run.log("error" if tone == "danger" else "info", words)
-        self._rows = [r for r in self._rows if r.folder not in succeeded]
-        failed = len(items) - len(succeeded)
+        # A wallpaper now in a playlist is no longer a candidate: its row goes too.
+        self._rows = [r for r in self._rows if r.folder not in succeeded | kept]
+        failed = len(items) - len(succeeded) - len(kept)
         if len(items) > 1:
-            tone = ("warn" if succeeded else "danger") if failed else "ok"
+            tone = ("warn" if succeeded or kept else "danger") if failed else "ok"
             words = (f"{len(succeeded)} of {len(items)} wallpapers "
                      + ("moved to reserve." if key == "reserve" else "unsubscribed and recycled.")
+                     + (f" {len(kept)} now in a playlist, kept." if kept else "")
                      + (f" {failed} failed; see the Cleaner log." if failed else ""))
         run.update(done=len(items), total=len(items))
         run.finish("problems" if failed and succeeded else "failed" if failed else "clean", words)
@@ -389,6 +495,17 @@ class CleanerPage(Page):
         if state not in self.FIXTURES:
             return super().load_fixture(state)
         self._fixture = state
+        if state == "outside":
+            self.tabs.set_current_index(1)
+            self._folders = {"all": ["9000000003", "9000000004"], "new": ["9000000004"]}
+            self._rows = [engine.Wallpaper(r"X:\Workshop\431960\9000000003", "Paper lanterns", "Ilya",
+                                           "video", 31200000, datetime(2026, 11, 24, 9, 12)),
+                          engine.Wallpaper(r"X:\Workshop\431960\9000000004", "Rain on glass", "", "scene",
+                                           8400000, datetime(2026, 11, 24, 9, 14))]
+            self._checked = len(self._rows)
+            self._fill_sources("")
+            self._filter()
+            return
         self._checked = 2400 if state in ("found", "empty") else None
         self.scanning = state == "checking"
         self._folders = {"new": ["9000000001"], "favorites": ["9000000002"]}
