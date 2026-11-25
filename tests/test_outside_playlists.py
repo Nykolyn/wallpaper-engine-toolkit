@@ -63,6 +63,12 @@ class ScanTests(unittest.TestCase):
             "X:/a/431960/7/project.json", "X:\\a\\431960\\8\\scene.pkg", "myprojects/9/project.json"]}]}}})
         self.assertEqual(engine.playlisted_ids(path), {"7", "8"})
 
+    def test_item_id_uses_the_workshop_segment_not_an_earlier_431960(self):
+        path = config(self.root, {"u": {"general": {"playlists": [{"items": [
+            "D:/431960/steamapps/workshop/content/431960/123/scene.pkg",
+            "X:/431960/55/steamapps/workshop/content/431960/124/project.json"]}]}}})
+        self.assertEqual(engine.playlisted_ids(path), {"123", "124"})
+
     def test_unreadable_config_raises(self):
         with self.assertRaises(OSError):
             engine.playlisted_ids(self.root / "missing.json")

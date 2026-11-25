@@ -38,7 +38,8 @@ def _config(config_path) -> Path:
 def _item_id(item: str) -> str:
     parts = item.replace("\\", "/").split("/")
     if WORKSHOP_APP in parts:
-        index = parts.index(WORKSHOP_APP) + 1
+        # The last 431960 is Steam's workshop/content/431960; a library path may hold another.
+        index = len(parts) - parts[::-1].index(WORKSHOP_APP)
         if index < len(parts) and parts[index].isdigit():
             return parts[index]
     return ""

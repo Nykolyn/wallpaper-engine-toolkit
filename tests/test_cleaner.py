@@ -463,6 +463,40 @@ class OutsideTabTests(unittest.TestCase):
         self.assertTrue(page.tabs.isEnabled())
         page.deleteLater()
 
+    def test_startup_check_is_the_unavailable_one(self):
+        page = self.page()
+        with patch.object(outside, "scan") as scan, patch.object(engine, "scan") as steam:
+            page._startup_check()
+            scan.assert_not_called()
+            steam.assert_not_called()
+        with patch.object(engine, "scan", return_value=engine.Scan([], {}, 5)) as steam:
+            page.tabs.set_current_index(0)
+            self.assertTrue(wait_for(lambda: not page.scanning))
+            steam.assert_called_once()
+        self.assertEqual(page.nav_state().kind, "none")
+        page.deleteLater()
+
+    def test_delete_on_one_tab_drops_the_row_from_the_other(self):
+        page = CleanerPage(Settings({"review": {"scope": "@everything"}}))
+        page._scanned(engine.Scan([engine.Wallpaper(self.rows[0].folder, "Three")], {}, 1))
+        with patch.object(outside, "scan", return_value=self.found):
+            page.tabs.set_current_index(1)
+            self.assertTrue(wait_for(lambda: not page.scanning))
+        with patch.object(page, "_answer", return_value=True), \
+             patch.object(outside, "playlisted_ids", return_value=set()), \
+             patch("app.pages.cleaner.delete_wallpaper",
+                   side_effect=lambda folder: Deleted(folder, Path(folder).name)):
+            self.assertTrue(page._action(0, 8, "delete"))
+            self.assertTrue(wait_for(lambda: not page.acting))
+        self.assertEqual(page.nav_state().kind, "none")
+        page.deleteLater()
+
+    def test_accessible_names_follow_the_tab(self):
+        page = self.page()
+        self.assertNotIn("navailable", page.table.accessibleName())
+        self.assertNotIn("navailable", page.source.accessibleName())
+        page.deleteLater()
+
     def test_badge_counts_unavailable_only(self):
         page = CleanerPage(Settings({}))
         page._scanned(engine.Scan([engine.Wallpaper(str(self.root / "431960" / "9"), "Gone")], {}, 1))

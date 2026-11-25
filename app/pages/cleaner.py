@@ -37,7 +37,11 @@ FOOTER = {
     "unavailable": "DATE is the folder's creation time · + moves to the Rotator's reserve",
     "outside": "DATE is the folder's creation time · Trash unsubscribes and recycles",
 }
-KEPT = object()    # a worker's result for a wallpaper found in a playlist at delete time
+SOURCE_NAME = {"unavailable": "Filter unavailable wallpapers by Wallpaper Engine folder",
+               "outside": "The Wallpaper Engine folder whose wallpapers outside playlists are listed"}
+TABLE_NAME = {"unavailable": "Unavailable wallpapers; click a row to open its folder",
+              "outside": "Subscribed wallpapers in no playlist; click a row to open its folder"}
+KEPT = object()   # a worker's result for a wallpaper found in a playlist at delete time
 
 
 class WallpaperModel(TableModel):
@@ -105,6 +109,7 @@ class CleanerPage(Page):
         self._offload = _Offload(self)
         self.scanning = self.acting = False
         self._started = False
+        self._check_waiting = False     # the startup check, skipped while Outside playlists was shown
         self._fixture = None
         self._rows = []
         self.selected = set()
@@ -142,7 +147,7 @@ class CleanerPage(Page):
         self.all_rows.clicked.connect(self.select_all)
         toolbar.add(self.all_rows)
         self.source = Dropdown(prefix="Folder")
-        self.source.setAccessibleName("Filter unavailable wallpapers by Wallpaper Engine folder")
+        self.source.setAccessibleName(SOURCE_NAME["unavailable"])
         self.source.add_item("All wallpapers", "")
         self.source.currentIndexChanged.connect(self._source_chosen)
         toolbar.add(self.source)
@@ -159,7 +164,7 @@ class CleanerPage(Page):
         body.addWidget(toolbar)
         self.model = WallpaperModel(self)
         self.table = Table()
-        self.table.setAccessibleName("Unavailable wallpapers; click a row to open its folder")
+        self.table.setAccessibleName(TABLE_NAME["unavailable"])
         self.table.setModel(self.model)
         self.table.clicked.connect(self._open)
         self.table.activated.connect(self._open)
@@ -180,7 +185,14 @@ class CleanerPage(Page):
         """Called once by the live window, never by snapshots or start=False tests."""
         if not self._started and self._fixture is None:
             self._started = True
-            on_steam_found(self, self.check)
+            on_steam_found(self, self._startup_check)
+
+    def _startup_check(self):
+        """The Steam check at start. If Outside playlists is shown it waits:
+        switching back to Unavailable runs it."""
+        self._check_waiting = self.mode != "unavailable"
+        if not self._check_waiting:
+            self.check()
 
     def check(self, *, refresh=False):
         if self.scanning or self.acting or self._fixture is not None:
@@ -215,7 +227,12 @@ class CleanerPage(Page):
         self.reserve_selected.setVisible(mode == "unavailable")
         self._fill_sources(state["source"])
         self._filter()
+        self.source.setAccessibleName(SOURCE_NAME[mode])
+        self.table.setAccessibleName(TABLE_NAME[mode])
         if mode == "outside" and self._checked is None and self._fixture is None:
+            self.check()
+        elif mode == "unavailable" and self._check_waiting:
+            self._check_waiting = False
             self.check()
 
     def _fill_sources(self, selected):
@@ -469,6 +486,8 @@ class CleanerPage(Page):
             run.log("error" if tone == "danger" else "info", words)
         # A wallpaper now in a playlist is no longer a candidate: its row goes too.
         self._rows = [r for r in self._rows if r.folder not in succeeded | kept]
+        for parked in self._parked.values():    # a deleted folder is gone from the other tab too
+            parked["rows"] = [r for r in parked["rows"] if r.folder not in succeeded]
         failed = len(items) - len(succeeded) - len(kept)
         if len(items) > 1:
             tone = ("warn" if succeeded or kept else "danger") if failed else "ok"
