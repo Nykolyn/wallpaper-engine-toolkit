@@ -26,6 +26,7 @@ from PySide6.QtWidgets import QApplication
 from app import animations, services, theme
 from app.engines import unavailable as engine
 from app.engines import file_copy
+from app.engines import outside_playlists as outside
 from app.engines.steam_api import ItemDetails, SteamClient, SteamError, ITEM_CACHE
 from app.engines.rotator.config import Config
 from app.engines.wallpaper_delete import Deleted
@@ -378,6 +379,131 @@ class CleanerTests(unittest.TestCase):
                              [(row.folder, page.config.source) for row in rows])
         self.assertEqual(page.model.rowCount(), 0)
         self.assertEqual((page.nav_state().kind, page.nav_state().text), ("none", ""))
+        page.deleteLater()
+
+
+class OutsideTabTests(unittest.TestCase):
+    def setUp(self):
+        self.root = Path(tempfile.mkdtemp(dir=TMP))
+        self.rows = [engine.Wallpaper(str(wallpaper(self.root, "3")), "Three"),
+                     engine.Wallpaper(str(wallpaper(self.root, "4")), "Four")]
+        self.found = outside.OutsideScan(self.rows, {"all": ["3", "4"], "new": ["4"]}, None)
+
+    def page(self, settings=None):
+        # Review's own default is folder:new; most tests want every row.
+        page = CleanerPage(Settings(settings or {"review": {"scope": "@everything"}}))
+        with patch.object(outside, "scan", return_value=self.found) as scan:
+            page.tabs.set_current_index(1)
+            self.assertTrue(wait_for(lambda: not page.scanning))
+        self.assertEqual(scan.call_count, 1)
+        return page
+
+    def test_outside_tab_scans_once_and_filters_by_remembered_folder(self):
+        page = self.page({"cleaner": {"outside_folder": "all"}})
+        self.assertEqual(page.mode, "outside")
+        self.assertEqual((page.source.currentData(), page.model.rowCount()), ("all", 2))
+        with patch.object(outside, "scan") as scan:
+            page.source.setCurrentIndex(page.source.findData("new"))
+            scan.assert_not_called()
+        self.assertEqual(page.model.rowCount(), 1)
+        self.assertEqual(page.settings.get("cleaner", "outside_folder", None), "new")
+        page.tabs.set_current_index(0)
+        self.assertEqual(page.source.currentData(), "")       # the Unavailable filter is its own
+        page.deleteLater()
+
+    def test_review_folder_is_the_default(self):
+        page = self.page({"review": {"scope": "folder:new"}})
+        self.assertEqual((page.source.currentData(), page.model.rowCount()), ("new", 1))
+        page.deleteLater()
+
+    def test_outside_rows_have_no_reserve_button(self):
+        page = self.page()
+        buttons = page.model.cell(page.model.item_at(0), 8).buttons
+        self.assertEqual([b.key for b in buttons], ["delete"])
+        self.assertTrue(page.reserve_selected.isHidden())
+        page.deleteLater()
+
+    def test_readded_to_playlist_is_skipped(self):
+        page = self.page()
+        page.select_all()
+        with patch.object(page, "_answer", return_value=True), \
+             patch.object(outside, "playlisted_ids", return_value={"3"}), \
+             patch("app.pages.cleaner.delete_wallpaper",
+                   side_effect=lambda folder: Deleted(folder, Path(folder).name)) as delete:
+            self.assertTrue(page._selected_action("delete"))
+            self.assertTrue(wait_for(lambda: not page.acting))
+        self.assertEqual([c.args[0] for c in delete.call_args_list], [self.rows[1].folder])
+        self.assertIn("1 now in a playlist", page.messages[-1][1])
+        self.assertEqual(page.model.rowCount(), 0)
+        page.deleteLater()
+
+    def test_unreadable_config_deletes_nothing(self):
+        page = self.page()
+        with patch.object(page, "_answer", return_value=True), \
+             patch.object(outside, "playlisted_ids", side_effect=OSError("config.json is gone")), \
+             patch("app.pages.cleaner.delete_wallpaper") as delete:
+            self.assertTrue(page._action(0, 8, "delete"))
+            self.assertTrue(wait_for(lambda: not page.acting))
+        delete.assert_not_called()
+        self.assertEqual(page.messages[-1][0], "danger")
+        self.assertEqual(page.model.rowCount(), 2)
+        page.deleteLater()
+
+    def test_tabs_locked_while_busy(self):
+        page = CleanerPage(Settings({}))
+        release = threading.Event()
+        def slow(**_):
+            release.wait(5)
+            return self.found
+        with patch.object(outside, "scan", side_effect=slow):
+            page.tabs.set_current_index(1)
+            self.assertFalse(page.tabs.isEnabled())
+            release.set()
+            self.assertTrue(wait_for(lambda: not page.scanning))
+        self.assertTrue(page.tabs.isEnabled())
+        page.deleteLater()
+
+    def test_startup_check_is_the_unavailable_one(self):
+        page = self.page()
+        with patch.object(outside, "scan") as scan, patch.object(engine, "scan") as steam:
+            page._startup_check()
+            scan.assert_not_called()
+            steam.assert_not_called()
+        with patch.object(engine, "scan", return_value=engine.Scan([], {}, 5)) as steam:
+            page.tabs.set_current_index(0)
+            self.assertTrue(wait_for(lambda: not page.scanning))
+            steam.assert_called_once()
+        self.assertEqual(page.nav_state().kind, "none")
+        page.deleteLater()
+
+    def test_delete_on_one_tab_drops_the_row_from_the_other(self):
+        page = CleanerPage(Settings({"review": {"scope": "@everything"}}))
+        page._scanned(engine.Scan([engine.Wallpaper(self.rows[0].folder, "Three")], {}, 1))
+        with patch.object(outside, "scan", return_value=self.found):
+            page.tabs.set_current_index(1)
+            self.assertTrue(wait_for(lambda: not page.scanning))
+        with patch.object(page, "_answer", return_value=True), \
+             patch.object(outside, "playlisted_ids", return_value=set()), \
+             patch("app.pages.cleaner.delete_wallpaper",
+                   side_effect=lambda folder: Deleted(folder, Path(folder).name)):
+            self.assertTrue(page._action(0, 8, "delete"))
+            self.assertTrue(wait_for(lambda: not page.acting))
+        self.assertEqual(page.nav_state().kind, "none")
+        page.deleteLater()
+
+    def test_accessible_names_follow_the_tab(self):
+        page = self.page()
+        self.assertNotIn("navailable", page.table.accessibleName())
+        self.assertNotIn("navailable", page.source.accessibleName())
+        page.deleteLater()
+
+    def test_badge_counts_unavailable_only(self):
+        page = CleanerPage(Settings({}))
+        page._scanned(engine.Scan([engine.Wallpaper(str(self.root / "431960" / "9"), "Gone")], {}, 1))
+        with patch.object(outside, "scan", return_value=self.found):
+            page.tabs.set_current_index(1)
+            self.assertTrue(wait_for(lambda: not page.scanning))
+        self.assertEqual(page.nav_state().text, "1")
         page.deleteLater()
 
 

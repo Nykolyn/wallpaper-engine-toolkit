@@ -1,5 +1,11 @@
 # Cleaner
 
+Two tabs above the table: **Unavailable** — downloaded Workshop wallpapers
+whose Steam records are unavailable — and **[Outside playlists](#outside-playlists)**
+— subscribed wallpapers you did not put in any playlist.
+
+## Unavailable
+
 **Downloaded Workshop wallpapers whose Steam records are unavailable.**
 
 The table includes **Tags** and **Age**, read from the local `project.json`
@@ -66,3 +72,46 @@ Successful actions remove the row and decrease the sidebar count.
 The sidebar badge is hidden when no unavailable wallpapers remain.
 
 Steam result meanings: [Steamworks EResult documentation](https://partner.steamgames.com/doc/api/steam_api#EResult).
+
+## Outside playlists
+
+**Subscribed wallpapers of a folder that are in no Wallpaper Engine playlist.**
+
+For the daily habit: subscribe to new wallpapers, add the ones you like to a
+playlist, and let this tab unsubscribe from the rest.
+
+A wallpaper is listed when its Workshop folder (`…/431960/<id>` with a
+`project.json`) is on disk, it is in the chosen folder, and no playlist holds
+it. *A playlist* is every saved playlist and every monitor's running playlist,
+for every user in Wallpaper Engine's `config.json`; you do not name one. A
+wallpaper a monitor shows on its own, outside a playlist, is not kept by that.
+Ids a folder still remembers after you unsubscribed are not listed: there is
+nothing on disk to remove. The reserve and `myprojects` are not scanned.
+
+The check is local — no Steam call — and runs the first time the tab is shown,
+then on **Check again**.
+
+**Folder** offers Wallpaper Engine's folders and **All wallpapers** (every
+subscribed one). Your choice is remembered. Until you choose, and when the
+remembered folder no longer exists, the tab starts at the folder that is
+[Review's source](review.md#what-gets-reviewed); a Review source that is not one
+folder starts at All wallpapers.
+
+**Trash** and **Delete selected** unsubscribe through the running Steam client
+and send the folder to the Recycle Bin, as on the Unavailable tab. There is no
+move to the reserve here.
+
+Wallpaper Engine writes `config.json` some time after you change a playlist,
+so a playlist you saved a moment ago may not be in the file yet. Two things
+guard against unsubscribing from a wallpaper you just added:
+
+- the confirmation says when Wallpaper Engine last saved its playlists, and
+- right before unsubscribing, the playlists are read again; anything now in one
+  is kept, leaves the list, and the result says how many. If `config.json`
+  cannot be read at that moment, nothing is unsubscribed.
+
+Neither helps when Wallpaper Engine has not written the file at all — check the
+time in the confirmation. See
+[the decision](decisions/2026-11-25-reread-playlists-before-unsubscribe.md).
+
+The sidebar badge counts only unavailable wallpapers.

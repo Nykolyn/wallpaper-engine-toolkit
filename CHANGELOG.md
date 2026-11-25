@@ -6,6 +6,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **Cleaner → Outside playlists**: a second Cleaner tab lists the subscribed
+  wallpapers of a folder that are in no Wallpaper Engine playlist, and
+  unsubscribes and recycles them. The folder starts at Review's source and
+  your choice is remembered; playlists are read again right before
+  unsubscribing, so a wallpaper just added to one is kept.
+
 ### Changed
 
 - **The documentation is an Obsidian vault**: open `docs/` in Obsidian. A new

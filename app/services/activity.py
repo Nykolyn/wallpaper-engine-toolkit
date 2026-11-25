@@ -67,6 +67,7 @@ ACTIVITIES = {
     "reserve_move": ("cleaner", "keeping an unavailable Workshop wallpaper in the reserve"),
     "reserve_copy": ("reserve", "copying subscribed wallpapers to the reserve"),
     "unavailable_delete": ("cleaner", "unsubscribing and recycling an unavailable wallpaper"),
+    "outside_delete": ("cleaner", "unsubscribing and recycling a wallpaper in no playlist"),
     "restore": ("tracker", "putting back a pass Wallpaper Engine threw away"),
 }
 EVENTS = {

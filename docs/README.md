@@ -41,7 +41,7 @@ still beside the word "working".
 | [Rotator](rotator.md) | Selects distinct wallpapers by remaining multiplier quota, moves them between a reserve and `myprojects`, and rebuilds the playlist. | Your library is far larger than one playlist, and you cycle through it. |
 | [Tracker](tracker.md) | Reports how far Wallpaper Engine has got through the active playlist. | You want to know when the playlist is finished, so the next rotation is due. |
 | [Review](review.md) | Groups the week's new wallpapers by author, and says what each has published since you last looked. | You triage new wallpapers weekly and care who made them. |
-| [Cleaner](cleaner.md) | Finds downloaded Workshop wallpapers whose Steam records are unavailable, with a count beside the menu entry. | You want to inspect them, keep them in the reserve or unsubscribe and recycle them. |
+| [Cleaner](cleaner.md) | Finds downloaded Workshop wallpapers whose Steam records are unavailable, with a count beside the menu entry; and subscribed wallpapers in no playlist. | You want to inspect them, keep them in the reserve or unsubscribe and recycle them — or drop the new wallpapers you did not keep. |
 | [Creator](creator.md) | Turns video clips into Wallpaper Engine projects, **no preview needed** — it renders one from the video. | You have a folder of clips and want them usable as wallpapers now. |
 | [To reserve](reserve.md) | Lists active, downloaded subscriptions missing from the reserve and copies all or selected wallpapers. | You want to keep copies without changing subscriptions. |
 | [Restore](restore.md) | Puts back a playlist pass Wallpaper Engine threw away, by button or automatically per monitor. | Wallpaper Engine started a half-shown playlist over. |
