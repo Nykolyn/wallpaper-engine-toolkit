@@ -39,6 +39,19 @@ class Scan:
     warning: str = ""
 
 
+def wallpaper_row(folder: Path, author: str) -> Wallpaper:
+    """A table row from the folder's project.json, size and creation time. Reads the disk."""
+    meta = read_meta(str(folder / "project.json"))
+    row = Wallpaper(str(folder), meta.title, author, meta.kind, tags=meta.tags, age=meta.age)
+    try:
+        row.created = datetime.fromtimestamp(folder.stat().st_ctime)
+        files, _ = manifest(str(folder))
+        row.size = sum(files.values())
+    except (OSError, ValueError) as err:
+        row.note = f"Could not read all folder metadata: {err}"
+    return row
+
+
 def scan(*, config_path=None, workshop=None, cache_path=None, refresh=False,
          on_progress=None, client=None) -> Scan:
     """One shallow listing, batched cached API calls, metadata only for matches. Off-thread."""
@@ -73,17 +86,8 @@ def scan(*, config_path=None, workshop=None, cache_path=None, refresh=False,
         item = details.get(item_id)
         if item is None or item.ok or item.result not in UNAVAILABLE:
             continue
-        folder = root / item_id
-        meta = read_meta(str(folder / "project.json"))
-        row = Wallpaper(str(folder), meta.title, authors[item_id].name if item_id in authors else "",
-                        meta.kind, tags=meta.tags, age=meta.age)
-        try:
-            row.created = datetime.fromtimestamp(folder.stat().st_ctime)
-            files, _ = manifest(str(folder))
-            row.size = sum(files.values())
-        except (OSError, ValueError) as err:
-            row.note = f"Could not read all folder metadata: {err}"
-        rows.append(row)
+        rows.append(wallpaper_row(root / item_id,
+                                  authors[item_id].name if item_id in authors else ""))
     warning = (f"Steam could not check {len(uncertain)} wallpapers; they are not listed here."
                if uncertain else "")
     return Scan(rows, folders, len(ids) - len(uncertain), warning)
