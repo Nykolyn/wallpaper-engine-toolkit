@@ -51,7 +51,9 @@ selects every visible row; repeat to clear the selection. Space toggles the
 focused row. **Delete selected** and **Move selected to reserve** ask once for
 the entire selection and process it in the background. Steam is opened once
 for the whole selection: every unsubscription is asked for first, then they
-are awaited together, and the folders go to the Recycle Bin one by one
+are awaited together, and the folders go to the Recycle Bin one by one.
+Steam drops them one after another, about 0.4 s each, so the wait lasts as
+long as Steam keeps dropping them and gives up only after 5 s without one
 ([why](decisions/2026-11-26-cleaner-batch-steam-and-rename.md)).
 Changing the folder filter drops selections that are no longer visible.
 Successful rows disappear; failed rows remain selected for retry, with details

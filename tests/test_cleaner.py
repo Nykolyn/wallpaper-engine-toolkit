@@ -274,6 +274,38 @@ class CleanerTests(unittest.TestCase):
         self.assertEqual(events, [("ask", "1"), ("ask", "2"), ("wait",)])
         self.assertFalse(any(s.subscribed for s in states.values()))
 
+    def test_unsubscribe_many_waits_while_steam_keeps_dropping(self):
+        """Steam drops one item per tick: the whole selection takes longer than
+        `wait`, yet every item is waited for (29 of 57 were given up on)."""
+        from app.engines import steam_ugc
+        from app.engines.steam_ugc import STATE_INSTALLED, STATE_SUBSCRIBED, SteamUgc
+        subscribed = {str(i): True for i in range(6)}
+        class Lib:
+            def SteamAPI_ISteamUGC_UnsubscribeItem(self, _ugc, _item):
+                pass
+            def SteamAPI_ISteamUGC_GetItemState(self, _ugc, item):
+                return STATE_INSTALLED | (STATE_SUBSCRIBED if subscribed[str(item)] else 0)
+            def SteamAPI_RunCallbacks(self):
+                left = [k for k, v in subscribed.items() if v]
+                if left and not stalled:
+                    subscribed[left[0]] = False
+        clock = [0.0]
+        def sleep(seconds):
+            clock[0] += seconds
+        ugc = SteamUgc(dll="missing.dll")
+        ugc._lib, ugc._ugc = Lib(), 1
+        with patch.object(steam_ugc.time, "monotonic", lambda: clock[0]), \
+                patch.object(steam_ugc.time, "sleep", sleep):
+            stalled = False
+            states = ugc.unsubscribe_many(list(subscribed), wait=0.25)
+            self.assertFalse(any(s.subscribed for s in states.values()))
+            self.assertGreater(clock[0], 0.25)
+            subscribed.update({"0": True})
+            stalled, clock[0] = True, 0.0
+            states = ugc.unsubscribe_many(list(subscribed), wait=0.25)
+            self.assertTrue(states["0"].subscribed)
+            self.assertLess(clock[0], 0.5)
+
     def test_batch_delete_asks_steam_once_and_reports_each(self):
         from app.engines.wallpaper_delete import DeleteError, delete_wallpapers
         second, asked, progress = wallpaper(self.root, "1002"), [], []
