@@ -93,9 +93,9 @@ def _unsubscribe_many(item_ids: list[str]) -> dict[str, bool]:
     """One Steam session for the whole list; True where Steam agrees."""
     from .steam_ugc import SteamUgc
 
-    # The wait is a cap, not a pause: it ends as soon as every item is dropped.
+    # Ends as soon as every item is dropped; gives up only when Steam stalls.
     with SteamUgc() as ugc:
-        states = ugc.unsubscribe_many(item_ids, wait=UNSUBSCRIBE_WAIT + 0.1 * len(item_ids))
+        states = ugc.unsubscribe_many(item_ids, wait=UNSUBSCRIBE_WAIT)
     return {item: not state.subscribed for item, state in states.items()}
 
 

@@ -297,17 +297,23 @@ class SteamUgc:
     def unsubscribe_many(self, item_ids: Sequence[str | int], wait: float = 0.0,
                          ) -> dict[str, ItemState]:
         """Ask to drop every subscription first, then wait for them together:
-        a selection waits once, not once per item."""
+        a selection waits once, not once per item. Steam drops them one after
+        another (~0.4 s each), so `wait` is how long it may go without
+        dropping any, not a cap on the whole selection."""
         ugc = self._require()
         for item_id in item_ids:
             self._lib.SteamAPI_ISteamUGC_UnsubscribeItem(ugc, int(item_id))
         self._log(f"asked Steam to unsubscribe from {len(item_ids)} item(s)")
-        deadline = time.monotonic() + max(0.0, wait)
         states = self.states(item_ids)
-        while any(s.subscribed for s in states.values()) and time.monotonic() < deadline:
+        pending = sum(s.subscribed for s in states.values())
+        deadline = time.monotonic() + max(0.0, wait)
+        while pending and time.monotonic() < deadline:
             self._lib.SteamAPI_RunCallbacks()
             time.sleep(0.1)
             states.update(self.states(i for i, s in states.items() if s.subscribed))
+            still = sum(s.subscribed for s in states.values())
+            if still < pending:
+                pending, deadline = still, time.monotonic() + max(0.0, wait)
         return states
 
     def subscribe_many(self, item_ids: Sequence[str | int], wait: float = 0.0,
