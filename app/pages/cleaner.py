@@ -13,7 +13,7 @@ from ..engines import outside_playlists as outside
 from ..engines import unavailable as engine
 from ..engines.review import DEFAULT_SCOPE
 from ..engines.rotator.config import Config
-from ..engines.wallpaper_delete import delete_wallpaper
+from ..engines.wallpaper_delete import delete_wallpapers
 from ..services import begin
 from ..ui.kit import (
     ButtonsCell, Callout, Cell, CellButton, Checkbox, CheckCell, Column, ConfirmDialog, Dropdown, EmptyState,
@@ -411,8 +411,9 @@ class CleanerPage(Page):
                 self._say("warn", "Set the reserve folder in Settings first.")
                 return False
             dialog = ConfirmDialog(f"Move {name} to the reserve?",
-                                   "A verified copy is kept in the reserve. Steam is then asked to "
-                                   "unsubscribe, and the Workshop folder goes to the Recycle Bin.",
+                                   "Steam is asked to unsubscribe, and the folder moves into the "
+                                   "reserve; if Steam will not, it is put back. On another drive "
+                                   "a verified copy is made and the Workshop folder is recycled.",
                                    self.window(), lines=[f"To: {reserve}"] + folders,
                                    icon="plus", confirm_text="Move to reserve", safe_default=True)
         elif self.mode == "outside":
@@ -448,20 +449,14 @@ class CleanerPage(Page):
         def work():
             # An unreadable config.json raises here and fails the batch before any delete.
             kept = outside.playlisted_ids(config_path) if mode == "outside" else set()
-            results = []
-            for item in items:
-                if Path(item.folder).name in kept:
-                    results.append((item, KEPT))
-                    self._action_progress.emit(run, len(results), len(items))
-                    continue
-                try:
-                    result = (engine.move_to_reserve(item.folder, reserve) if key == "reserve"
-                              else delete_wallpaper(item.folder))
-                except Exception as error:
-                    result = error
-                results.append((item, result))
-                self._action_progress.emit(run, len(results), len(items))
-            return results
+            todo = [item.folder for item in items if Path(item.folder).name not in kept]
+            skipped = len(items) - len(todo)
+            def progress(done, _total):
+                self._action_progress.emit(run, skipped + done, len(items))
+            # One Steam session for the whole selection (see wallpaper_delete).
+            answers = dict(zip(todo, engine.move_many(todo, reserve, on_progress=progress)
+                               if key == "reserve" else delete_wallpapers(todo, on_progress=progress)))
+            return [(item, answers.get(item.folder, KEPT)) for item in items]
         self._offload.run(work, lambda result: self._acted(items, key, result, run))
         return True
 

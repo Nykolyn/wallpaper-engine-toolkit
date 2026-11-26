@@ -56,8 +56,8 @@ the confirmation. A Move confirmation explicitly names source removal.
 
 Creator creates a folder named `<filename>-<unique suffix>` for each video.
 Previews are square, **480×480 at 15 fps**, capturing **5 seconds from 1 second**
-into the clip. Short clips start earlier. GIF generation uses a two-pass
-palette; a failed GIF falls back to `preview.jpg`. A preview failure preserves
+into the clip. Short clips start earlier. Each GIF gets its own palette from a
+single ffmpeg pass; a failed GIF falls back to `preview.jpg`. A preview failure preserves
 the input and removes the incomplete project.
 
 For each wallpaper, Creator:
@@ -67,7 +67,12 @@ For each wallpaper, Creator:
 3. Checks the video size, nonempty preview and JSON readback.
 4. Removes the source only after verification, in Move mode.
 
-**Pause** lets the current wallpaper finish, then waits between files. **Resume**
+Up to four wallpapers are built at once (fewer on a processor with under
+eight threads), so several rows work at the same time and results arrive in
+the order they finish; videos are still copied onto the destination one at a
+time. See [the decision](decisions/2026-11-26-creator-parallel-previews.md).
+
+**Pause** lets the wallpapers in progress finish, then waits. **Resume**
 continues. **Stop** cancels subsequent work; an unfinished wallpaper is rolled
 back with its source preserved. Completed wallpapers remain available.
 

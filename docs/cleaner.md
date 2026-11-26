@@ -49,7 +49,10 @@ Column headings sort the table; SIZE and DATE sort by their actual values.
 Tick the first column to select rows. **Select all** (or Ctrl+A in the table)
 selects every visible row; repeat to clear the selection. Space toggles the
 focused row. **Delete selected** and **Move selected to reserve** ask once for
-the entire selection and process its folders sequentially in the background.
+the entire selection and process it in the background. Steam is opened once
+for the whole selection: every unsubscription is asked for first, then they
+are awaited together, and the folders go to the Recycle Bin one by one
+([why](decisions/2026-11-26-cleaner-batch-steam-and-rename.md)).
 Changing the folder filter drops selections that are no longer visible.
 Successful rows disappear; failed rows remain selected for retry, with details
 in the Cleaner log. Individual row actions still work.
@@ -59,12 +62,22 @@ sending the folder to the Windows Recycle Bin, as Tracker and Rotator do.
 If Steam cannot unsubscribe, the source stays on disk.
 
 **+** uses the Rotator's reserve folder, configured in Settings. It asks
-first, checks available space, copies into a temporary sibling folder,
-verifies the source and destination file lists and sizes, then publishes
-the copy under its Workshop ID. Only then is the Workshop subscription
-dropped and the source recycled. A matching destination name is an error;
-nothing is overwritten. If removing the source fails after copying, the
-verified reserve copy is kept and the error reports its path.
+first. A matching destination name is an error; nothing is overwritten.
+
+- **Reserve on the Workshop folder's drive** (the usual case): the folder is
+  moved, not copied — renamed into a holding folder beside the reserve, then
+  Steam is asked to unsubscribe, then it is renamed into the reserve under its
+  Workshop ID. If Steam will not let go, the folder is put back where it was.
+  A folder Wallpaper Engine is showing cannot be moved; then nothing changes
+  and Steam is not asked. Nothing goes to the Recycle Bin: the wallpaper is in
+  the reserve. If a rename fails halfway, the error names the holding folder
+  that keeps it.
+- **Reserve on another drive**: it checks available space, copies into a
+  temporary sibling folder, verifies the source and destination file lists
+  and sizes, then publishes the copy under its Workshop ID. Only then is the
+  Workshop subscription dropped and the source recycled. If removing the
+  source fails after copying, the verified reserve copy is kept and the error
+  reports its path.
 
 Only one Cleaner action runs at a time. Rotation and Cleaner actions wait
 for each other, so the Rotator cannot take a wallpaper while it is moving.

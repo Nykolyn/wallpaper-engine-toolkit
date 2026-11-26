@@ -6,6 +6,20 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- **Creator builds four wallpapers at once**, and renders each GIF preview in
+  one ffmpeg pass instead of two (the same file, ~13% faster). A batch that
+  took ~1.6 s a clip now takes about a third of that. **Pause** lets the
+  wallpapers in progress finish.
+- **Cleaner opens Steam once per selection**: every unsubscription is asked
+  for first and awaited together, instead of opening Steam and waiting for each
+  wallpaper in turn. Folders still go to the Recycle Bin.
+- **Cleaner's Move to reserve renames instead of copying** when the reserve is
+  on the Workshop folder's drive: no bytes are copied and nothing goes to the
+  Recycle Bin. If Steam will not unsubscribe, the folder is put back. A reserve
+  on another drive is copied and verified as before.
+
 ## [4.11.3] - 2026-11-25
 
 ### Added

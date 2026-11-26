@@ -58,6 +58,8 @@ edited in place, with the pull request added to `source`.
 | 2026-11-20 | [Player controls act on the click](2026-11-20-player-controls.md) | tracker |
 | 2026-11-24 | [docs/ is the Obsidian vault and the source of truth](2026-11-24-obsidian-vault.md) | process |
 | 2026-11-25 | [Playlists are read again right before unsubscribing](2026-11-25-reread-playlists-before-unsubscribe.md) | engine |
+| 2026-11-26 | [Creator renders four previews at once, in one ffmpeg pass each](2026-11-26-creator-parallel-previews.md) | engine |
+| 2026-11-26 | [Cleaner asks Steam once per selection, and moves to the reserve by renaming](2026-11-26-cleaner-batch-steam-and-rename.md) | engine, steam |
 
 Longer design write-ups that led to some of these are in
 [`superpowers/specs`](../superpowers/specs/) and their build plans in

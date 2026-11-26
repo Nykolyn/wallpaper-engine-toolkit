@@ -11,7 +11,8 @@ import time
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import patch
+from contextlib import contextmanager
+from unittest.mock import MagicMock, patch
 
 scratch = tempfile.TemporaryDirectory(prefix="cleaner-test-")
 TMP = Path(scratch.name)
@@ -35,6 +36,26 @@ from app.pages.cleaner import CleanerPage
 from app.settings import Settings
 
 qt = QApplication(sys.argv)
+
+
+@contextmanager
+def per_folder(target, attribute=None, **mock_args):
+    """Stand in for a batch call (delete_wallpapers, move_many) with a Mock
+    called once per folder, the way the page used to call it."""
+    mock = MagicMock(**mock_args)
+    def batch(folders, *rest, on_progress=None, **_):
+        out = []
+        for folder in folders:
+            try:
+                out.append(mock(folder, *rest))
+            except Exception as err:  # noqa: BLE001 — the batch reports it per folder
+                out.append(err)
+            if on_progress:
+                on_progress(len(out), len(folders))
+        return out
+    with (patch(target, side_effect=batch) if attribute is None
+          else patch.object(target, attribute, side_effect=batch)):
+        yield mock
 theme.apply(qt)
 animations.ENABLED = False
 
@@ -122,56 +143,158 @@ class CleanerTests(unittest.TestCase):
             client._remember_items([ItemDetails("1001", False, result=9)])
             self.assertEqual(client.details(["1001"])["1001"].creator, "76561198000000001")
 
-    def test_move_verifies_copy_before_source_removal(self):
+    def steam(self, answer=True, asked=None):
+        """A Steam that agrees (or not) to drop whatever it is asked to."""
+        def unsubscribe_many(ids):
+            if asked is not None:
+                asked.append(list(ids))
+            if isinstance(answer, Exception):
+                raise answer
+            return {item: answer for item in ids}
+        return unsubscribe_many
+
+    def other_drive(self):
+        """The reserve on another volume than the Workshop folder: the copy path."""
+        return patch.object(engine, "_volume", side_effect=lambda p: 1 if "431960" in str(p) else 2)
+
+    def test_move_on_one_volume_renames_before_unsubscribing(self):
+        reserve, video = self.root / "reserve", (self.folder / "video.mp4").read_bytes()
+        def unsubscribe_many(ids):
+            # Out of the Workshop folder, not yet in the reserve, when Steam is asked.
+            self.assertFalse(self.folder.exists())
+            self.assertFalse((reserve / "1001").exists())
+            self.assertEqual(len(list(self.root.glob(".toolkit-reserve-*/1001"))), 1)
+            return {item: True for item in ids}
+        target = engine.move_to_reserve(str(self.folder), str(reserve), unsubscribe_many=unsubscribe_many,
+                                        recycle=lambda _: self.fail("nothing to recycle"))
+        self.assertEqual(Path(target), (reserve / "1001").resolve())
+        self.assertEqual((reserve / "1001" / "video.mp4").read_bytes(), video)
+        self.assertFalse(self.folder.exists())
+        self.assertEqual(list(self.root.glob(".toolkit-reserve-*")), [])
+
+    def test_move_puts_the_folder_back_when_steam_keeps_it(self):
+        reserve = self.root / "reserve"
+        for answer, words in ((False, "still lists it"), (OSError("Steam is not running"), "not running")):
+            with self.assertRaisesRegex(OSError, f"{words}.*put back"):
+                engine.move_to_reserve(str(self.folder), str(reserve), unsubscribe_many=self.steam(answer))
+            self.assertTrue((self.folder / "video.mp4").is_file())
+            self.assertFalse((reserve / "1001").exists())
+            self.assertEqual(list(self.root.glob(".toolkit-reserve-*")), [])
+
+    def test_folder_in_use_changes_nothing(self):
+        asked = []
+        with patch.object(engine.os, "rename", side_effect=PermissionError("in use")):
+            with self.assertRaisesRegex(OSError, "Nothing was changed"):
+                engine.move_to_reserve(str(self.folder), str(self.root / "reserve"),
+                                       unsubscribe_many=self.steam(asked=asked))
+        self.assertEqual(asked, [])
+        self.assertTrue(self.folder.exists())
+        self.assertEqual(list(self.root.glob(".toolkit-reserve-*")), [])
+
+    def test_batch_move_asks_steam_once(self):
+        second, asked = wallpaper(self.root, "1002"), []
+        results = engine.move_many([str(self.folder), str(second), str(self.root / "431960" / "404")],
+                                   str(self.root / "reserve"), unsubscribe_many=self.steam(asked=asked))
+        self.assertEqual(asked, [["1001", "1002"]])
+        self.assertEqual([Path(r).name for r in results[:2]], ["1001", "1002"])
+        self.assertIsInstance(results[2], Exception)
+
+    def test_move_to_another_drive_verifies_copy_before_source_removal(self):
         reserve = self.root / "reserve"
         events = []
-        def remove(source):
+        def recycle(source):
             target = reserve / "1001"
             self.assertEqual((target / "video.mp4").read_bytes(), (self.folder / "video.mp4").read_bytes())
             self.assertTrue((target / "preview.jpg").is_file())
             events.append(source)
             shutil.rmtree(source)
-        target = engine.move_to_reserve(str(self.folder), str(reserve), remove=remove)
+            return True
+        with self.other_drive():
+            target = engine.move_to_reserve(str(self.folder), str(reserve), unsubscribe_many=self.steam(),
+                                            recycle=recycle)
         self.assertEqual(Path(target), (reserve / "1001").resolve())
-        self.assertEqual(events, [str(self.folder.resolve())])
+        self.assertEqual(events, [self.folder.resolve()])
         self.assertFalse(self.folder.exists())
         self.assertEqual(list(self.root.glob(".toolkit-reserve-*")), [])
 
     def test_copy_failure_and_collision_preserve_source(self):
         reserve = self.root / "reserve"
-        with patch.object(file_copy, "verify_copy", side_effect=OSError("size differs")):
+        with self.other_drive(), patch.object(file_copy, "verify_copy", side_effect=OSError("size differs")):
             with self.assertRaisesRegex(OSError, "size differs"):
-                engine.move_to_reserve(str(self.folder), str(reserve), remove=lambda _: self.fail("remove"))
+                engine.move_to_reserve(str(self.folder), str(reserve), unsubscribe_many=self.steam(),
+                                       recycle=lambda _: self.fail("recycle"))
         self.assertTrue(self.folder.exists())
         self.assertFalse((reserve / "1001").exists())
         self.assertEqual(list(self.root.glob(".toolkit-reserve-*")), [])
         (reserve / "1001").mkdir()
         (reserve / "1001" / "keep.txt").write_text("keep")
-        with self.assertRaises(FileExistsError):
-            engine.move_to_reserve(str(self.folder), str(reserve))
-        self.assertEqual((reserve / "1001" / "keep.txt").read_text(), "keep")
-        self.assertTrue(self.folder.exists())
+        for drive in (self.other_drive(), patch.object(engine, "_volume", return_value=1)):
+            with drive, self.assertRaises(FileExistsError):
+                engine.move_to_reserve(str(self.folder), str(reserve), unsubscribe_many=self.steam())
+            self.assertEqual((reserve / "1001" / "keep.txt").read_text(), "keep")
+            self.assertTrue(self.folder.exists())
 
     def test_unsubscribe_failure_keeps_verified_copy_and_source(self):
         reserve = self.root / "reserve"
-        def fail(_):
-            raise OSError("Steam unavailable")
-        with self.assertRaisesRegex(OSError, "verified copy is kept"):
-            engine.move_to_reserve(str(self.folder), str(reserve), remove=fail)
+        with self.other_drive(), self.assertRaisesRegex(OSError, "verified copy is kept"):
+            engine.move_to_reserve(str(self.folder), str(reserve),
+                                   unsubscribe_many=self.steam(OSError("Steam unavailable")))
         self.assertTrue(self.folder.exists())
         self.assertEqual((reserve / "1001" / "video.mp4").read_bytes(), (self.folder / "video.mp4").read_bytes())
 
     def test_validation_prevents_bad_destination_or_empty_payload(self):
         for reserve in ("", str(self.folder), str(self.folder / "nested"), str(self.root)):
             with self.assertRaises(ValueError):
-                engine.move_to_reserve(str(self.folder), reserve)
-        with patch.object(file_copy, "destination_info", return_value={"free": 0}):
+                engine.move_to_reserve(str(self.folder), reserve, unsubscribe_many=self.steam())
+        self.assertFalse((self.folder / "nested").exists())
+        with self.other_drive(), patch.object(file_copy, "destination_info", return_value={"free": 0}):
             with self.assertRaisesRegex(OSError, "free space"):
-                engine.move_to_reserve(str(self.folder), str(self.root / "reserve"))
+                engine.move_to_reserve(str(self.folder), str(self.root / "reserve"), unsubscribe_many=self.steam())
         (self.folder / "video.mp4").write_bytes(b"")
         with self.assertRaisesRegex(ValueError, "missing or empty"):
-            engine.move_to_reserve(str(self.folder), str(self.root / "reserve"))
+            engine.move_to_reserve(str(self.folder), str(self.root / "reserve"), unsubscribe_many=self.steam())
         self.assertTrue(self.folder.exists())
+
+    def test_unsubscribe_many_asks_for_all_before_waiting(self):
+        from app.engines.steam_ugc import STATE_INSTALLED, STATE_SUBSCRIBED, SteamUgc
+        events, subscribed = [], {"1": True, "2": True}
+        class Lib:
+            def SteamAPI_ISteamUGC_UnsubscribeItem(self, _ugc, item):
+                events.append(("ask", str(item)))
+            def SteamAPI_ISteamUGC_GetItemState(self, _ugc, item):
+                return STATE_INSTALLED | (STATE_SUBSCRIBED if subscribed[str(item)] else 0)
+            def SteamAPI_RunCallbacks(self):
+                events.append(("wait",))
+                subscribed.update({k: False for k in subscribed})   # Steam catches up
+        ugc = SteamUgc(dll="missing.dll")
+        ugc._lib, ugc._ugc = Lib(), 1
+        started = time.monotonic()
+        states = ugc.unsubscribe_many(["1", "2"], wait=5)
+        self.assertLess(time.monotonic() - started, 1)
+        self.assertEqual(events, [("ask", "1"), ("ask", "2"), ("wait",)])
+        self.assertFalse(any(s.subscribed for s in states.values()))
+
+    def test_batch_delete_asks_steam_once_and_reports_each(self):
+        from app.engines.wallpaper_delete import DeleteError, delete_wallpapers
+        second, asked, progress = wallpaper(self.root, "1002"), [], []
+        mine = self.root / "myprojects" / "own"
+        mine.mkdir(parents=True)
+        results = delete_wallpapers([self.folder, second, mine, self.root / "gone"],
+                                    unsubscribe_many=lambda ids: asked.append(ids) or {"1001": True, "1002": False},
+                                    recycle=lambda p: shutil.rmtree(p) or True,
+                                    on_progress=lambda d, t: progress.append((d, t)))
+        self.assertEqual(asked, [["1001", "1002"]])
+        self.assertEqual(results[0].workshop_id, "1001")
+        self.assertIsInstance(results[1], DeleteError)
+        self.assertTrue(second.exists())
+        self.assertEqual(results[2].workshop_id, "")
+        self.assertIsInstance(results[3], DeleteError)
+        self.assertEqual(progress[-1], (4, 4))
+        third = wallpaper(self.root, "1003")
+        failed = delete_wallpapers([third], unsubscribe_many=self.steam(OSError("no Steam")),
+                                   recycle=lambda _: self.fail("recycle"))
+        self.assertRegex(str(failed[0]), "no Steam")
+        self.assertTrue(third.exists())
 
     def test_page_filters_badge_sorting_open_and_actions(self):
         svc = services.Services(data_dir=TMP / "data")
@@ -195,7 +318,7 @@ class CleanerTests(unittest.TestCase):
         with patch.object(page, "_answer", return_value=False):
             self.assertFalse(page._action(0, 5, "reserve"))
         with patch.object(page, "_answer", return_value=True), \
-             patch.object(engine, "move_to_reserve", return_value="fake reserve"):
+             per_folder(engine, "move_many", return_value="fake reserve"):
             self.assertTrue(page._action(0, 5, "reserve"))
             self.assertFalse(page._action(0, 5, "reserve"))
             self.assertTrue(wait_for(lambda: not page.acting))
@@ -205,12 +328,12 @@ class CleanerTests(unittest.TestCase):
         self.assertEqual(svc.journal.recent(1)[0].kind, "reserve_move.clean")
         page.source.setCurrentIndex(0)
         with patch.object(page, "_answer", return_value=True), \
-             patch("app.pages.cleaner.delete_wallpaper", side_effect=OSError("in use")):
+             per_folder("app.pages.cleaner.delete_wallpapers", side_effect=OSError("in use")):
             self.assertTrue(page._action(0, 5, "delete"))
             self.assertTrue(wait_for(lambda: not page.acting))
         self.assertEqual(page.nav_state().text, "1")
         with patch.object(page, "_answer", return_value=True), \
-             patch("app.pages.cleaner.delete_wallpaper", return_value=Deleted(other.folder, "1002")):
+             per_folder("app.pages.cleaner.delete_wallpapers", return_value=Deleted(other.folder, "1002")):
             self.assertTrue(page._action(0, 5, "delete"))
             self.assertTrue(wait_for(lambda: not page.acting))
         self.assertEqual((page.nav_state().kind, page.nav_state().text), ("none", ""))
@@ -301,7 +424,7 @@ class CleanerTests(unittest.TestCase):
         self.assertEqual(page.selected, {rows[0].folder})
         page.all_rows.click()
         with patch.object(page, "_answer", return_value=False) as answer, \
-             patch("app.pages.cleaner.delete_wallpaper") as remove:
+             per_folder("app.pages.cleaner.delete_wallpapers") as remove:
             self.assertFalse(page._selected_action("delete"))
             answer.assert_called_once()
             remove.assert_not_called()
@@ -313,7 +436,7 @@ class CleanerTests(unittest.TestCase):
                 raise OSError("in use")
             return Deleted(folder, Path(folder).name)
         with patch.object(page, "_answer", return_value=True) as answer, \
-             patch("app.pages.cleaner.delete_wallpaper", side_effect=remove):
+             per_folder("app.pages.cleaner.delete_wallpapers", side_effect=remove):
             self.assertTrue(page._selected_action("delete"))
             self.assertFalse(page.delete_selected.isEnabled())
             self.assertFalse(page.source.isEnabled())
@@ -328,7 +451,7 @@ class CleanerTests(unittest.TestCase):
         self.assertTrue(page.delete_selected.isEnabled())
         # Retry uses the same verified reserve engine as individual actions.
         with patch.object(page, "_answer", return_value=True) as answer, \
-             patch.object(engine, "move_to_reserve", return_value="verified reserve") as move:
+             per_folder(engine, "move_many", return_value="verified reserve") as move:
             self.assertTrue(page._selected_action("reserve"))
             self.assertTrue(wait_for(lambda: not page.acting))
             answer.assert_called_once()
@@ -371,7 +494,7 @@ class CleanerTests(unittest.TestCase):
             answer.assert_not_called()
         page.config.source = str(self.root / "reserve")
         with patch.object(page, "_answer", return_value=True) as answer, \
-             patch.object(engine, "move_to_reserve", return_value="verified copy") as move:
+             per_folder(engine, "move_many", return_value="verified copy") as move:
             self.assertTrue(page._selected_action("reserve"))
             self.assertTrue(wait_for(lambda: not page.acting))
             answer.assert_called_once()
@@ -428,7 +551,7 @@ class OutsideTabTests(unittest.TestCase):
         page.select_all()
         with patch.object(page, "_answer", return_value=True), \
              patch.object(outside, "playlisted_ids", return_value={"3"}), \
-             patch("app.pages.cleaner.delete_wallpaper",
+             per_folder("app.pages.cleaner.delete_wallpapers",
                    side_effect=lambda folder: Deleted(folder, Path(folder).name)) as delete:
             self.assertTrue(page._selected_action("delete"))
             self.assertTrue(wait_for(lambda: not page.acting))
@@ -441,7 +564,7 @@ class OutsideTabTests(unittest.TestCase):
         page = self.page()
         with patch.object(page, "_answer", return_value=True), \
              patch.object(outside, "playlisted_ids", side_effect=OSError("config.json is gone")), \
-             patch("app.pages.cleaner.delete_wallpaper") as delete:
+             per_folder("app.pages.cleaner.delete_wallpapers") as delete:
             self.assertTrue(page._action(0, 8, "delete"))
             self.assertTrue(wait_for(lambda: not page.acting))
         delete.assert_not_called()
@@ -484,7 +607,7 @@ class OutsideTabTests(unittest.TestCase):
             self.assertTrue(wait_for(lambda: not page.scanning))
         with patch.object(page, "_answer", return_value=True), \
              patch.object(outside, "playlisted_ids", return_value=set()), \
-             patch("app.pages.cleaner.delete_wallpaper",
+             per_folder("app.pages.cleaner.delete_wallpapers",
                    side_effect=lambda folder: Deleted(folder, Path(folder).name)):
             self.assertTrue(page._action(0, 8, "delete"))
             self.assertTrue(wait_for(lambda: not page.acting))

@@ -101,9 +101,8 @@ def wallpaper_project(folder, files):
     return project
 
 
-@background_io()
-def copy_to_reserve(folder, reserve, *, on_progress=None, cancelled=lambda: False):
-    """Publish a verified copy without overwriting; leave the source alone."""
+def reserve_check(folder, reserve):
+    """(source, reserve root, its files) for a wallpaper that may go to the reserve."""
     if not reserve or not reserve.strip():
         raise ValueError("Set the reserve folder in Settings first.")
     source, root = Path(folder).resolve(), Path(reserve).resolve()
@@ -111,15 +110,28 @@ def copy_to_reserve(folder, reserve, *, on_progress=None, cancelled=lambda: Fals
         raise ValueError("The reserve must be separate from the Workshop folder.")
     files, _ = manifest(folder)
     wallpaper_project(source, files)
+    return source, root, files
+
+
+def reserve_target(source, root):
+    """The reserve's folder for `source`; the reserve exists, the folder does not."""
+    root.mkdir(parents=True, exist_ok=True)
+    target = root / source.name
+    if target.exists():
+        raise FileExistsError(f"The reserve already contains {target.name}; nothing was replaced.")
+    return target
+
+
+@background_io()
+def copy_to_reserve(folder, reserve, *, on_progress=None, cancelled=lambda: False):
+    """Publish a verified copy without overwriting; leave the source alone."""
+    source, root, files = reserve_check(folder, reserve)
     total = sum(files.values())
     if destination_info(str(root))["free"] < total:
         raise OSError("There is not enough free space in the reserve.")
     if cancelled():
         raise InterruptedError("Copy stopped.")
-    root.mkdir(parents=True, exist_ok=True)
-    target = root / source.name
-    if target.exists():
-        raise FileExistsError(f"The reserve already contains {target.name}; nothing was replaced.")
+    target = reserve_target(source, root)
     # Outside the reserve, so a concurrent library scan cannot see a partial wallpaper.
     staging = Path(tempfile.mkdtemp(prefix=".toolkit-reserve-", dir=root.parent))
     done, last_report = 0, 0.0
