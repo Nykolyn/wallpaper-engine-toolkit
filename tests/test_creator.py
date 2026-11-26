@@ -252,8 +252,9 @@ with patch.object(cr, "find_ffmpeg", return_value="fake"), patch.object(cr, "mak
 check("subset builds only given tagged files and reports no-tag skips",
       len(list(subset_target.iterdir())) == 1 and len(reports[0]) == 2
       and reports[0][1]["reason"] == "skipped — no tags")
+built = [n for n in notifications if n[1] == "ok"]    # in the order they finish
 check("item_done carries the new id and preview path",
-      len(notifications[0]) == 4 and notifications[0][2] and Path(notifications[0][3]).exists())
+      len(built) == 1 and len(built[0]) == 4 and built[0][2] and Path(built[0][3]).exists())
 
 entered, proceed, second = threading.Event(), threading.Event(), threading.Event()
 pause_engine = cr.BuildEngine()
@@ -268,7 +269,7 @@ def paused_run(args):
     return subprocess.CompletedProcess(args, 1, "", banner)
 pause_items = [cr.VideoItem(str(read_dir / name)) for name in ("a.mp4", "b.mkv")]
 with patch.object(cr, "find_ffmpeg", return_value="fake"), patch.object(cr, "_run", side_effect=paused_run), \
-        patch.object(cr, "make_gif", side_effect=fake_gif):
+        patch.object(cr, "make_gif", side_effect=fake_gif), patch.object(cr, "WORKERS", 1):
     pause_engine.start(pause_items, str(TMP / "pause"), move=False)
     reached = entered.wait(5)
     proceed.set()
@@ -276,6 +277,28 @@ with patch.object(cr, "find_ffmpeg", return_value="fake"), patch.object(cr, "_ru
     pause_engine.resume()
     pause_engine._thread.join(5)
     check("resume continues the next item", second.is_set() and not pause_engine.is_running())
+
+# Several previews render at once, and the report keeps the selection's order.
+together, started, release = threading.Lock(), [], threading.Event()
+def slow_gif(ffmpeg, video, out, duration=None):
+    with together:
+        started.append(video)
+        if len(started) == 2:
+            release.set()
+    release.wait(5)
+    return fake_gif(ffmpeg, video, out, duration)
+parallel_reports = []
+parallel = cr.BuildEngine(finished=parallel_reports.append)
+pair = [cr.VideoItem(str(read_dir / name)) for name in ("a.mp4", "b.mkv")]
+with patch.object(cr, "find_ffmpeg", return_value="fake"), patch.object(cr, "make_gif", side_effect=slow_gif), \
+        patch.object(cr, "probe_duration", return_value=10), patch.object(cr, "WORKERS", 2):
+    parallel._run(pair, str(TMP / "parallel"), False, ["Nature"], False)
+check("two previews render at the same time", release.is_set())
+check("report keeps the selection's order",
+      [e["name"] for e in parallel_reports[0]] == ["a.mp4", "b.mkv"]
+      and all(e["status"] == "ok" for e in parallel_reports[0]))
+check("folder suffixes stay unique across threads",
+      len({cr.generate_suffix() for _ in range(1000)}) == 1000)
 
 print()
 print("PASSED %d/%d" % (sum(results), len(results)))

@@ -87,3 +87,52 @@ def delete_wallpaper(folder: str | os.PathLike, *,
         raise DeleteError(f"Windows would not move it to the Recycle Bin. {what} folder may "
                           f"be in use: Wallpaper Engine may be showing it.")
     return Deleted(str(path), item)
+
+
+def _unsubscribe_many(item_ids: list[str]) -> dict[str, bool]:
+    """One Steam session for the whole list; True where Steam agrees."""
+    from .steam_ugc import SteamUgc
+
+    # The wait is a cap, not a pause: it ends as soon as every item is dropped.
+    with SteamUgc() as ugc:
+        states = ugc.unsubscribe_many(item_ids, wait=UNSUBSCRIBE_WAIT + 0.1 * len(item_ids))
+    return {item: not state.subscribed for item, state in states.items()}
+
+
+def drop_subscriptions(item_ids, unsubscribe_many=_unsubscribe_many) -> dict[str, bool | Exception]:
+    """Unsubscribe from a selection at once: item id → agreed, or why Steam failed."""
+    item_ids = sorted(set(item_ids) - {""})
+    if not item_ids:
+        return {}
+    try:
+        return unsubscribe_many(item_ids)
+    except Exception as err:  # noqa: BLE001 — UgcError, or the DLL itself failing
+        return {item: err for item in item_ids}
+
+
+def agreed(dropped: dict[str, bool | Exception]) -> Callable[[str], bool]:
+    """`delete_wallpaper`'s unsubscribe, answered from `drop_subscriptions`."""
+    def unsubscribe(item: str) -> bool:
+        answer = dropped.get(item, False)
+        if isinstance(answer, Exception):
+            raise answer
+        return answer
+    return unsubscribe
+
+
+def delete_wallpapers(folders, *, unsubscribe_many=_unsubscribe_many, recycle=_recycle,
+                      on_progress: Callable[[int, int], None] | None = None) -> list[Deleted | Exception]:
+    """`delete_wallpaper` for a selection: Steam is opened once and asked to drop
+    every subscription before any waiting. One Deleted or exception per folder,
+    in order; a folder Steam would not drop is left alone, as for one."""
+    paths = [Path(f) for f in folders]
+    dropped = drop_subscriptions((workshop_id(p) for p in paths if p.is_dir()), unsubscribe_many)
+    results: list[Deleted | Exception] = []
+    for path in paths:
+        try:
+            results.append(delete_wallpaper(path, unsubscribe=agreed(dropped), recycle=recycle))
+        except Exception as err:  # noqa: BLE001 — reported per row
+            results.append(err)
+        if on_progress:
+            on_progress(len(results), len(paths))
+    return results
